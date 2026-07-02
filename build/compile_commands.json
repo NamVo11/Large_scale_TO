@@ -1,0 +1,22 @@
+[
+{
+  "directory": "/home/votrongnam/PROJECT/Large_scale_TO/build",
+  "command": "/usr/bin/g++ -DPETSC_CXX_RESTRICT=__restrict__ -DPETSC_FUNCTION_NAME_CXX=__func__ -I/home/votrongnam/PROJECT/Large_scale_TO/cpp/include -isystem /usr/lib/petscdir/petsc3.15/x86_64-linux-gnu-real/include -isystem /usr/lib/x86_64-linux-gnu/openmpi/include -isystem /usr/lib/x86_64-linux-gnu/openmpi/include/openmpi -g -Wall -Wextra -Wpedantic -Wdate-time -D_FORTIFY_SOURCE=2 -std=c++17 -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.o -c /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/main.cpp",
+  "file": "/home/votrongnam/PROJECT/Large_scale_TO/cpp/src/main.cpp"
+},
+{
+  "directory": "/home/votrongnam/PROJECT/Large_scale_TO/build",
+  "command": "/usr/bin/g++ -DPETSC_CXX_RESTRICT=__restrict__ -DPETSC_FUNCTION_NAME_CXX=__func__ -I/home/votrongnam/PROJECT/Large_scale_TO/cpp/include -isystem /usr/lib/petscdir/petsc3.15/x86_64-linux-gnu-real/include -isystem /usr/lib/x86_64-linux-gnu/openmpi/include -isystem /usr/lib/x86_64-linux-gnu/openmpi/include/openmpi -g -Wall -Wextra -Wpedantic -Wdate-time -D_FORTIFY_SOURCE=2 -std=c++17 -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.o -c /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/IO.cpp",
+  "file": "/home/votrongnam/PROJECT/Large_scale_TO/cpp/src/IO.cpp"
+},
+{
+  "directory": "/home/votrongnam/PROJECT/Large_scale_TO/build",
+  "command": "/usr/bin/g++ -DPETSC_CXX_RESTRICT=__restrict__ -DPETSC_FUNCTION_NAME_CXX=__func__ -I/home/votrongnam/PROJECT/Large_scale_TO/cpp/include -isystem /usr/lib/petscdir/petsc3.15/x86_64-linux-gnu-real/include -isystem /usr/lib/x86_64-linux-gnu/openmpi/include -isystem /usr/lib/x86_64-linux-gnu/openmpi/include/openmpi -g -Wall -Wextra -Wpedantic -Wdate-time -D_FORTIFY_SOURCE=2 -std=c++17 -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.o -c /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/FEMH8.cpp",
+  "file": "/home/votrongnam/PROJECT/Large_scale_TO/cpp/src/FEMH8.cpp"
+},
+{
+  "directory": "/home/votrongnam/PROJECT/Large_scale_TO/build",
+  "command": "/usr/bin/g++ -DPETSC_CXX_RESTRICT=__restrict__ -DPETSC_FUNCTION_NAME_CXX=__func__ -I/home/votrongnam/PROJECT/Large_scale_TO/cpp/include -isystem /usr/lib/petscdir/petsc3.15/x86_64-linux-gnu-real/include -isystem /usr/lib/x86_64-linux-gnu/openmpi/include -isystem /usr/lib/x86_64-linux-gnu/openmpi/include/openmpi -g -Wall -Wextra -Wpedantic -Wdate-time -D_FORTIFY_SOURCE=2 -std=c++17 -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.o -c /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/DynamicElasticSolver.cpp",
+  "file": "/home/votrongnam/PROJECT/Large_scale_TO/cpp/src/DynamicElasticSolver.cpp"
+}
+]

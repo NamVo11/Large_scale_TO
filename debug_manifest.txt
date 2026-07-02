@@ -1,7 +1,7 @@
-case=/home/votrongnam/PROJECT/Large_scale_TO/cases/large_h8_240x60x24
-out=/home/votrongnam/PROJECT/Large_scale_TO/results/ubuntu_large_h8_240x60x24_release_n8_cg_only
-no_history=1
+case=/home/votrongnam/PROJECT/Large_scale_TO/cases/simple_3d_cantilever
+out=/home/votrongnam/PROJECT/Large_scale_TO/results/local_smoke_n2
+no_history=0
 ksp_type=cg
-pc_type=none
-ksp_rtol=1e-8
+pc_type=gamg
+ksp_rtol=1e-10
 ksp_max_it=20000

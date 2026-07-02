@@ -73,57 +73,57 @@ CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.o: CMakeFiles/stage1_petsc_
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.o: ../cpp/src/main.cpp
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.o: CMakeFiles/stage1_petsc_backend.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/votrongnam/PROJECT/Large_scale_TO/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.o -MF CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.o.d -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.o -c /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/main.cpp
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.o -MF CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.o.d -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.o -c /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/main.cpp
 
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/main.cpp > CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.i
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/main.cpp > CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.i
 
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/main.cpp -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.s
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/main.cpp -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/main.cpp.s
 
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.o: CMakeFiles/stage1_petsc_backend.dir/flags.make
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.o: ../cpp/src/IO.cpp
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.o: CMakeFiles/stage1_petsc_backend.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/votrongnam/PROJECT/Large_scale_TO/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.o -MF CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.o.d -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.o -c /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/IO.cpp
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.o -MF CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.o.d -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.o -c /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/IO.cpp
 
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/IO.cpp > CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.i
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/IO.cpp > CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.i
 
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/IO.cpp -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.s
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/IO.cpp -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/IO.cpp.s
 
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.o: CMakeFiles/stage1_petsc_backend.dir/flags.make
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.o: ../cpp/src/FEMH8.cpp
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.o: CMakeFiles/stage1_petsc_backend.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/votrongnam/PROJECT/Large_scale_TO/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.o -MF CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.o.d -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.o -c /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/FEMH8.cpp
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.o -MF CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.o.d -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.o -c /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/FEMH8.cpp
 
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/FEMH8.cpp > CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.i
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/FEMH8.cpp > CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.i
 
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/FEMH8.cpp -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.s
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/FEMH8.cpp -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/FEMH8.cpp.s
 
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.o: CMakeFiles/stage1_petsc_backend.dir/flags.make
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.o: ../cpp/src/DynamicElasticSolver.cpp
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.o: CMakeFiles/stage1_petsc_backend.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/votrongnam/PROJECT/Large_scale_TO/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.o -MF CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.o.d -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.o -c /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/DynamicElasticSolver.cpp
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.o -MF CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.o.d -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.o -c /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/DynamicElasticSolver.cpp
 
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/DynamicElasticSolver.cpp > CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.i
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/DynamicElasticSolver.cpp > CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.i
 
 CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/DynamicElasticSolver.cpp -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.s
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/votrongnam/PROJECT/Large_scale_TO/cpp/src/DynamicElasticSolver.cpp -o CMakeFiles/stage1_petsc_backend.dir/cpp/src/DynamicElasticSolver.cpp.s
 
 # Object files for target stage1_petsc_backend
 stage1_petsc_backend_OBJECTS = \

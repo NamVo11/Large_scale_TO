@@ -1,0 +1,93 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "CMake: configure Debug",
+      "type": "shell",
+      "command": "runuser",
+      "args": [
+        "-u",
+        "votrongnam",
+        "--",
+        "sh",
+        "-lc",
+        "cd \"${workspaceFolder}\" && cmake -S \"${workspaceFolder}\" -B \"${workspaceFolder}/build\" -DCMAKE_BUILD_TYPE=Debug"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "CMake: build Debug",
+      "type": "shell",
+      "command": "runuser",
+      "args": [
+        "-u",
+        "votrongnam",
+        "--",
+        "sh",
+        "-lc",
+        "cd \"${workspaceFolder}\" && cmake --build \"${workspaceFolder}/build\" -j 4"
+      ],
+      "dependsOn": "CMake: configure Debug",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "Run: single rank",
+      "type": "shell",
+      "command": "runuser",
+      "args": [
+        "-u",
+        "votrongnam",
+        "--",
+        "sh",
+        "-lc",
+        "cd \"${workspaceFolder}\" && \"${workspaceFolder}/build/stage1_petsc_backend\""
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "CMake: build Debug",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run: MPI 2 ranks",
+      "type": "shell",
+      "command": "runuser",
+      "args": [
+        "-u",
+        "votrongnam",
+        "--",
+        "sh",
+        "-lc",
+        "cd \"${workspaceFolder}\" && mpirun -n 2 \"${workspaceFolder}/build/stage1_petsc_backend\""
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "CMake: build Debug",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run: MPI 4 ranks",
+      "type": "shell",
+      "command": "runuser",
+      "args": [
+        "-u",
+        "votrongnam",
+        "--",
+        "sh",
+        "-lc",
+        "cd \"${workspaceFolder}\" && mpirun -n 4 \"${workspaceFolder}/build/stage1_petsc_backend\""
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "CMake: build Debug",
+      "problemMatcher": []
+    }
+  ]
+}
