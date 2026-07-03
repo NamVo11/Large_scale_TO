@@ -1,3 +1,0 @@
-/home/votrongnam/PROJECT/Large_scale_TO/build-mpich-release/CMakeFiles/stage1_petsc_backend.dir
-/home/votrongnam/PROJECT/Large_scale_TO/build-mpich-release/CMakeFiles/edit_cache.dir
-/home/votrongnam/PROJECT/Large_scale_TO/build-mpich-release/CMakeFiles/rebuild_cache.dir

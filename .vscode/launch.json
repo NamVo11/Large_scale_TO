@@ -5,9 +5,9 @@
       "name": "Debug: stage1_petsc_backend local",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build-mpich-release/stage1_petsc_backend",
+      "program": "${workspaceFolder}/build-mpich-debug/stage1_petsc_backend",
       "args": [],
-      "stopAtEntry": false,
+      "stopAtEntry": true,
       "cwd": "${workspaceFolder}",
       "environment": [
         {
