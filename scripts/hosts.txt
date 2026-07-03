@@ -6,3 +6,4 @@
 # 192.168.1.42 slots=16
 
 localhost slots=8
+worker1 slots=8

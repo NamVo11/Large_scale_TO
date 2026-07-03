@@ -2,33 +2,44 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "CMake: configure Debug",
+      "label": "CMake: configure MPICH Release",
       "type": "shell",
-      "command": "runuser",
+      "command": "cmake",
       "args": [
-        "-u",
-        "votrongnam",
-        "--",
-        "sh",
-        "-lc",
-        "cd \"${workspaceFolder}\" && cmake -S \"${workspaceFolder}\" -B \"${workspaceFolder}/build\" -DCMAKE_BUILD_TYPE=Debug"
+        "-S",
+        "${workspaceFolder}",
+        "-B",
+        "${workspaceFolder}/build-mpich-release",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+        "-DCMAKE_CXX_COMPILER=/home/votrongnam/opt/mpich-4.0-ch3-cxx/bin/mpicxx",
+        "-DPETSC_PKG=PETSc"
       ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+        }
+      },
       "group": "build",
       "problemMatcher": []
     },
     {
-      "label": "CMake: build Debug",
+      "label": "CMake: build MPICH Release",
       "type": "shell",
-      "command": "runuser",
+      "command": "cmake",
       "args": [
-        "-u",
-        "votrongnam",
-        "--",
-        "sh",
-        "-lc",
-        "cd \"${workspaceFolder}\" && cmake --build \"${workspaceFolder}/build\" -j 4"
+        "--build",
+        "${workspaceFolder}/build-mpich-release",
+        "-j"
       ],
-      "dependsOn": "CMake: configure Debug",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+        }
+      },
+      "dependsOn": "CMake: configure MPICH Release",
       "group": {
         "kind": "build",
         "isDefault": true
@@ -36,57 +47,84 @@
       "problemMatcher": "$gcc"
     },
     {
-      "label": "Run: single rank",
+      "label": "Manifest: simple smoke",
       "type": "shell",
-      "command": "runuser",
+      "command": "bash",
       "args": [
-        "-u",
-        "votrongnam",
-        "--",
-        "sh",
-        "-lc",
-        "cd \"${workspaceFolder}\" && \"${workspaceFolder}/build/stage1_petsc_backend\""
+        "scripts/make_manifest.sh",
+        "simple_3d_cantilever",
+        "vscode_simple_smoke",
+        "cg",
+        "gamg",
+        "1e-10",
+        "1",
+        "20000"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "dependsOn": "CMake: build Debug",
       "problemMatcher": []
     },
     {
-      "label": "Run: MPI 2 ranks",
+      "label": "Run: local 1 rank",
       "type": "shell",
-      "command": "runuser",
+      "command": "bash",
       "args": [
-        "-u",
-        "votrongnam",
-        "--",
-        "sh",
-        "-lc",
-        "cd \"${workspaceFolder}\" && mpirun -n 2 \"${workspaceFolder}/build/stage1_petsc_backend\""
+        "scripts/mpiexec_mpich_ch3_cxx.sh",
+        "-n",
+        "1",
+        "${workspaceFolder}/build-mpich-release/stage1_petsc_backend"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "dependsOn": "CMake: build Debug",
+      "dependsOn": [
+        "CMake: build MPICH Release",
+        "Manifest: simple smoke"
+      ],
+      "dependsOrder": "sequence",
       "problemMatcher": []
     },
     {
-      "label": "Run: MPI 4 ranks",
+      "label": "Prepare: local debug",
+      "dependsOn": [
+        "CMake: build MPICH Release",
+        "Manifest: simple smoke"
+      ],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run: multinode smoke 2 ranks",
       "type": "shell",
-      "command": "runuser",
+      "command": "bash",
       "args": [
-        "-u",
-        "votrongnam",
-        "--",
-        "sh",
-        "-lc",
-        "cd \"${workspaceFolder}\" && mpirun -n 4 \"${workspaceFolder}/build/stage1_petsc_backend\""
+        "scripts/run_mpich_multinode_backend.sh",
+        "localhost,192.168.11.21",
+        "2"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "dependsOn": "CMake: build Debug",
+      "dependsOn": [
+        "CMake: build MPICH Release",
+        "Manifest: simple smoke"
+      ],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run: multinode large 8 ranks",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "bash scripts/make_manifest.sh large_h8_240x60x24 vscode_240x60x24_np8 cg gamg 1e-8 1 20000 && bash scripts/run_mpich_multinode_backend.sh localhost,192.168.11.21 8"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "CMake: build MPICH Release",
       "problemMatcher": []
     }
   ]

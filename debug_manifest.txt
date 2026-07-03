@@ -1,6 +1,6 @@
 case=/home/votrongnam/PROJECT/Large_scale_TO/cases/simple_3d_cantilever
-out=/home/votrongnam/PROJECT/Large_scale_TO/results/local_smoke_n2
-no_history=0
+out=/home/votrongnam/PROJECT/Large_scale_TO/results/vscode_multinode_smoke
+no_history=1
 ksp_type=cg
 pc_type=gamg
 ksp_rtol=1e-10

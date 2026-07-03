@@ -2,16 +2,15 @@
   "version": 4,
   "configurations": [
     {
-      "name": "Linux",
-      "compilerPath": "/usr/bin/mpicxx",
+      "name": "Linux MPICH PETSc",
+      "compilerPath": "/home/votrongnam/opt/mpich-4.0-ch3-cxx/bin/mpicxx",
       "cppStandard": "c++17",
       "intelliSenseMode": "linux-gcc-x64",
-      "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+      "compileCommands": "${workspaceFolder}/build-mpich-release/compile_commands.json",
       "includePath": [
         "${workspaceFolder}/cpp/include",
-        "/usr/lib/petscdir/petsc3.15/x86_64-linux-gnu-real/include",
-        "/usr/lib/x86_64-linux-gnu/openmpi/include",
-        "/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi",
+        "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/include",
+        "/home/votrongnam/opt/mpich-4.0-ch3-cxx/include",
         "${workspaceFolder}/**"
       ],
       "defines": [

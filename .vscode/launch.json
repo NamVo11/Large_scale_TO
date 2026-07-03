@@ -2,14 +2,31 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug: stage1_petsc_backend",
+      "name": "Debug: stage1_petsc_backend local",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build/stage1_petsc_backend",
+      "program": "${workspaceFolder}/build-mpich-release/stage1_petsc_backend",
       "args": [],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
-      "environment": [],
+      "environment": [
+        {
+          "name": "MPIEXEC_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "MPICH_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "HWLOC_COMPONENTS",
+          "value": "-gl"
+        },
+        {
+          "name": "PKG_CONFIG_PATH",
+          "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+        }
+      ],
       "externalConsole": false,
       "MIMode": "gdb",
       "miDebuggerPath": "/usr/bin/gdb",
@@ -20,7 +37,7 @@
           "ignoreFailures": true
         }
       ],
-      "preLaunchTask": "CMake: build Debug"
+      "preLaunchTask": "Prepare: local debug"
     }
   ]
 }
