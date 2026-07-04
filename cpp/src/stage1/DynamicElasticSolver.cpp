@@ -1,6 +1,6 @@
-#include "DynamicElasticSolver.hpp"
+#include "stage1/DynamicElasticSolver.hpp"
 
-#include "FEMH8.hpp"
+#include "stage1/FEMH8.hpp"
 
 #include <algorithm>
 #include <cmath>

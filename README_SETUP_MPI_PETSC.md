@@ -518,3 +518,10 @@ bash scripts/mpiexec_mpich_ch3_cxx.sh -n 1 build-mpich-release/stage1_petsc_back
 bash scripts/run_mpich_multinode_smoke.sh localhost,192.168.11.21 2
 bash scripts/run_mpich_multinode_backend.sh localhost,192.168.11.21 2
 ```
+
+git add .gitignore
+git commit -m"--"
+git push origin main
+
+git fetch origin
+git reset --hard origin/main

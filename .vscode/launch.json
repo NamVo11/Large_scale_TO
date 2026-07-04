@@ -38,6 +38,329 @@
         }
       ],
       "preLaunchTask": "Prepare: local debug"
+    },
+    {
+      "name": "Debug: stage2_dynamic_forward 2D tiny 1 rank",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build-mpich-debug/stage2_dynamic_forward",
+      "args": [
+        "-nelx",
+        "4",
+        "-nely",
+        "2",
+        "-nstep",
+        "2",
+        "-stage2_out",
+        "results/vscode_stage2_debug_2d",
+        "-fom_solver_type",
+        "direct"
+      ],
+      "stopAtEntry": true,
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        {
+          "name": "MPIEXEC_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "MPICH_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "HWLOC_COMPONENTS",
+          "value": "-gl"
+        },
+        {
+          "name": "LD_LIBRARY_PATH",
+          "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib"
+        },
+        {
+          "name": "PKG_CONFIG_PATH",
+          "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+        }
+      ],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "preLaunchTask": "Prepare: stage2 local debug"
+    },
+    {
+      "name": "Debug: stage2 optimization tiny 1 rank",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build-mpich-debug/stage2_dynamic_forward",
+      "args": [
+        "-run_optimization",
+        "1",
+        "-max_iter",
+        "1",
+        "-nelx",
+        "4",
+        "-nely",
+        "2",
+        "-nstep",
+        "2",
+        "-stage2_out",
+        "results/vscode_stage2_debug_optimization_tiny",
+        "-fom_solver_type",
+        "direct"
+      ],
+      "stopAtEntry": true,
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        {
+          "name": "MPIEXEC_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "MPICH_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "HWLOC_COMPONENTS",
+          "value": "-gl"
+        },
+        {
+          "name": "LD_LIBRARY_PATH",
+          "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib"
+        },
+        {
+          "name": "PKG_CONFIG_PATH",
+          "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+        }
+      ],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "preLaunchTask": "Prepare: stage2 local debug"
+    },
+    {
+      "name": "Debug: stage2 optimization tiny live density 1 rank",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build-mpich-debug/stage2_dynamic_forward",
+      "args": [
+        "-run_optimization",
+        "1",
+        "-max_iter",
+        "2",
+        "-density_plot_interval",
+        "1",
+        "-nelx",
+        "4",
+        "-nely",
+        "2",
+        "-nstep",
+        "2",
+        "-stage2_out",
+        "results/vscode_stage2_debug_optimization_live",
+        "-fom_solver_type",
+        "direct"
+      ],
+      "stopAtEntry": true,
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        {
+          "name": "MPIEXEC_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "MPICH_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "HWLOC_COMPONENTS",
+          "value": "-gl"
+        },
+        {
+          "name": "LD_LIBRARY_PATH",
+          "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib"
+        },
+        {
+          "name": "PKG_CONFIG_PATH",
+          "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+        }
+      ],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "preLaunchTask": "Prepare: stage2 local debug"
+    },
+    {
+      "name": "Debug: main_Nam",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build-mpich-debug/stage2_dynamic_forward",
+      "args": [
+        "-run_optimization",
+        "1",
+        "-density_plot_interval",
+        "1",
+        "-stage2_out",
+        "results/Nam1111",
+        "-fom_solver_type",
+        "direct"
+      ],
+      "stopAtEntry": true,
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        {
+          "name": "MPIEXEC_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "MPICH_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "HWLOC_COMPONENTS",
+          "value": "-gl"
+        },
+        {
+          "name": "LD_LIBRARY_PATH",
+          "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib"
+        },
+        {
+          "name": "PKG_CONFIG_PATH",
+          "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+        }
+      ],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "preLaunchTask": "Prepare: stage2 local debug"
+    },
+    {
+      "name": "Debug: stage2_dynamic_forward 2D default 1 rank",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build-mpich-debug/stage2_dynamic_forward",
+      "args": [
+        "-nelx",
+        "600",
+        "-nely",
+        "200",
+        "-nstep",
+        "100",
+        "-stage2_out",
+        "results/vscode_stage2_debug_2d_default",
+        "-fom_solver_type",
+        "iterative",
+        "-ksp_type",
+        "cg",
+        "-pc_type",
+        "gamg",
+        "-ksp_rtol",
+        "1e-8",
+        "-ksp_max_it",
+        "10000"
+      ],
+      "stopAtEntry": true,
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        {
+          "name": "MPIEXEC_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "MPICH_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "HWLOC_COMPONENTS",
+          "value": "-gl"
+        },
+        {
+          "name": "LD_LIBRARY_PATH",
+          "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib"
+        },
+        {
+          "name": "PKG_CONFIG_PATH",
+          "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+        }
+      ],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "preLaunchTask": "Prepare: stage2 local debug"
+    },
+    {
+      "name": "Debug: stage2 code defaults 1 rank",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build-mpich-debug/stage2_dynamic_forward",
+      "args": [],
+      "stopAtEntry": true,
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        {
+          "name": "MPIEXEC_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "MPICH_PORT_RANGE",
+          "value": "45010:46000"
+        },
+        {
+          "name": "HWLOC_COMPONENTS",
+          "value": "-gl"
+        },
+        {
+          "name": "LD_LIBRARY_PATH",
+          "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib"
+        },
+        {
+          "name": "PKG_CONFIG_PATH",
+          "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+        }
+      ],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "preLaunchTask": "Prepare: stage2 local debug"
     }
   ]
 }

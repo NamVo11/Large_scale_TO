@@ -1,6 +1,6 @@
 #pragma once
 
-#include "CaseData.hpp"
+#include "stage1/CaseData.hpp"
 
 #include <petscksp.h>
 #include <string>
