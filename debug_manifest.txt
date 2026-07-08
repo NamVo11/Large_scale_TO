@@ -1,5 +1,5 @@
-case=/home/votrongnam/PROJECT/Large_scale_TO/cases/large_h8_120x30x12
-out=/home/votrongnam/PROJECT/Large_scale_TO/results/diag_120_local8
+case=/home/votrongnam/PROJECT/Large_scale_TO/cases/large_h8_240x60x24
+out=/home/votrongnam/PROJECT/Large_scale_TO/results/vscode_240x60x24_np8
 no_history=1
 ksp_type=cg
 pc_type=gamg

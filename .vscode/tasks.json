@@ -114,8 +114,8 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "LABEL": "Mystrategy_rank1_10_max_rank_20_np1",
-          "SOLVE_MODE": "ROM",
+          "LABEL": "FOM",//Mystrategy_rank1_10_max_rank_20_np1
+          "SOLVE_MODE": "FOM",
           "METHOD_NAME": "MyStrategy",
           "FOM_SOLVER_TYPE": "direct",
           "ROM_TOL": "0.02",
@@ -447,7 +447,7 @@
     },
     //-----------------------------------------------------------
     {
-      "label": "Run: stage2 2D 600x200 100 steps 8 ranks",
+      "label": "Run: stage2 2D 1800x600 100 steps 8 ranks",
       "type": "shell",
       "command": "scripts/mpiexec_mpich_ch3_cxx.sh",
       "args": [
@@ -461,13 +461,13 @@
         "-Ly",
         "200",
         "-nelx",
-        "600",
+        "1800",
         "-nely",
-        "200",
+        "600",
         "-nstep",
         "100",
         "-stage2_out",
-        "results/vscode_stage2_2d_600x200_np8",
+        "results/try______np8",
         "-fom_solver_type",
         "iterative",
         "-ksp_type",
@@ -742,7 +742,7 @@
       "command": "python3",
       "args": [
         "scripts/watch_density_live.py",
-        "results/Mystrategy_rank1_10_max_rank_20_np1",
+        "results/FOM",
         "--scale",
         "8",
         "--refresh",
@@ -947,7 +947,7 @@
     },
     //-----------------------------------------------------------
     {
-      "label": "Run: stage2 2D 600x200 100 steps 8 ranks multinode",
+      "label": "Run: Nam_try2D_multinode_np8",
       "type": "shell",
       "command": "scripts/run_stage2_multinode.sh",
       "args": [
@@ -960,13 +960,13 @@
         "-Ly",
         "200",
         "-nelx",
-        "600",
+        "1800",
         "-nely",
-        "200",
+        "600",
         "-nstep",
         "100",
         "-stage2_out",
-        "results/vscode_stage2_2d_600x200_multinode_np8",
+        "results/Nam_try2D_multinode_np8",
         "-fom_solver_type",
         "iterative",
         "-ksp_type",

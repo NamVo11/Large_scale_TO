@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import csv
 import http.server
 import socketserver
 import threading
@@ -70,24 +71,55 @@ def jet_palette():
     return palette
 
 
-def latest_pgm(density_dir: Path):
+def latest_frame(density_dir: Path):
+    files = sorted(density_dir.glob("density_iter_*.csv"))
+    if files:
+        for csv_file in reversed(files):
+            if csv_file.with_suffix(".pgm").exists():
+                return csv_file
+        return files[-1]
     files = sorted(density_dir.glob("density_iter_*.pgm"))
     return files[-1] if files else None
 
 
+def csv_to_gray(csv_path: Path) -> Image.Image:
+    rows = []
+    nelx = 0
+    nely = 0
+    with csv_path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            i = int(row["i"])
+            j = int(row["j"])
+            x = float(row["xPhys"])
+            rows.append((i, j, x))
+            nelx = max(nelx, i + 1)
+            nely = max(nely, j + 1)
+    gray = Image.new("L", (nelx, nely), 0)
+    pix = gray.load()
+    for i, j, x in rows:
+        # Browser images have y downward. MATLAB compare uses YDir=normal, so flip y
+        # here while keeping the same CSV data and color scale [0, 1].
+        pix[i, nely - 1 - j] = int(round(255 * max(0.0, min(1.0, x))))
+    return gray
+
+
 def convert_latest(density_dir: Path, scale: int, last_seen: Path | None):
-    pgm = latest_pgm(density_dir)
-    if pgm is None or pgm == last_seen:
+    frame = latest_frame(density_dir)
+    if frame is None or frame == last_seen:
         return last_seen, False
     nearest = getattr(getattr(Image, "Resampling", Image), "NEAREST")
-    gray = Image.open(pgm).convert("L")
+    if frame.suffix.lower() == ".csv":
+        gray = csv_to_gray(frame)
+    else:
+        gray = Image.open(frame).convert("L")
     if scale > 1:
         gray = gray.resize((gray.width * scale, gray.height * scale), nearest)
     color = gray.convert("P")
     color.putpalette(jet_palette())
     color.save(density_dir / "latest_density.png")
-    (density_dir / "latest_density.txt").write_text(pgm.name + "\n", encoding="utf-8")
-    return pgm, True
+    (density_dir / "latest_density.txt").write_text(frame.name + "\n", encoding="utf-8")
+    return frame, True
 
 
 def serve(directory: Path, port: int):

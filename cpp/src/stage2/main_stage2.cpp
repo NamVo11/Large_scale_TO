@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
         Geometry geom;
         geom.Lx = 1200.0;
         geom.Ly = 400.0;
-        geom.Lz = 120.0;
+        geom.Lz = 400.0;
         geom.nelx = 120;
         geom.nely = 40;
         geom.nelz = 1;
