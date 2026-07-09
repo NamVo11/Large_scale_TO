@@ -22,35 +22,39 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "LABEL": "FOM_direct_np1",
-          "SOLVE_MODE": "FOM",
+          "LABEL": "faifajfgdas",
+          "SOLVE_MODE": "ROM",
           "METHOD_NAME": "MyStrategy",
           "FOM_SOLVER_TYPE": "direct",
           "ROM_TOL": "0.02",
-          "RANK1": "0",
-          "MAX_RANK": "0",
-          "ONLINE": "0",
+          "RANK1": "10",
+          "MAX_RANK": "20",
+          "ONLINE": "1",
           "LX": "1200",
           "LY": "400",
           "LZ": "120",
           "TMAX": "0.008",
           "NP": "1",
-          "NELX": "120",
-          "NELY": "40",
-          "NELZ": "1",
+          "NELX": "1200",
+          "NELY": "400",
+          "NELZ": "2",
           "NSTEP": "100",
-          "MAX_ITER": "50",
+          "MAX_ITER": "300",
           "MOVE": "0.1",
           "VOLUME_LIMIT": "0.4",
           "SENS_TYPE": "AVM",
           "X0": "0.5",
           "FORCE_AMP": "3333",
           "P_RHO": "0",
-          "KSP_TYPE": "preonly",
-          "PC_TYPE": "lu",
+          "KSP_TYPE": "preonly", //cg
+          "PC_TYPE": "lu", //gamg
           "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso",
           "DENSITY_INTERVAL": "1",
-          "SAVE_DENSITY": "1"
+          "SAVE_DENSITY": "1",
+          "OMP_NUM_THREADS": "8",
+          "MKL_NUM_THREADS": "8",
+          "OMP_PROC_BIND": "spread",
+          "OMP_PLACES": "cores"
         }
       },
       "dependsOn": "CMake: build stage2 MPICH MKL Release",
@@ -68,7 +72,7 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "LABEL": "Mystrategy_rank1_0_max_rank_10_np1",//
+          "LABEL": "Mystrategy_rank1_0_max_rank_10_np1", //
           "SOLVE_MODE": "FOM",
           "METHOD_NAME": "MyStrategy",
           "FOM_SOLVER_TYPE": "direct",
@@ -114,7 +118,7 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "LABEL": "FOM",//Mystrategy_rank1_10_max_rank_20_np1
+          "LABEL": "FOM", //Mystrategy_rank1_10_max_rank_20_np1
           "SOLVE_MODE": "FOM",
           "METHOD_NAME": "MyStrategy",
           "FOM_SOLVER_TYPE": "direct",
@@ -742,7 +746,7 @@
       "command": "python3",
       "args": [
         "scripts/watch_density_live.py",
-        "results/FOM",
+        "results/faifajfgdas",
         "--scale",
         "8",
         "--refresh",

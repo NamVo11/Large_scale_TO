@@ -42,8 +42,8 @@ BINARY="${BINARY:-$ROOT/$BUILD_DIR/stage2_dynamic_forward}"
 OUT="${OUT:-results/$LABEL}"
 
 export LD_LIBRARY_PATH="/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:/opt/intel/oneapi/mkl/2024.2/lib:${LD_LIBRARY_PATH:-}"
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-2}"
-export MKL_NUM_THREADS="${MKL_NUM_THREADS:-2}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-8}"
 
 if [[ ! -x "$BINARY" ]]; then
   cmake --build "$BUILD_DIR" --target stage2_dynamic_forward -j "${BUILD_JOBS:-8}"
