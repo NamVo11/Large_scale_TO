@@ -4,13 +4,21 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 MPICH_HOME="${MPICH_HOME:-/home/votrongnam/opt/mpich-4.0-ch3-cxx}"
-PORT_RANGE="${MPIEXEC_PORT_RANGE:-45010:46000}"
+PETSC_PREFIX="${PETSC_PREFIX:-/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps}"
+MKLROOT="${MKLROOT:-/opt/intel/oneapi/mkl/2025.0}"
+#PORT_RANGE="${MPIEXEC_PORT_RANGE:-45010:46000}"
+PORT_RANGE="${MPIEXEC_PORT_RANGE:-47010:48000}"
 
 HOSTS="${1:-localhost,192.168.11.21}"
 NP="${2:-2}"
 
 BUILD_DIR="${BUILD_DIR:-build-mpich-mkl2025-mumps-release}"
-BINARY="${BINARY:-$ROOT/$BUILD_DIR/stage2_dynamic_forward}"
+
+if [[ "$BUILD_DIR" != /* ]]; then
+    BUILD_DIR="$ROOT/$BUILD_DIR"
+fi
+
+BINARY="${BINARY:-$BUILD_DIR/stage2_dynamic_forward}"
 
 if [[ $# -ge 1 ]]; then
     shift
@@ -67,9 +75,9 @@ export MPIEXEC_PORT_RANGE="$PORT_RANGE"
 export MPICH_PORT_RANGE="$PORT_RANGE"
 export HWLOC_COMPONENTS="${HWLOC_COMPONENTS:--gl}"
 
-PETSC_LIB="/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps/lib"
-MPICH_LIB="/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib"
-MKL_LIB="/opt/intel/oneapi/mkl/2025.0/lib"
+PETSC_LIB="${PETSC_PREFIX}/lib"
+MPICH_LIB="${MPICH_HOME}/lib"
+MKL_LIB="${MKLROOT}/lib"
 
 export LD_LIBRARY_PATH="${PETSC_LIB}:${MPICH_LIB}:${MKL_LIB}:${LD_LIBRARY_PATH:-}"
 

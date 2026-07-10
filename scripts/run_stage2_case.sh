@@ -117,6 +117,8 @@ APP_ARGS=(
     -nely "$NELY"
     -nelz "$NELZ"
 
+    -fem_type "$fem_type"
+
     -nstep "$NSTEP"
 
     -max_iter "$MAX_ITER"

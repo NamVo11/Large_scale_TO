@@ -103,7 +103,7 @@
         "env": {
           "BUILD_DIR": "build-mpich-release",
           "CASE_CONFIG": "case_study/test1/600x200_sin_1cycle_125Hz.conf",
-          "NP": "8",
+          "NP": "2",
           "HOSTS": "localhost,192.168.11.21",
           "KSP_TYPE": "cg",
           "PC_TYPE": "gamg",
