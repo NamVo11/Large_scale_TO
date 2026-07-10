@@ -2,160 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "stage2 batch: FOM + MyStrategy examples",
-      "dependsOrder": "sequence",
-      "dependsOn": [
-        "FOM_direct_np1: stage2 case",
-        "Mystrategy_rank1_0_max_rank_10_np1: stage2 case",
-        "Mystrategy_iterative_np8_max_rank_10: stage2 case"
-      ],
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "FOM_direct_np1: stage2 case",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "scripts/run_stage2_case.sh"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "LABEL": "faifajfgdas",
-          "SOLVE_MODE": "ROM",
-          "METHOD_NAME": "MyStrategy",
-          "FOM_SOLVER_TYPE": "direct",
-          "ROM_TOL": "0.02",
-          "RANK1": "10",
-          "MAX_RANK": "20",
-          "ONLINE": "1",
-          "LX": "1200",
-          "LY": "400",
-          "LZ": "120",
-          "TMAX": "0.008",
-          "NP": "1",
-          "NELX": "1200",
-          "NELY": "400",
-          "NELZ": "2",
-          "NSTEP": "100",
-          "MAX_ITER": "300",
-          "MOVE": "0.1",
-          "VOLUME_LIMIT": "0.4",
-          "SENS_TYPE": "AVM",
-          "X0": "0.5",
-          "FORCE_AMP": "3333",
-          "P_RHO": "0",
-          "KSP_TYPE": "preonly", //cg
-          "PC_TYPE": "lu", //gamg
-          "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso",
-          "DENSITY_INTERVAL": "1",
-          "SAVE_DENSITY": "1",
-          "OMP_NUM_THREADS": "8",
-          "MKL_NUM_THREADS": "8",
-          "OMP_PROC_BIND": "spread",
-          "OMP_PLACES": "cores"
-        }
-      },
-      "dependsOn": "CMake: build stage2 MPICH MKL Release",
-      "group": "test",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Mystrategy_rank1_0_max_rank_10_np1: stage2 case",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "scripts/run_stage2_case.sh"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "LABEL": "Mystrategy_rank1_0_max_rank_10_np1", //
-          "SOLVE_MODE": "FOM",
-          "METHOD_NAME": "MyStrategy",
-          "FOM_SOLVER_TYPE": "direct",
-          "ROM_TOL": "0.02",
-          "RANK1": "0",
-          "MAX_RANK": "10",
-          "ONLINE": "1",
-          "LX": "1200",
-          "LY": "400",
-          "LZ": "120",
-          "TMAX": "0.008",
-          "NP": "1",
-          "NELX": "120",
-          "NELY": "40",
-          "NELZ": "1",
-          "NSTEP": "100",
-          "MAX_ITER": "50",
-          "MOVE": "0.1",
-          "VOLUME_LIMIT": "0.4",
-          "SENS_TYPE": "AVM",
-          "X0": "0.5",
-          "FORCE_AMP": "3333",
-          "P_RHO": "0",
-          "KSP_TYPE": "preonly",
-          "PC_TYPE": "lu",
-          "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso",
-          "DENSITY_INTERVAL": "1",
-          "SAVE_DENSITY": "1"
-        }
-      },
-      "dependsOn": "CMake: build stage2 MPICH MKL Release",
-      "group": "test",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Mystrategy_rank1_10_max_rank_15_np1: stage2 case",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "scripts/run_stage2_case.sh"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "LABEL": "FOM", //Mystrategy_rank1_10_max_rank_20_np1
-          "SOLVE_MODE": "FOM",
-          "METHOD_NAME": "MyStrategy",
-          "FOM_SOLVER_TYPE": "direct",
-          "ROM_TOL": "0.02",
-          "RANK1": "10",
-          "MAX_RANK": "20",
-          "ONLINE": "1",
-          "LX": "1200",
-          "LY": "400",
-          "LZ": "120",
-          "TMAX": "0.008",
-          "NP": "1",
-          "NELX": "600",
-          "NELY": "200",
-          "NELZ": "1",
-          "NSTEP": "100",
-          "MAX_ITER": "200",
-          "MOVE": "0.1",
-          "VOLUME_LIMIT": "0.4",
-          "SENS_TYPE": "AVM",
-          "X0": "0.5",
-          "FORCE_AMP": "303",
-          "P_RHO": "0",
-          "KSP_TYPE": "preonly", //cg
-          "PC_TYPE": "lu", //gamg
-          "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso",
-          "DENSITY_INTERVAL": "1",
-          "SAVE_DENSITY": "1"
-        }
-      },
-      "dependsOn": "CMake: build stage2 MPICH MKL Release",
-      "group": "test",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "CMake: configure MPICH Debug",
+      "label": "CMake: configure stage2 Debug",
       "type": "shell",
       "command": "cmake",
       "args": [
@@ -171,34 +18,15 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps/lib/pkgconfig"
         }
       },
       "group": "build",
       "problemMatcher": []
     },
-    //-----------------------------------------------------------
+    //------------------------------------------------------------------
     {
-      "label": "CMake: build MPICH Debug",
-      "type": "shell",
-      "command": "cmake",
-      "args": [
-        "--build",
-        "${workspaceFolder}/build-mpich-debug",
-        "-j"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
-        }
-      },
-      "dependsOn": "CMake: configure MPICH Debug",
-      "problemMatcher": "$gcc"
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "CMake: build stage2 MPICH Debug",
+      "label": "CMake: build stage2 Debug",
       "type": "shell",
       "command": "cmake",
       "args": [
@@ -211,15 +39,15 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps/lib/pkgconfig"
         }
       },
-      "dependsOn": "CMake: configure MPICH Debug",
+      "dependsOn": "CMake: configure stage2 Debug",
       "problemMatcher": "$gcc"
     },
-    //-----------------------------------------------------------
+    //------------------------------------------------------------------
     {
-      "label": "CMake: configure MPICH Release",
+      "label": "CMake: configure stage2 Release",
       "type": "shell",
       "command": "cmake",
       "args": [
@@ -235,38 +63,15 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps/lib/pkgconfig"
         }
       },
       "group": "build",
       "problemMatcher": []
     },
-    //-----------------------------------------------------------
+    //------------------------------------------------------------------
     {
-      "label": "CMake: build MPICH Release",
-      "type": "shell",
-      "command": "cmake",
-      "args": [
-        "--build",
-        "${workspaceFolder}/build-mpich-release",
-        "-j"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
-        }
-      },
-      "dependsOn": "CMake: configure MPICH Release",
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "problemMatcher": "$gcc"
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "CMake: build stage2 MPICH Release",
+      "label": "CMake: build stage2 Release",
       "type": "shell",
       "command": "cmake",
       "args": [
@@ -279,781 +84,122 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps/lib/pkgconfig"
         }
       },
-      "dependsOn": "CMake: configure MPICH Release",
+      "dependsOn": "CMake: configure stage2 Release",
       "problemMatcher": "$gcc"
     },
-    //-----------------------------------------------------------
+    //------------------------------------------------------------------
     {
-      "label": "CMake: configure MPICH MKL Release",
+      "label": "Run: multi_node multi_rank",
       "type": "shell",
-      "command": "cmake",
+      "command": "bash",
       "args": [
-        "-S",
-        "${workspaceFolder}",
-        "-B",
-        "${workspaceFolder}/build-mpich-mkl-release",
-        "-DCMAKE_BUILD_TYPE=Release",
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        "-DCMAKE_CXX_COMPILER=/home/votrongnam/opt/mpich-4.0-ch3-cxx/bin/mpicxx",
-        "-DPETSC_PKG=PETSc"
+        "scripts/run_stage2_case.sh"
       ],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl/lib/pkgconfig"
+          "BUILD_DIR": "build-mpich-release",
+          "CASE_CONFIG": "case_study/test1/600x200_sin_1cycle_125Hz.conf",
+          "NP": "8",
+          "HOSTS": "localhost,192.168.11.21",
+          "KSP_TYPE": "cg",
+          "PC_TYPE": "gamg",
+          "PC_FACTOR_MAT_SOLVER_TYPE": "",
+          "OMP_NUM_THREADS": "1",
+          "MKL_NUM_THREADS": "1",
+          "OMP_PROC_BIND": "spread",
+          "OMP_PLACES": "cores"
         }
       },
-      "group": "build",
+      "dependsOn": "CMake: build stage2 Release",
+      "group": "test",
       "problemMatcher": []
     },
-    //-----------------------------------------------------------
+    //------------------------------------------------------------------
     {
-      "label": "CMake: build stage2 MPICH MKL Release",
+      "label": "Run: single node multi_rank",
       "type": "shell",
-      "command": "cmake",
+      "command": "bash",
       "args": [
-        "--build",
-        "${workspaceFolder}/build-mpich-mkl-release",
-        "--target",
-        "stage2_dynamic_forward",
-        "-j"
+        "scripts/run_stage2_case.sh"
       ],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl/lib/pkgconfig"
+          "BUILD_DIR": "build-mpich-release",
+          "CASE_CONFIG": "case_study/test1/600x200_sin_1cycle_125Hz.conf",
+          "NP": "8",
+          "HOSTS": "localhost",
+          "KSP_TYPE": "cg",
+          "PC_TYPE": "gamg",
+          "PC_FACTOR_MAT_SOLVER_TYPE": "",
+          "OMP_NUM_THREADS": "1",
+          "MKL_NUM_THREADS": "1",
+          "OMP_PROC_BIND": "spread",
+          "OMP_PLACES": "cores"
         }
       },
-      "dependsOn": "CMake: configure MPICH MKL Release",
-      "problemMatcher": "$gcc"
+      "dependsOn": "CMake: build stage2 Release",
+      "group": "test",
+      "problemMatcher": []
     },
-    //-----------------------------------------------------------
+    //------------------------------------------------------------------
     {
-      "label": "Manifest: simple smoke",
+      "label": "Run: single node single rank",
       "type": "shell",
       "command": "bash",
       "args": [
-        "scripts/make_manifest.sh",
-        "simple_3d_cantilever",
-        "vscode_simple_smoke",
-        "cg",
-        "gamg",
-        "1e-10",
-        "1",
-        "20000"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: local 1 rank",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "scripts/mpiexec_mpich_ch3_cxx.sh",
-        "-n",
-        "1",
-        "${workspaceFolder}/build-mpich-release/stage1_petsc_backend"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "dependsOn": [
-        "CMake: build MPICH Release",
-        "Manifest: simple smoke"
-      ],
-      "dependsOrder": "sequence",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Prepare: local debug",
-      "dependsOn": [
-        "CMake: build MPICH Debug",
-        "Manifest: simple smoke"
-      ],
-      "dependsOrder": "sequence",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Prepare: stage2 local debug",
-      "dependsOn": [
-        "CMake: build stage2 MPICH Debug"
-      ],
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: stage2 code defaults 1 rank",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "-lc",
-        "export LD_LIBRARY_PATH=/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:$LD_LIBRARY_PATH; scripts/mpiexec_mpich_ch3_cxx.sh -n 1 build-mpich-release/stage2_dynamic_forward"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "dependsOn": "CMake: build stage2 MPICH Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: stage2 code defaults 2 ranks",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "-lc",
-        "export LD_LIBRARY_PATH=/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:$LD_LIBRARY_PATH; scripts/mpiexec_mpich_ch3_cxx.sh -n 2 build-mpich-release/stage2_dynamic_forward"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "dependsOn": "CMake: build stage2 MPICH Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: stage2 2D local 1 rank",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "-lc",
-        "export LD_LIBRARY_PATH=/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:$LD_LIBRARY_PATH; scripts/mpiexec_mpich_ch3_cxx.sh -n 1 build-mpich-release/stage2_dynamic_forward -nelx 24 -nely 8 -nstep 20 -stage2_out results/vscode_stage2_2d_np1 -fom_solver_type iterative -ksp_type cg -pc_type gamg -ksp_rtol 1e-8 -ksp_max_it 10000"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "dependsOn": "CMake: build stage2 MPICH Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: stage2 2D local 2 ranks",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "-lc",
-        "export LD_LIBRARY_PATH=/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:$LD_LIBRARY_PATH; scripts/mpiexec_mpich_ch3_cxx.sh -n 2 build-mpich-release/stage2_dynamic_forward -nelx 24 -nely 8 -nstep 20 -stage2_out results/vscode_stage2_2d_np2 -fom_solver_type iterative -ksp_type cg -pc_type gamg -ksp_rtol 1e-8 -ksp_max_it 10000"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "dependsOn": "CMake: build stage2 MPICH Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: stage2 2D 1800x600 100 steps 8 ranks",
-      "type": "shell",
-      "command": "scripts/mpiexec_mpich_ch3_cxx.sh",
-      "args": [
-        "-n",
-        "8",
-        "build-mpich-release/stage2_dynamic_forward",
-        "-fem_type",
-        "plane_stress",
-        "-Lx",
-        "600",
-        "-Ly",
-        "200",
-        "-nelx",
-        "1800",
-        "-nely",
-        "600",
-        "-nstep",
-        "100",
-        "-stage2_out",
-        "results/try______np8",
-        "-fom_solver_type",
-        "iterative",
-        "-ksp_type",
-        "cg",
-        "-pc_type",
-        "gamg",
-        "-ksp_rtol",
-        "1e-8",
-        "-ksp_max_it",
-        "10000"
+        "scripts/run_stage2_case.sh"
       ],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "LD_LIBRARY_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:${env:LD_LIBRARY_PATH}"
-        }
-      },
-      "dependsOn": "CMake: build stage2 MPICH Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: stage2 2D 600x200 100 steps direct 1 rank",
-      "type": "shell",
-      "command": "scripts/mpiexec_mpich_ch3_cxx.sh",
-      "args": [
-        "-n",
-        "1",
-        "build-mpich-release/stage2_dynamic_forward",
-        "-fem_type",
-        "plane_stress",
-        "-Lx",
-        "600",
-        "-Ly",
-        "200",
-        "-nelx",
-        "600",
-        "-nely",
-        "200",
-        "-nstep",
-        "100",
-        "-stage2_out",
-        "results/vscode_stage2_2d_600x200_direct_np1",
-        "-fom_solver_type",
-        "direct",
-        "-ksp_type",
-        "preonly",
-        "-pc_type",
-        "lu"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "LD_LIBRARY_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:${env:LD_LIBRARY_PATH}"
-        }
-      },
-      "dependsOn": "CMake: build stage2 MPICH Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: stage2 2D 600x200 100 steps MKL direct 1 rank",
-      "type": "shell",
-      "command": "scripts/mpiexec_mpich_ch3_cxx.sh",
-      "args": [
-        "-n",
-        "1",
-        "build-mpich-mkl-release/stage2_dynamic_forward",
-        "-fem_type",
-        "plane_stress",
-        "-Lx",
-        "600",
-        "-Ly",
-        "200",
-        "-nelx",
-        "600",
-        "-nely",
-        "200",
-        "-nstep",
-        "100",
-        "-stage2_out",
-        "results/vscode_stage2_2d_600x200_mkl_direct_np1",
-        "-fom_solver_type",
-        "direct",
-        "-ksp_type",
-        "preonly",
-        "-pc_type",
-        "lu",
-        "-pc_factor_mat_solver_type",
-        "mkl_pardiso"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "LD_LIBRARY_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:/opt/intel/oneapi/mkl/2024.2/lib:${env:LD_LIBRARY_PATH}",
+          "BUILD_DIR": "build-mpich-release",
+          "CASE_CONFIG": "case_study/test1/600x200_sin_1cycle_125Hz.conf",
+          "NP": "1",
+          "HOSTS": "localhost",
+          "KSP_TYPE": "preonly",
+          "PC_TYPE": "lu",
+          "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso",
           "OMP_NUM_THREADS": "8",
           "MKL_NUM_THREADS": "8",
           "OMP_PROC_BIND": "spread",
           "OMP_PLACES": "cores"
         }
       },
-      "dependsOn": "CMake: build stage2 MPICH MKL Release",
+      "dependsOn": "CMake: build stage2 Release",
+      "group": "test",
       "problemMatcher": []
     },
-    //-----------------------------------------------------------
+    //------------------------------------------------------------------
     {
-      "label": "Run: stage2 optimization tiny MKL direct 1 rank",
+      "label": "Run: single node single rank Debug",
       "type": "shell",
-      "command": "scripts/mpiexec_mpich_ch3_cxx.sh",
+      "command": "bash",
       "args": [
-        "-n",
-        "1",
-        "build-mpich-mkl-release/stage2_dynamic_forward",
-        "-run_optimization",
-        "1",
-        "-max_iter",
-        "2",
-        "-nelx",
-        "12",
-        "-nely",
-        "4",
-        "-nstep",
-        "5",
-        "-stage2_out",
-        "results/vscode_stage2_optimization_tiny_mkl",
-        "-fom_solver_type",
-        "direct",
-        "-ksp_type",
-        "preonly",
-        "-pc_type",
-        "lu",
-        "-pc_factor_mat_solver_type",
-        "mkl_pardiso"
+        "scripts/run_stage2_case.sh"
       ],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "LD_LIBRARY_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:/opt/intel/oneapi/mkl/2024.2/lib:${env:LD_LIBRARY_PATH}",
-          "OMP_NUM_THREADS": "2",
-          "MKL_NUM_THREADS": "2"
-        }
-      },
-      "dependsOn": "CMake: build stage2 MPICH MKL Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: stage2 sensitivity debug MKL direct 1 rank",
-      "type": "shell",
-      "command": "scripts/mpiexec_mpich_ch3_cxx.sh",
-      "args": [
-        "-n",
-        "1",
-        "build-mpich-mkl-release/stage2_dynamic_forward",
-        "-run_optimization",
-        "1",
-        "-sens_type",
-        "Debug",
-        "-max_iter",
-        "0",
-        "-debug_fd_max_checks",
-        "8",
-        "-debug_fd_epsilon",
-        "1e-6",
-        "-nelx",
-        "4",
-        "-nely",
-        "2",
-        "-nstep",
-        "2",
-        "-stage2_out",
-        "results/vscode_stage2_sensitivity_debug_mkl",
-        "-fom_solver_type",
-        "direct",
-        "-ksp_type",
-        "preonly",
-        "-pc_type",
-        "lu",
-        "-pc_factor_mat_solver_type",
-        "mkl_pardiso"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "LD_LIBRARY_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:/opt/intel/oneapi/mkl/2024.2/lib:${env:LD_LIBRARY_PATH}",
-          "OMP_NUM_THREADS": "2",
-          "MKL_NUM_THREADS": "2"
-        }
-      },
-      "dependsOn": "CMake: build stage2 MPICH MKL Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Plot: density history from last test",
-      "type": "shell",
-      "command": "python3",
-      "args": [
-        "scripts/plot_density_history.py",
-        "results/vscode_stage2_optimization_tiny_mkl",
-        "--scale",
-        "8",
-        "--duration",
-        "250"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Watch: density live last test",
-      "type": "shell",
-      "command": "python3",
-      "args": [
-        "scripts/watch_density_live.py",
-        "results/vscode_stage2_optimization_tiny_live",
-        "--scale",
-        "8",
-        "--refresh",
-        "0.5",
-        "--port",
-        "8765"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "isBackground": true,
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Watch: density live debug",
-      "type": "shell",
-      "command": "python3",
-      "args": [
-        "scripts/watch_density_live.py",
-        "results/vscode_stage2_debug_optimization_live",
-        "--scale",
-        "24",
-        "--refresh",
-        "0.5",
-        "--port",
-        "8766"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "isBackground": true,
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: stage2 live density demo one-click",
-      "type": "shell",
-      "command": "scripts/run_stage2_live_density_demo.sh",
-      "args": [
-        "results/vscode_stage2_optimization_tiny_live",
-        "8765"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "dependsOn": "CMake: build stage2 MPICH MKL Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Watch: main_Nam",
-      "type": "shell",
-      "command": "python3",
-      "args": [
-        "scripts/watch_density_live.py",
-        "results/faifajfgdas",
-        "--scale",
-        "8",
-        "--refresh",
-        "0.5",
-        "--port",
-        "8765"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "isBackground": true,
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: main_Nam 1 rank",
-      "type": "shell",
-      "command": "scripts/mpiexec_mpich_ch3_cxx.sh",
-      "args": [
-        "-n",
-        "1",
-        "build-mpich-mkl-release/stage2_dynamic_forward",
-        "-run_optimization",
-        "1",
-        "-density_plot_interval",
-        "1",
-        "-stage2_out",
-        "results/Nam1111",
-        "-fom_solver_type",
-        "direct",
-        "-ksp_type",
-        "preonly",
-        "-pc_type",
-        "lu",
-        "-pc_factor_mat_solver_type",
-        "mkl_pardiso"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "LD_LIBRARY_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:/opt/intel/oneapi/mkl/2024.2/lib:${env:LD_LIBRARY_PATH}",
-          "OMP_NUM_THREADS": "2",
-          "MKL_NUM_THREADS": "2"
-        }
-      },
-      "dependsOn": "CMake: build stage2 MPICH MKL Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: main_Nam 2 ranks",
-      "type": "shell",
-      "command": "scripts/mpiexec_mpich_ch3_cxx.sh",
-      "args": [
-        "-n",
-        "2",
-        "build-mpich-mkl-release/stage2_dynamic_forward",
-        "-run_optimization",
-        "1",
-        "-density_plot_interval",
-        "1",
-        "-stage2_out",
-        "results/Nam1111",
-        "-fom_solver_type",
-        "iterative",
-        "-ksp_type",
-        "cg",
-        "-pc_type",
-        "gamg",
-        "-ksp_rtol",
-        "1e-8",
-        "-ksp_max_it",
-        "10000"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "LD_LIBRARY_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:/opt/intel/oneapi/mkl/2024.2/lib:${env:LD_LIBRARY_PATH}",
+          "BUILD_DIR": "build-mpich-debug",
+          "CASE_CONFIG": "case_study/test1/600x200_sin_1cycle_125Hz.conf",
+          "NP": "1",
+          "HOSTS": "localhost",
+          "KSP_TYPE": "preonly",
+          "PC_TYPE": "lu",
+          "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso",
           "OMP_NUM_THREADS": "1",
-          "MKL_NUM_THREADS": "1"
+          "MKL_NUM_THREADS": "1",
+          "OMP_PROC_BIND": "spread",
+          "OMP_PLACES": "cores"
         }
       },
-      "dependsOn": "CMake: build stage2 MPICH MKL Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: main_Nam 4 ranks",
-      "type": "shell",
-      "command": "scripts/mpiexec_mpich_ch3_cxx.sh",
-      "args": [
-        "-n",
-        "4",
-        "build-mpich-mkl-release/stage2_dynamic_forward",
-        "-run_optimization",
-        "1",
-        "-density_plot_interval",
-        "1",
-        "-stage2_out",
-        "results/Nam1111",
-        "-fom_solver_type",
-        "iterative",
-        "-ksp_type",
-        "cg",
-        "-pc_type",
-        "gamg",
-        "-ksp_rtol",
-        "1e-8",
-        "-ksp_max_it",
-        "10000"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "LD_LIBRARY_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:/opt/intel/oneapi/mkl/2024.2/lib:${env:LD_LIBRARY_PATH}",
-          "OMP_NUM_THREADS": "1",
-          "MKL_NUM_THREADS": "1"
-        }
-      },
-      "dependsOn": "CMake: build stage2 MPICH MKL Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: main_Nam 8 ranks",
-      "type": "shell",
-      "command": "scripts/mpiexec_mpich_ch3_cxx.sh",
-      "args": [
-        "-n",
-        "8",
-        "build-mpich-mkl-release/stage2_dynamic_forward",
-        "-run_optimization",
-        "1",
-        "-density_plot_interval",
-        "1",
-        "-stage2_out",
-        "results/Nam1111",
-        "-fom_solver_type",
-        "iterative",
-        "-ksp_type",
-        "cg",
-        "-pc_type",
-        "gamg",
-        "-ksp_rtol",
-        "1e-8",
-        "-ksp_max_it",
-        "10000"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "LD_LIBRARY_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:/opt/intel/oneapi/mkl/2024.2/lib:${env:LD_LIBRARY_PATH}",
-          "OMP_NUM_THREADS": "1",
-          "MKL_NUM_THREADS": "1"
-        }
-      },
-      "dependsOn": "CMake: build stage2 MPICH MKL Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: stage2 optimization tiny live density MKL direct 1 rank",
-      "type": "shell",
-      "command": "scripts/mpiexec_mpich_ch3_cxx.sh",
-      "args": [
-        "-n",
-        "1",
-        "build-mpich-mkl-release/stage2_dynamic_forward",
-        "-run_optimization",
-        "1",
-        "-max_iter",
-        "2",
-        "-density_plot_interval",
-        "1",
-        "-nelx",
-        "4",
-        "-nely",
-        "2",
-        "-nstep",
-        "2",
-        "-stage2_out",
-        "results/vscode_stage2_optimization_tiny_live",
-        "-fom_solver_type",
-        "direct",
-        "-ksp_type",
-        "preonly",
-        "-pc_type",
-        "lu",
-        "-pc_factor_mat_solver_type",
-        "mkl_pardiso"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "LD_LIBRARY_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:/opt/intel/oneapi/mkl/2024.2/lib:${env:LD_LIBRARY_PATH}",
-          "OMP_NUM_THREADS": "2",
-          "MKL_NUM_THREADS": "2"
-        }
-      },
-      "dependsOn": "CMake: build stage2 MPICH MKL Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: Nam_try2D_multinode_np8",
-      "type": "shell",
-      "command": "scripts/run_stage2_multinode.sh",
-      "args": [
-        "localhost,192.168.11.21",
-        "8",
-        "-fem_type",
-        "plane_stress",
-        "-Lx",
-        "600",
-        "-Ly",
-        "200",
-        "-nelx",
-        "1800",
-        "-nely",
-        "600",
-        "-nstep",
-        "100",
-        "-stage2_out",
-        "results/Nam_try2D_multinode_np8",
-        "-fom_solver_type",
-        "iterative",
-        "-ksp_type",
-        "cg",
-        "-pc_type",
-        "gamg",
-        "-ksp_rtol",
-        "1e-8",
-        "-ksp_max_it",
-        "10000"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "LD_LIBRARY_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:${env:LD_LIBRARY_PATH}"
-        }
-      },
-      "dependsOn": "CMake: build stage2 MPICH Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: stage2 ROM-MyStrategy local 1 rank",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "-lc",
-        "export LD_LIBRARY_PATH=/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:$LD_LIBRARY_PATH; scripts/mpiexec_mpich_ch3_cxx.sh -n 1 build-mpich-release/stage2_dynamic_forward -nelx 24 -nely 8 -nstep 20 -stage2_out results/vscode_stage2_rom_mystrategy_np1 -solve_mode ROM -method_name MyStrategy -fom_solver_type iterative -ksp_type cg -pc_type gamg -ksp_rtol 1e-8 -ksp_max_it 10000"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "dependsOn": "CMake: build stage2 MPICH Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: stage2 3D local 1 rank",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "-lc",
-        "export LD_LIBRARY_PATH=/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:$LD_LIBRARY_PATH; scripts/mpiexec_mpich_ch3_cxx.sh -n 1 build-mpich-release/stage2_dynamic_forward -fem_type 3D_brick -nelx 8 -nely 4 -nelz 2 -nstep 10 -stage2_out results/vscode_stage2_3d_np1 -fom_solver_type iterative -ksp_type cg -pc_type gamg -ksp_rtol 1e-8 -ksp_max_it 10000"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "dependsOn": "CMake: build stage2 MPICH Release",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: multinode smoke 2 ranks",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "scripts/run_mpich_multinode_backend.sh",
-        "localhost,192.168.11.21",
-        "2"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "dependsOn": [
-        "CMake: build MPICH Release",
-        "Manifest: simple smoke"
-      ],
-      "dependsOrder": "sequence",
-      "problemMatcher": []
-    },
-    //-----------------------------------------------------------
-    {
-      "label": "Run: multinode large 8 ranks",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "-lc",
-        "bash scripts/make_manifest.sh large_h8_240x60x24 vscode_240x60x24_np8 cg gamg 1e-8 1 20000 && bash scripts/run_mpich_multinode_backend.sh localhost,192.168.11.21 8"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "dependsOn": "CMake: build MPICH Release",
+      "dependsOn": "CMake: build stage2 Debug",
+      "group": "test",
       "problemMatcher": []
     }
   ]

@@ -4,85 +4,201 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-LABEL="${LABEL:-Mystrategy_rank1_0_max_rank_10}"
-SOLVE_MODE="${SOLVE_MODE:-ROM}"
-METHOD_NAME="${METHOD_NAME:-MyStrategy}"
-FOM_SOLVER_TYPE="${FOM_SOLVER_TYPE:-direct}"
-ROM_TOL="${ROM_TOL:-0.02}"
-RANK1="${RANK1:-0}"
-MAX_RANK="${MAX_RANK:-10}"
-ONLINE="${ONLINE:-1}"
-TMAX="${TMAX:-0.008}"
-NP="${NP:-1}"
+CASE_CONFIG="${CASE_CONFIG:?CASE_CONFIG is not set}"
 
-NELX="${NELX:-120}"
-NELY="${NELY:-40}"
-NELZ="${NELZ:-1}"
-LX="${LX:-1200}"
-LY="${LY:-400}"
-LZ="${LZ:-120}"
-NSTEP="${NSTEP:-100}"
-MAX_ITER="${MAX_ITER:-50}"
-MOVE="${MOVE:-0.1}"
-VOLUME_LIMIT="${VOLUME_LIMIT:-0.4}"
-SENS_TYPE="${SENS_TYPE:-AVM}"
-X0="${X0:-0.5}"
-FORCE_AMP="${FORCE_AMP:-3333.0}"
-P_RHO="${P_RHO:-0.0}"
+NP="${NP:?NP is not set}"
+HOSTS="${HOSTS:?HOSTS is not set}"
 
-KSP_TYPE="${KSP_TYPE:-preonly}"
-PC_TYPE="${PC_TYPE:-lu}"
-PC_FACTOR_MAT_SOLVER_TYPE="${PC_FACTOR_MAT_SOLVER_TYPE:-mkl_pardiso}"
+KSP_TYPE="${KSP_TYPE:?KSP_TYPE is not set}"
+PC_TYPE="${PC_TYPE:?PC_TYPE is not set}"
+PC_FACTOR_MAT_SOLVER_TYPE="${PC_FACTOR_MAT_SOLVER_TYPE:-}"
 
-DENSITY_INTERVAL="${DENSITY_INTERVAL:-1}"
-SAVE_DENSITY="${SAVE_DENSITY:-1}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:?OMP_NUM_THREADS is not set}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:?MKL_NUM_THREADS is not set}"
+export OMP_PROC_BIND="${OMP_PROC_BIND:-spread}"
+export OMP_PLACES="${OMP_PLACES:-cores}"
 
-BUILD_DIR="${BUILD_DIR:-build-mpich-mkl-release}"
-BINARY="${BINARY:-$ROOT/$BUILD_DIR/stage2_dynamic_forward}"
-OUT="${OUT:-results/$LABEL}"
+PETSC_PREFIX="${PETSC_PREFIX:-/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps}"
+MPICH_HOME="${MPICH_HOME:-/home/votrongnam/opt/mpich-4.0-ch3-cxx}"
+MKLROOT="${MKLROOT:-/opt/intel/oneapi/mkl/2025.0}"
 
-export LD_LIBRARY_PATH="/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:/opt/intel/oneapi/mkl/2024.2/lib:${LD_LIBRARY_PATH:-}"
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
-export MKL_NUM_THREADS="${MKL_NUM_THREADS:-8}"
+BUILD_DIR="${BUILD_DIR:?BUILD_DIR is not set}"
+
+if [[ "$BUILD_DIR" != /* ]]; then
+    BUILD_DIR="$ROOT/$BUILD_DIR"
+fi
+
+BINARY="${BINARY:-$BUILD_DIR/stage2_dynamic_forward}"
+
+# ============================================================
+# Load case configuration
+# ============================================================
+
+if [[ "$CASE_CONFIG" != /* ]]; then
+    CASE_CONFIG="$ROOT/$CASE_CONFIG"
+fi
+
+if [[ ! -f "$CASE_CONFIG" ]]; then
+    echo "Error: case configuration file does not exist:" >&2
+    echo "  $CASE_CONFIG" >&2
+    exit 1
+fi
+
+echo "Loading case configuration:"
+echo "  $CASE_CONFIG"
+
+set -a
+# shellcheck disable=SC1090
+source "$CASE_CONFIG"
+set +a
+
+# ============================================================
+# Variables below must be defined in the case configuration.
+# With set -u, the script stops immediately if any are missing.
+# ============================================================
+
+CASE_DIR="$(dirname "$CASE_CONFIG")"
+
+LABEL="$(basename "$CASE_DIR")"
+
+OUT="${OUT:-$CASE_DIR/result}"
+
+
+# ============================================================
+# Runtime libraries
+# ============================================================
+
+export LD_LIBRARY_PATH="${PETSC_PREFIX}/lib:${MPICH_HOME}/lib:${MKLROOT}/lib:${LD_LIBRARY_PATH:-}"
+
+# ============================================================
+# Build executable if needed
+# ============================================================
 
 if [[ ! -x "$BINARY" ]]; then
-  cmake --build "$BUILD_DIR" --target stage2_dynamic_forward -j "${BUILD_JOBS:-8}"
+    echo "Executable not found. Building:"
+    echo "  $BINARY"
+
+    cmake --build "$BUILD_DIR" \
+        --target stage2_dynamic_forward \
+        -j "${BUILD_JOBS:-8}"
+fi
+
+if [[ ! -x "$BINARY" ]]; then
+    echo "Error: executable is missing:" >&2
+    echo "  $BINARY" >&2
+    exit 1
 fi
 
 mkdir -p "$OUT"
 
-echo "Running stage2 case: $LABEL"
-echo "  solve_mode=$SOLVE_MODE method=$METHOD_NAME fom_solver=$FOM_SOLVER_TYPE"
-echo "  rom_tol=$ROM_TOL rank1=$RANK1 max_rank=$MAX_RANK online=$ONLINE tmax=$TMAX"
-echo "  mesh=${NELX}x${NELY}x${NELZ} size=${LX}x${LY}x${LZ} np=$NP out=$OUT"
+# ============================================================
+# Application arguments
+# All model parameters come directly from CASE_CONFIG.
+# ============================================================
 
-scripts/mpiexec_mpich_ch3_cxx.sh -n "$NP" "$BINARY" \
-  -run_optimization 1 \
-  -solve_mode "$SOLVE_MODE" \
-  -method_name "$METHOD_NAME" \
-  -fom_solver_type "$FOM_SOLVER_TYPE" \
-  -rom_tol "$ROM_TOL" \
-  -rank1 "$RANK1" \
-  -max_rank "$MAX_RANK" \
-  -online "$ONLINE" \
-  -tmax "$TMAX" \
-  -Lx "$LX" \
-  -Ly "$LY" \
-  -Lz "$LZ" \
-  -nelx "$NELX" \
-  -nely "$NELY" \
-  -nelz "$NELZ" \
-  -nstep "$NSTEP" \
-  -max_iter "$MAX_ITER" \
-  -move "$MOVE" \
-  -volume_limit "$VOLUME_LIMIT" \
-  -sens_type "$SENS_TYPE" \
-  -x0 "$X0" \
-  -force_amp "$FORCE_AMP" \
-  -p_rho "$P_RHO" \
-  -stage2_out "$OUT" \
-  -save_density_each_iter "$SAVE_DENSITY" \
-  -density_plot_interval "$DENSITY_INTERVAL" \
-  -ksp_type "$KSP_TYPE" \
-  -pc_type "$PC_TYPE" \
-  -pc_factor_mat_solver_type "$PC_FACTOR_MAT_SOLVER_TYPE"
+APP_ARGS=(
+    -run_optimization 1
+
+    -solve_mode "$SOLVE_MODE"
+    -method_name "$METHOD_NAME"
+    -fom_solver_type "$FOM_SOLVER_TYPE"
+
+    -rom_tol "$ROM_TOL"
+    -rank1 "$RANK1"
+    -max_rank "$MAX_RANK"
+    -online "$ONLINE"
+
+    -tmax "$TMAX"
+
+    -Lx "$LX"
+    -Ly "$LY"
+    -Lz "$LZ"
+
+    -nelx "$NELX"
+    -nely "$NELY"
+    -nelz "$NELZ"
+
+    -nstep "$NSTEP"
+
+    -max_iter "$MAX_ITER"
+    -move "$MOVE"
+    -volume_limit "$VOLUME_LIMIT"
+
+    -sens_type "$SENS_TYPE"
+    -x0 "$X0"
+    -force_amp "$FORCE_AMP"
+    -p_rho "$P_RHO"
+
+    -stage2_out "$OUT"
+
+    -save_density_each_iter "$SAVE_DENSITY"
+    -density_plot_interval "$DENSITY_INTERVAL"
+
+    -ksp_type "$KSP_TYPE"
+    -pc_type "$PC_TYPE"
+)
+
+if [[ -n "$PC_FACTOR_MAT_SOLVER_TYPE" ]]; then
+    APP_ARGS+=(
+        -pc_factor_mat_solver_type "$PC_FACTOR_MAT_SOLVER_TYPE"
+    )
+fi
+
+# ============================================================
+# Print configuration
+# ============================================================
+
+echo
+echo "============================================================"
+echo "Running stage2 case"
+echo "============================================================"
+echo "  case_config               = $CASE_CONFIG"
+echo "  label                     = $CASE_DIR"
+echo "  binary                    = $BINARY"
+echo "  output                    = $OUT"
+echo
+echo "  solve_mode                = $SOLVE_MODE"
+echo "  method_name               = $METHOD_NAME"
+echo "  fom_solver_type           = $FOM_SOLVER_TYPE"
+echo
+echo "  geometry                  = ${LX} x ${LY} x ${LZ}"
+echo "  mesh                      = ${NELX} x ${NELY} x ${NELZ}"
+echo "  tmax                      = $TMAX"
+echo "  nstep                     = $NSTEP"
+echo
+echo "  hosts                     = $HOSTS"
+echo "  MPI processes             = $NP"
+echo "  OMP threads/process       = $OMP_NUM_THREADS"
+echo "  MKL threads/process       = $MKL_NUM_THREADS"
+echo
+echo "  ksp_type                  = $KSP_TYPE"
+echo "  pc_type                   = $PC_TYPE"
+echo "  factor solver             = ${PC_FACTOR_MAT_SOLVER_TYPE:-<not set>}"
+echo "============================================================"
+echo
+
+# ============================================================
+# Select single-node or multi-node launcher
+# ============================================================
+
+NORMALIZED_HOSTS="${HOSTS//[[:space:]]/}"
+
+case "$NORMALIZED_HOSTS" in
+    "" | "localhost" | "127.0.0.1")
+        echo "Execution mode: single node"
+
+        exec "$ROOT/scripts/mpiexec_mpich_ch3_cxx.sh" \
+            -n "$NP" \
+            "$BINARY" \
+            "${APP_ARGS[@]}"
+        ;;
+
+    *)
+        echo "Execution mode: multi-node"
+
+        exec "$ROOT/scripts/run_stage2_multinode.sh" \
+            "$NORMALIZED_HOSTS" \
+            "$NP" \
+            "${APP_ARGS[@]}"
+        ;;
+esac
