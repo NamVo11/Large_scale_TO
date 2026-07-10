@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MPICH_HOME="${MPICH_HOME:-/home/votrongnam/opt/mpich-4.0-ch3-cxx}"
-
-export MPIEXEC_PORT_RANGE="${MPIEXEC_PORT_RANGE:-40000:41000}"
-export MPICH_PORT_RANGE="${MPICH_PORT_RANGE:-40000:41000}"
-export HWLOC_COMPONENTS="${HWLOC_COMPONENTS:--gl}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/env_petsc_mpi.sh"
+stage2_setup_runtime_env
 
 exec "$MPICH_HOME/bin/mpiexec" \
     -iface eth1 \

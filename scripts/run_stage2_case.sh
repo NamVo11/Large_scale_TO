@@ -4,6 +4,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# shellcheck disable=SC1091
+source "$ROOT/scripts/env_petsc_mpi.sh"
+stage2_setup_runtime_env
+
 CASE_CONFIG="${CASE_CONFIG:?CASE_CONFIG is not set}"
 
 NP="${NP:?NP is not set}"
@@ -18,9 +22,6 @@ export MKL_NUM_THREADS="${MKL_NUM_THREADS:?MKL_NUM_THREADS is not set}"
 export OMP_PROC_BIND="${OMP_PROC_BIND:-spread}"
 export OMP_PLACES="${OMP_PLACES:-cores}"
 
-PETSC_PREFIX="${PETSC_PREFIX:-/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps}"
-MPICH_HOME="${MPICH_HOME:-/home/votrongnam/opt/mpich-4.0-ch3-cxx}"
-MKLROOT="${MKLROOT:-/opt/intel/oneapi/mkl/2025.0}"
 BUILD_DIR="${BUILD_DIR:?BUILD_DIR is not set}"
 
 if [[ "$BUILD_DIR" != /* ]]; then
@@ -62,12 +63,6 @@ LABEL="$(basename "$CASE_DIR")"
 
 OUT="${OUT:-$CASE_DIR/result}"
 
-
-# ============================================================
-# Runtime libraries
-# ============================================================
-
-export LD_LIBRARY_PATH="${PETSC_PREFIX}/lib:${MPICH_HOME}/lib:${MKLROOT}/lib:${LD_LIBRARY_PATH:-}"
 
 # ============================================================
 # Build executable if needed

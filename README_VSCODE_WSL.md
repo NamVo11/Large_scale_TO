@@ -1,48 +1,66 @@
-# VS Code / WSL setup
+# VS Code / WSL Workflow
 
-Use the normal WSL user:
+This file is the short version. For the full workflow, read:
 
-```bash
-whoami
-# expected: votrongnam
-```
+- [docs/CLEAN_ENV_AND_RUN.md](//wsl.localhost/UbuntuD/home/votrongnam/PROJECT/Large_scale_TO/docs/CLEAN_ENV_AND_RUN.md)
 
-Open this folder from WSL, not from the Windows `D:` mirror:
+## Open the right workspace
 
-```bash
-cd /home/votrongnam/PROJECT/Large_scale_TO
-code .
-```
+- Start VS Code with **Remote - WSL**
+- Open:
+  `/home/votrongnam/PROJECT/Large_scale_TO`
+- Do not open:
+  `/mnt/d/...`
 
-The project is configured to use the synchronized MPICH/PETSc stack:
+## Before any run or debug
 
-```text
-MPICH: /home/votrongnam/opt/mpich-4.0-ch3-cxx
-PETSc: /home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx
-Build: /home/votrongnam/PROJECT/Large_scale_TO/build-mpich-release
-```
-
-Recommended VS Code tasks:
-
-```text
-CMake: build MPICH Release
-Run: local 1 rank
-Run: multinode smoke 2 ranks
-Run: multinode large 8 ranks
-```
-
-For command-line runs:
+Open the VS Code terminal and run:
 
 ```bash
-cd /home/votrongnam/PROJECT/Large_scale_TO
-bash scripts/make_manifest.sh simple_3d_cantilever vscode_simple_smoke cg gamg 1e-10 1 20000
-bash scripts/mpiexec_mpich_ch3_cxx.sh -n 1 build-mpich-release/stage1_petsc_backend
-bash scripts/run_mpich_multinode_backend.sh localhost,192.168.11.21 8
+bash scripts/kill_stage2_processes.sh
 ```
 
-Notes:
+If the next run is multi-node, do the same on the worker.
 
-- Do not use system `mpirun`, `/usr/bin/mpicxx`, or apt PETSc for this project.
-- The launcher uses port range `45010:46000`.
-- `HWLOC_COMPONENTS=-gl` is set in the scripts to avoid WSL/X11 initialization hangs.
-- If VS Code opens as `root`, run `wsl --shutdown` from Windows PowerShell and reopen WSL.
+## Build tasks
+
+Use:
+
+- `Terminal -> Run Task -> CMake: build stage2 Debug`
+- `Terminal -> Run Task -> CMake: build stage2 Release`
+
+## Run tasks
+
+Use:
+
+- `Terminal -> Run Task -> Run: single node single rank`
+- `Terminal -> Run Task -> Run: single node multi_rank`
+- `Terminal -> Run Task -> Run: multi_node multi_rank`
+
+## Debug
+
+Use:
+
+- `Run and Debug -> Debug: single node single rank`
+
+Recommended order:
+
+1. `bash scripts/kill_stage2_processes.sh`
+2. `CMake: build stage2 Debug`
+3. `Debug: single node single rank`
+
+## Environment source of truth
+
+Shared runtime environment:
+
+- [scripts/env_petsc_mpi.sh](//wsl.localhost/UbuntuD/home/votrongnam/PROJECT/Large_scale_TO/scripts/env_petsc_mpi.sh)
+
+This is the file that the project scripts use for:
+
+- PETSc path
+- MPICH path
+- MKL path
+- MPI port range
+- library path
+
+That is why task runs should stay consistent across master and worker.

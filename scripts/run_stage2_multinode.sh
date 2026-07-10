@@ -3,10 +3,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-MPICH_HOME="${MPICH_HOME:-/home/votrongnam/opt/mpich-4.0-ch3-cxx}"
-PETSC_PREFIX="${PETSC_PREFIX:-/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps}"
-MKLROOT="${MKLROOT:-/opt/intel/oneapi/mkl/2025.0}"
-PORT_RANGE="${MPIEXEC_PORT_RANGE:-40000:41000}"
+# shellcheck disable=SC1091
+source "$ROOT/scripts/env_petsc_mpi.sh"
+stage2_setup_runtime_env
+
+PORT_RANGE="$MPIEXEC_PORT_RANGE"
 
 HOSTS="${1:-localhost,192.168.11.21}"
 NP="${2:-2}"
@@ -72,13 +73,6 @@ done
 
 export MPIEXEC_PORT_RANGE="$PORT_RANGE"
 export MPICH_PORT_RANGE="$PORT_RANGE"
-export HWLOC_COMPONENTS="${HWLOC_COMPONENTS:--gl}"
-
-PETSC_LIB="${PETSC_PREFIX}/lib"
-MPICH_LIB="${MPICH_HOME}/lib"
-MKL_LIB="${MKLROOT}/lib"
-
-export LD_LIBRARY_PATH="${PETSC_LIB}:${MPICH_LIB}:${MKL_LIB}:${LD_LIBRARY_PATH:-}"
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
