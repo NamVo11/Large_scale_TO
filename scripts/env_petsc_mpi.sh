@@ -21,7 +21,7 @@ stage2_setup_runtime_env() {
     export HWLOC_COMPONENTS="${HWLOC_COMPONENTS:--gl}"
 
     export PKG_CONFIG_PATH="${PETSC_PREFIX}/lib/pkgconfig"
-    export LD_LIBRARY_PATH="${PETSC_PREFIX}/lib:${MPICH_HOME}/lib:${MKLROOT}/lib"
+    export LD_LIBRARY_PATH="${PETSC_PREFIX}/lib:${MPICH_HOME}/lib:${MKLROOT}/lib:${MKLROOT}/lib/intel64"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

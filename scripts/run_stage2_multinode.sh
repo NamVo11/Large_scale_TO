@@ -101,5 +101,6 @@ exec "$MPICH_HOME/bin/mpiexec" \
     -genv MKL_NUM_THREADS "$MKL_NUM_THREADS" \
     -genv OMP_PROC_BIND "$OMP_PROC_BIND" \
     -genv OMP_PLACES "$OMP_PLACES" \
+    -genv HWLOC_COMPONENTS "$HWLOC_COMPONENTS" \
     "$BINARY" \
     "${APP_ARGS[@]}"

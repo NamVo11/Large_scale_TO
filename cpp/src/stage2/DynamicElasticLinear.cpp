@@ -15,27 +15,23 @@ namespace stage2 {
 namespace {
 
 std::vector<double> gather_vec_to_root(Vec v) {
-    PetscMPIInt rank = 0;
-    MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-    Vec vzero = nullptr;
+    Vec vall = nullptr;
     VecScatter scatter = nullptr;
-    VecScatterCreateToZero(v, &scatter, &vzero);
-    VecScatterBegin(scatter, v, vzero, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(scatter, v, vzero, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterCreateToAll(v, &scatter, &vall);
+    VecScatterBegin(scatter, v, vall, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(scatter, v, vall, INSERT_VALUES, SCATTER_FORWARD);
 
     std::vector<double> out;
-    if (rank == 0) {
-        PetscInt n = 0;
-        VecGetSize(vzero, &n);
-        out.resize(static_cast<std::size_t>(n));
-        const PetscScalar* a = nullptr;
-        VecGetArrayRead(vzero, &a);
-        for (PetscInt i = 0; i < n; ++i) out[static_cast<std::size_t>(i)] = PetscRealPart(a[i]);
-        VecRestoreArrayRead(vzero, &a);
-    }
+    PetscInt n = 0;
+    VecGetSize(vall, &n);
+    out.resize(static_cast<std::size_t>(n));
+    const PetscScalar* a = nullptr;
+    VecGetArrayRead(vall, &a);
+    for (PetscInt i = 0; i < n; ++i) out[static_cast<std::size_t>(i)] = PetscRealPart(a[i]);
+    VecRestoreArrayRead(vall, &a);
 
     VecScatterDestroy(&scatter);
-    VecDestroy(&vzero);
+    VecDestroy(&vall);
     return out;
 }
 

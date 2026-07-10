@@ -303,7 +303,7 @@ int main(int argc, char** argv) {
             std::cout << "stage2 output: " << out_dir << "\n";
         }
     } catch (const std::exception& ex) {
-        std::cerr << "stage2_dynamic_forward error: " << ex.what() << "\n";
+        std::cerr << "[rank " << rank << "] stage2_dynamic_forward error: " << ex.what() << "\n";
         exit_code = 1;
     }
 

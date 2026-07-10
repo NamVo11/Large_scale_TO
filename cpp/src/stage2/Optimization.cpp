@@ -118,33 +118,28 @@ namespace stage2
             return (para[1] - para[0]) * dg;
         }
 
-        std::vector<double> gather_vec_to_root_local(Vec v)
+        std::vector<double> gather_vec_to_all_local(Vec v)
         {
-            PetscMPIInt rank = 0;
-            MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-            Vec vzero = nullptr;
+            Vec vall = nullptr;
             VecScatter scatter = nullptr;
-            VecScatterCreateToZero(v, &scatter, &vzero);
-            VecScatterBegin(scatter, v, vzero, INSERT_VALUES, SCATTER_FORWARD);
-            VecScatterEnd(scatter, v, vzero, INSERT_VALUES, SCATTER_FORWARD);
+            VecScatterCreateToAll(v, &scatter, &vall);
+            VecScatterBegin(scatter, v, vall, INSERT_VALUES, SCATTER_FORWARD);
+            VecScatterEnd(scatter, v, vall, INSERT_VALUES, SCATTER_FORWARD);
             std::vector<double> out;
-            if (rank == 0)
-            {
-                PetscInt n = 0;
-                VecGetSize(vzero, &n);
-                out.resize(static_cast<std::size_t>(n));
-                const PetscScalar *a = nullptr;
-                VecGetArrayRead(vzero, &a);
-                for (PetscInt i = 0; i < n; ++i)
-                    out[static_cast<std::size_t>(i)] = PetscRealPart(a[i]);
-                VecRestoreArrayRead(vzero, &a);
-            }
+            PetscInt n = 0;
+            VecGetSize(vall, &n);
+            out.resize(static_cast<std::size_t>(n));
+            const PetscScalar *a = nullptr;
+            VecGetArrayRead(vall, &a);
+            for (PetscInt i = 0; i < n; ++i)
+                out[static_cast<std::size_t>(i)] = PetscRealPart(a[i]);
+            VecRestoreArrayRead(vall, &a);
             VecScatterDestroy(&scatter);
-            VecDestroy(&vzero);
+            VecDestroy(&vall);
             return out;
         }
 
-        void set_vec_from_root(Vec v, const std::vector<double> &values)
+        void set_vec_from_column_root(Vec v, const std::vector<std::vector<double>> &values, int k, double scale = 1.0)
         {
             PetscMPIInt rank = 0;
             MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
@@ -152,33 +147,49 @@ namespace stage2
             if (rank == 0)
             {
                 std::vector<PetscInt> ids(values.size());
+                std::vector<PetscScalar> vals(values.size());
                 std::iota(ids.begin(), ids.end(), 0);
-                VecSetValues(v, static_cast<PetscInt>(ids.size()), ids.data(), values.data(), INSERT_VALUES);
+                for (std::size_t i = 0; i < values.size(); ++i)
+                    vals[i] = scale * values[i][static_cast<std::size_t>(k)];
+                VecSetValues(v, static_cast<PetscInt>(ids.size()), ids.data(), vals.data(), INSERT_VALUES);
             }
             VecAssemblyBegin(v);
             VecAssemblyEnd(v);
         }
 
-        std::vector<double> mat_mult_gather(Mat A, const std::vector<double> &x)
+        void set_vec_fixed_from_column_root(Vec v, const std::vector<int> &fixed,
+                                            const std::vector<std::vector<double>> &values, int k, double scale = 1.0)
         {
-            Vec vx = nullptr;
-            Vec vy = nullptr;
-            MatCreateVecs(A, &vx, &vy);
-            set_vec_from_root(vx, x);
-            MatMult(A, vx, vy);
-            std::vector<double> out = gather_vec_to_root_local(vy);
-            VecDestroy(&vx);
-            VecDestroy(&vy);
-            return out;
+            if (fixed.empty())
+                return;
+            PetscMPIInt rank = 0;
+            MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+            if (rank == 0)
+            {
+                std::vector<PetscInt> ids(fixed.begin(), fixed.end());
+                std::vector<PetscScalar> vals(ids.size());
+                for (std::size_t i = 0; i < ids.size(); ++i)
+                    vals[i] = scale * values[static_cast<std::size_t>(ids[i])][static_cast<std::size_t>(k)];
+                VecSetValues(v, static_cast<PetscInt>(ids.size()), ids.data(), vals.data(), INSERT_VALUES);
+            }
+            VecAssemblyBegin(v);
+            VecAssemblyEnd(v);
         }
 
-        void zero_fixed(std::vector<double> &v, const std::vector<int> &fixed)
+        void zero_fixed(Vec v, const std::vector<int> &fixed)
         {
-            for (int d : fixed)
+            if (fixed.empty())
+                return;
+            PetscMPIInt rank = 0;
+            MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+            if (rank == 0)
             {
-                if (d >= 0 && static_cast<std::size_t>(d) < v.size())
-                    v[static_cast<std::size_t>(d)] = 0.0;
+                std::vector<PetscInt> ids(fixed.begin(), fixed.end());
+                std::vector<PetscScalar> vals(ids.size(), 0.0);
+                VecSetValues(v, static_cast<PetscInt>(ids.size()), ids.data(), vals.data(), INSERT_VALUES);
             }
+            VecAssemblyBegin(v);
+            VecAssemblyEnd(v);
         }
 
         IS make_is(const std::vector<int> &ids)
@@ -189,12 +200,8 @@ namespace stage2
             return is;
         }
 
-        std::vector<double> solve_adjoint_full(ROMBase &rom, Mat lhs, const std::vector<double> &rhs_root, const Analysis &analysis, int Iter, int time_step)
+        void solve_adjoint_full(ROMBase &rom, Mat lhs, Vec rhs, Vec lambda, const Analysis &analysis, int Iter, int time_step)
         {
-            Vec rhs = nullptr;
-            Vec lambda = nullptr;
-            MatCreateVecs(lhs, &lambda, &rhs);
-            set_vec_from_root(rhs, rhs_root);
             ROMContext ctx;
             ctx.analysis_id = analysis.id;
             ctx.opt_iter = Iter;
@@ -205,10 +212,6 @@ namespace stage2
             ctx.system_type = "newmark_adjoint_effective";
             ctx.is_end_of_analysis = time_step == 0;
             rom.main(lhs, rhs, lambda, ctx);
-            std::vector<double> out = gather_vec_to_root_local(lambda);
-            VecDestroy(&rhs);
-            VecDestroy(&lambda);
-            return out;
         }
 
         Mat duplicate_with_dirichlet(Mat A, const std::vector<int> &fixed)
@@ -280,19 +283,22 @@ namespace stage2
                 c.d_explicit_df_dx[static_cast<std::size_t>(e)][static_cast<std::size_t>(val_id)] = 1.0 / static_cast<double>(fem.NElem);
         }
 
-        std::vector<std::vector<double>> explicit_gradient(const FEM &fem,
-                                                           const Analysis &analysis,
-                                                           const std::vector<std::vector<double>> &xPhys,
-                                                           const ObjectiveGroup &object,
-                                                           const std::vector<std::vector<double>> &lambda_all)
+        void add_explicit_gradient_step(const FEM &fem,
+                                        const Analysis &analysis,
+                                        const std::vector<std::vector<double>> &xPhys,
+                                        Vec lambda,
+                                        int k,
+                                        std::vector<std::vector<double>> &df_dx)
         {
-            const int nvar = nvar_of(xPhys);
-            std::vector<std::vector<double>> df_dx = object.d_explicit_df_dx;
-            if (df_dx.empty())
-                df_dx = zeros(fem.NElem, nvar);
-            const int nstep = analysis.Nstep;
+            PetscMPIInt rank = 0;
+            PetscMPIInt size = 1;
+            MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+            MPI_Comm_size(PETSC_COMM_WORLD, &size);
+            const int elem_start = (fem.NElem * rank) / size;
+            const int elem_end = (fem.NElem * (rank + 1)) / size;
+            const std::vector<double> lam = gather_vec_to_all_local(lambda);
             std::vector<int> dofs;
-            for (int e = 0; e < fem.NElem; ++e)
+            for (int e = elem_start; e < elem_end; ++e)
             {
                 const Region &region = analysis.regions.front();
                 const double dE = ramp_derivative(region.mat_paras.E_inf, xPhys[static_cast<std::size_t>(e)].front(), region.interp.p_E_elastic);
@@ -300,28 +306,23 @@ namespace stage2
                 const double nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
                 const ElementMatrix em = compute_element_matrices(fem, e, nu, fem.Thickness);
                 element_dofs(fem, e, dofs);
-                for (int k = 0; k <= nstep; ++k)
+                const auto &u = analysis.results.U[static_cast<std::size_t>(k)];
+                const auto &acc = analysis.results.A[static_cast<std::size_t>(k)];
+                double val = 0.0;
+                for (int i = 0; i < em.ndof; ++i)
                 {
-                    const auto &u = analysis.results.U[static_cast<std::size_t>(k)];
-                    const auto &acc = analysis.results.A[static_cast<std::size_t>(k)];
-                    const auto &lam = lambda_all[static_cast<std::size_t>(k)];
-                    double val = 0.0;
-                    for (int i = 0; i < em.ndof; ++i)
+                    double ku = 0.0;
+                    double ma = 0.0;
+                    for (int j = 0; j < em.ndof; ++j)
                     {
-                        double ku = 0.0;
-                        double ma = 0.0;
-                        for (int j = 0; j < em.ndof; ++j)
-                        {
-                            ku += em.ke[static_cast<std::size_t>(i * em.ndof + j)] * u[static_cast<std::size_t>(dofs[static_cast<std::size_t>(j)])];
-                            if (k != 0)
-                                ma += em.me[static_cast<std::size_t>(i * em.ndof + j)] * acc[static_cast<std::size_t>(dofs[static_cast<std::size_t>(j)])];
-                        }
-                        val += lam[static_cast<std::size_t>(dofs[static_cast<std::size_t>(i)])] * (dE * ku + drho * ma);
+                        ku += em.ke[static_cast<std::size_t>(i * em.ndof + j)] * u[static_cast<std::size_t>(dofs[static_cast<std::size_t>(j)])];
+                        if (k != 0)
+                            ma += em.me[static_cast<std::size_t>(i * em.ndof + j)] * acc[static_cast<std::size_t>(dofs[static_cast<std::size_t>(j)])];
                     }
-                    df_dx[static_cast<std::size_t>(e)][0] += val;
+                    val += lam[static_cast<std::size_t>(dofs[static_cast<std::size_t>(i)])] * (dE * ku + drho * ma);
                 }
+                df_dx[static_cast<std::size_t>(e)][0] += val;
             }
-            return df_dx;
         }
 
         std::vector<std::vector<double>> dynamic_elastic_base_full_impl(const FEM &fem,
@@ -333,7 +334,6 @@ namespace stage2
                                                                         int Iter)
         {
             (void)xPhys;
-            const int ndof = fem.ndof;
             const int nstep = analysis.Nstep;
             const double beta = 0.25;
             const double gamma = 0.5;
@@ -353,64 +353,83 @@ namespace stage2
             Mat K0 = duplicate_with_dirichlet(analysis.results.K_inf, analysis.results.SPCdofs);
             Mat Keff = duplicate_with_dirichlet(analysis.results.K_eff, analysis.results.SPCdofs);
 
-            std::vector<std::vector<double>> lambda_all(static_cast<std::size_t>(nstep + 1), std::vector<double>(static_cast<std::size_t>(ndof), 0.0));
-            std::vector<double> lambda(ndof, 0.0), mu(ndof, 0.0), eta(ndof, 0.0);
+            Vec lambda = nullptr;
+            Vec lambda_new = nullptr;
+            Vec mu = nullptr;
+            Vec mu_new = nullptr;
+            Vec eta = nullptr;
+            Vec eta_new = nullptr;
+            Vec rhs = nullptr;
+            Vec Mlambda = nullptr;
+            MatCreateVecs(Keff, &lambda, &rhs);
+            VecDuplicate(lambda, &lambda_new);
+            VecDuplicate(lambda, &mu);
+            VecDuplicate(lambda, &mu_new);
+            VecDuplicate(lambda, &eta);
+            VecDuplicate(lambda, &eta_new);
+            VecDuplicate(lambda, &Mlambda);
+
+            const int nvar = nvar_of(filtering_state.xPhys);
+            std::vector<std::vector<double>> dfdx_local = zeros(fem.NElem, nvar);
 
             int k = nstep;
-            for (int d : analysis.results.free)
-            {
-                mu[static_cast<std::size_t>(d)] = object.d_explicit_dfda_all[static_cast<std::size_t>(d)][static_cast<std::size_t>(k)];
-                eta[static_cast<std::size_t>(d)] = object.d_explicit_dfdv_all[static_cast<std::size_t>(d)][static_cast<std::size_t>(k)];
-            }
-            std::vector<double> rhs(ndof, 0.0);
-            for (int d : analysis.results.free)
-            {
-                rhs[static_cast<std::size_t>(d)] =
-                    -object.d_explicit_dfdu_all[static_cast<std::size_t>(d)][static_cast<std::size_t>(k)] - dHdu * mu[static_cast<std::size_t>(d)] - dLdu * eta[static_cast<std::size_t>(d)];
-            }
-            for (int d : analysis.results.SPCdofs)
-                rhs[static_cast<std::size_t>(d)] = -object.d_explicit_dfdFext_all[static_cast<std::size_t>(d)][static_cast<std::size_t>(k)];
-            lambda = solve_adjoint_full(*object.ROM, Keff, rhs, analysis, Iter, k);
-            lambda_all[static_cast<std::size_t>(k)] = lambda;
+            set_vec_from_column_root(mu, object.d_explicit_dfda_all, k);
+            set_vec_from_column_root(eta, object.d_explicit_dfdv_all, k);
+            set_vec_from_column_root(rhs, object.d_explicit_dfdu_all, k, -1.0);
+            VecAXPY(rhs, -dHdu, mu);
+            VecAXPY(rhs, -dLdu, eta);
+            set_vec_fixed_from_column_root(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
+            solve_adjoint_full(*object.ROM, Keff, rhs, lambda, analysis, Iter, k);
+            add_explicit_gradient_step(fem, analysis, filtering_state.xPhys, lambda, k, dfdx_local);
 
             for (k = nstep - 1; k >= 0; --k)
             {
-                const std::vector<double> lambda_new = lambda;
-                const std::vector<double> mu_new = mu;
-                const std::vector<double> eta_new = eta;
-                const std::vector<double> Mlambda = mat_mult_gather(analysis.results.M, lambda_new);
+                VecCopy(lambda, lambda_new);
+                VecCopy(mu, mu_new);
+                VecCopy(eta, eta_new);
+                MatMult(analysis.results.M, lambda_new, Mlambda);
 
-                for (int d : analysis.results.free)
-                {
-                    mu[static_cast<std::size_t>(d)] =
-                        object.d_explicit_dfda_all[static_cast<std::size_t>(d)][static_cast<std::size_t>(k)] - (0.5 / beta - 1.0) * Mlambda[static_cast<std::size_t>(d)] + dHda_new * mu_new[static_cast<std::size_t>(d)] + dLda_new * eta_new[static_cast<std::size_t>(d)];
-                    eta[static_cast<std::size_t>(d)] =
-                        object.d_explicit_dfdv_all[static_cast<std::size_t>(d)][static_cast<std::size_t>(k)] - (1.0 / (beta * dt)) * Mlambda[static_cast<std::size_t>(d)] + dHdv_new * mu_new[static_cast<std::size_t>(d)] + dLdv_new * eta_new[static_cast<std::size_t>(d)];
-                }
+                set_vec_from_column_root(mu, object.d_explicit_dfda_all, k);
+                VecAXPY(mu, -(0.5 / beta - 1.0), Mlambda);
+                VecAXPY(mu, dHda_new, mu_new);
+                VecAXPY(mu, dLda_new, eta_new);
+                set_vec_from_column_root(eta, object.d_explicit_dfdv_all, k);
+                VecAXPY(eta, -(1.0 / (beta * dt)), Mlambda);
+                VecAXPY(eta, dHdv_new, mu_new);
+                VecAXPY(eta, dLdv_new, eta_new);
                 zero_fixed(mu, analysis.results.SPCdofs);
                 zero_fixed(eta, analysis.results.SPCdofs);
 
-                const std::vector<double> Mlambda_scaled = Mlambda;
-                rhs.assign(static_cast<std::size_t>(ndof), 0.0);
-                for (int d : analysis.results.free)
+                set_vec_from_column_root(rhs, object.d_explicit_dfdu_all, k, -1.0);
+                VecAXPY(rhs, a0c, Mlambda);
+                VecAXPY(rhs, -dHdu_new, mu_new);
+                VecAXPY(rhs, -dLdu_new, eta_new);
+                if (k != 0)
                 {
-                    rhs[static_cast<std::size_t>(d)] =
-                        -object.d_explicit_dfdu_all[static_cast<std::size_t>(d)][static_cast<std::size_t>(k)] + a0c * Mlambda_scaled[static_cast<std::size_t>(d)] - dHdu_new * mu_new[static_cast<std::size_t>(d)] - dLdu_new * eta_new[static_cast<std::size_t>(d)];
-                    if (k != 0)
-                    {
-                        rhs[static_cast<std::size_t>(d)] += -dHdu * mu[static_cast<std::size_t>(d)] - dLdu * eta[static_cast<std::size_t>(d)];
-                    }
+                    VecAXPY(rhs, -dHdu, mu);
+                    VecAXPY(rhs, -dLdu, eta);
                 }
-                for (int d : analysis.results.SPCdofs)
-                    rhs[static_cast<std::size_t>(d)] = -object.d_explicit_dfdFext_all[static_cast<std::size_t>(d)][static_cast<std::size_t>(k)];
-                lambda = solve_adjoint_full(*object.ROM, k == 0 ? K0 : Keff, rhs, analysis, Iter, k);
-                lambda_all[static_cast<std::size_t>(k)] = lambda;
+                set_vec_fixed_from_column_root(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
+                solve_adjoint_full(*object.ROM, k == 0 ? K0 : Keff, rhs, lambda, analysis, Iter, k);
+                add_explicit_gradient_step(fem, analysis, filtering_state.xPhys, lambda, k, dfdx_local);
             }
+
+            std::vector<double> local_flat = flatten(dfdx_local);
+            std::vector<double> global_flat(local_flat.size(), 0.0);
+            MPI_Allreduce(local_flat.data(), global_flat.data(), static_cast<int>(local_flat.size()), MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+            std::vector<std::vector<double>> dfdx_phys = unflatten(global_flat, fem.NElem, nvar);
+            add_scaled(dfdx_phys, object.d_explicit_df_dx, 1.0);
 
             MatDestroy(&K0);
             MatDestroy(&Keff);
-
-            std::vector<std::vector<double>> dfdx_phys = explicit_gradient(fem, analysis, filtering_state.xPhys, object, lambda_all);
+            VecDestroy(&lambda);
+            VecDestroy(&lambda_new);
+            VecDestroy(&mu);
+            VecDestroy(&mu_new);
+            VecDestroy(&eta);
+            VecDestroy(&eta_new);
+            VecDestroy(&rhs);
+            VecDestroy(&Mlambda);
             return filtering_sensitivity(dfdx_phys, filtering, filtering_state);
         }
 
