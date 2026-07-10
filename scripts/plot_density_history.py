@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""Purpose:
+Convert saved density frames into PNG images and an animated GIF for review.
+
+Usage:
+    python3 scripts/plot_density_history.py case_study/test1/result --scale 8
+"""
+
 import argparse
 from pathlib import Path
 

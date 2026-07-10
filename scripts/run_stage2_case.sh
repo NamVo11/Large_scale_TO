@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Purpose:
+#   Main launcher used by VS Code tasks for stage2 single-node and multi-node runs.
+# Usage:
+#   Set BUILD_DIR, CASE_CONFIG, NP, HOSTS, solver env vars, then run:
+#   bash scripts/run_stage2_case.sh
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 

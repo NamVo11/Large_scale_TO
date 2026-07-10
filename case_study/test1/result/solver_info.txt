@@ -1,0 +1,15 @@
+mode=stage2_matlab_like_forward
+mesh_type=2D_Q4
+dim=2
+nnodes=120801
+nelem=120000
+ndof=241602
+nstep=5
+dt=0.0016000000000000001
+tmax=0.0080000000000000002
+rom_name=FOM_direct
+mpi_size=1
+assembly_time=0.51705318499989517
+solve_time=0.37265729999990072
+ksp_iterations=,1,1,1,1,1
+ksp_residuals=,0,0,0,0,0

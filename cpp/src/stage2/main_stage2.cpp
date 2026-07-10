@@ -14,10 +14,10 @@ namespace {
 
 template <typename T>
 void get_int_option(const char* name, T& value) {
-    PetscInt v = static_cast<PetscInt>(value);
+    PetscInt v = static_cast<PetscInt>(value); // hãy chuyển v về đúng kiểu PetscInt
     PetscBool set = PETSC_FALSE;
     PetscOptionsGetInt(nullptr, nullptr, name, &v, &set);
-    if (set) value = static_cast<T>(v);
+    if (set) value = static_cast<T>(v); // chuyển vê kiểu T
 }
 
 void get_real_option(const char* name, double& value) {
@@ -94,19 +94,19 @@ int main(int argc, char** argv) {
         geom.Lx = 1200.0;
         geom.Ly = 400.0;
         geom.Lz = 400.0;
-        geom.nelx = 120;
-        geom.nely = 40;
+        geom.nelx = 12;
+        geom.nely = 4;
         geom.nelz = 1;
 
         std::string fem_type = "plane_stress";
-        int nstep = 100;
+        int nstep = 5;
         double tmax = 0.008;
         double x_initial = 0.5;
         double force_amp = 3333.0;
         std::string solve_mode = "FOM"; //FOM
         std::string method_name = "MyStrategy";
         std::string fom_solver_type = "iterative";
-        std::string out_dir = "results/stage2_dynamic_forward";
+        std::string out_dir = "case_study/Debug";
         int run_optimization = 0;
         int max_iter = 2;
         double volume_limit = 0.4;

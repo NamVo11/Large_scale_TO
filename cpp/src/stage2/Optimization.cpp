@@ -283,46 +283,90 @@ namespace stage2
                 c.d_explicit_df_dx[static_cast<std::size_t>(e)][static_cast<std::size_t>(val_id)] = 1.0 / static_cast<double>(fem.NElem);
         }
 
-        void add_explicit_gradient_step(const FEM &fem,
-                                        const Analysis &analysis,
-                                        const std::vector<std::vector<double>> &xPhys,
-                                        Vec lambda,
-                                        int k,
-                                        std::vector<std::vector<double>> &df_dx)
+        std::vector<std::vector<double>> explicit_gradient_dynamic(const FEM &fem,
+                                                                   const Analysis &analysis,
+                                                                   const std::vector<std::vector<double>> &xPhys,
+                                                                   const ObjectiveGroup &object,
+                                                                   const std::vector<std::vector<double>> &lambda_all)
         {
             PetscMPIInt rank = 0;
             PetscMPIInt size = 1;
             MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
             MPI_Comm_size(PETSC_COMM_WORLD, &size);
+            const int nstep = analysis.Nstep;
+            const int nvar = nvar_of(xPhys);
             const int elem_start = (fem.NElem * rank) / size;
             const int elem_end = (fem.NElem * (rank + 1)) / size;
-            const std::vector<double> lam = gather_vec_to_all_local(lambda);
-            std::vector<int> dofs;
+
+            std::vector<std::vector<double>> dE(static_cast<std::size_t>(fem.NElem),
+                                                std::vector<double>(static_cast<std::size_t>(nvar), 0.0));
+            std::vector<std::vector<double>> drho(static_cast<std::size_t>(fem.NElem),
+                                                  std::vector<double>(static_cast<std::size_t>(nvar), 0.0));
             for (int e = elem_start; e < elem_end; ++e)
             {
                 const Region &region = analysis.regions.front();
-                const double dE = ramp_derivative(region.mat_paras.E_inf, xPhys[static_cast<std::size_t>(e)].front(), region.interp.p_E_elastic);
-                const double drho = ramp_derivative(region.mat_paras.rho, xPhys[static_cast<std::size_t>(e)].front(), region.interp.p_rho);
-                const double nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
-                const ElementMatrix em = compute_element_matrices(fem, e, nu, fem.Thickness);
-                element_dofs(fem, e, dofs);
+                for (int v = 0; v < nvar; ++v)
+                {
+                    const double x = xPhys[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)];
+                    dE[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] =
+                        ramp_derivative(region.mat_paras.E_inf, x, region.interp.p_E_elastic);
+                    drho[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] =
+                        ramp_derivative(region.mat_paras.rho, x, region.interp.p_rho);
+                }
+            }
+
+            const Region &region = analysis.regions.front();
+            const double nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
+            const ElementMatrix em = compute_element_matrices(fem, 0, nu, fem.Thickness);
+
+            std::vector<std::vector<double>> df_dx_local = zeros(fem.NElem, nvar);
+            std::vector<int> dofs;
+            for (int k = 0; k <= nstep; ++k)
+            {
                 const auto &u = analysis.results.U[static_cast<std::size_t>(k)];
                 const auto &acc = analysis.results.A[static_cast<std::size_t>(k)];
-                double val = 0.0;
-                for (int i = 0; i < em.ndof; ++i)
+                const auto &lambda = lambda_all[static_cast<std::size_t>(k)];
+                for (int e = elem_start; e < elem_end; ++e)
                 {
-                    double ku = 0.0;
-                    double ma = 0.0;
-                    for (int j = 0; j < em.ndof; ++j)
+                    element_dofs(fem, e, dofs);
+                    std::vector<double> row_K(static_cast<std::size_t>(em.ndof), 0.0);
+                    std::vector<double> row_M(static_cast<std::size_t>(em.ndof), 0.0);
+                    for (int i = 0; i < em.ndof; ++i)
                     {
-                        ku += em.ke[static_cast<std::size_t>(i * em.ndof + j)] * u[static_cast<std::size_t>(dofs[static_cast<std::size_t>(j)])];
-                        if (k != 0)
-                            ma += em.me[static_cast<std::size_t>(i * em.ndof + j)] * acc[static_cast<std::size_t>(dofs[static_cast<std::size_t>(j)])];
+                        for (int j = 0; j < em.ndof; ++j)
+                        {
+                            const int dof_j = dofs[static_cast<std::size_t>(j)];
+                            row_K[static_cast<std::size_t>(i)] +=
+                                em.ke[static_cast<std::size_t>(i * em.ndof + j)] * u[static_cast<std::size_t>(dof_j)];
+                            if (k != 0)
+                            {
+                                row_M[static_cast<std::size_t>(i)] +=
+                                    em.me[static_cast<std::size_t>(i * em.ndof + j)] * acc[static_cast<std::size_t>(dof_j)];
+                            }
+                        }
                     }
-                    val += lam[static_cast<std::size_t>(dofs[static_cast<std::size_t>(i)])] * (dE * ku + drho * ma);
+                    for (int v = 0; v < nvar; ++v)
+                    {
+                        double val = 0.0;
+                        for (int i = 0; i < em.ndof; ++i)
+                        {
+                            const int dof_i = dofs[static_cast<std::size_t>(i)];
+                            const double derivative_force =
+                                row_K[static_cast<std::size_t>(i)] * dE[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] +
+                                row_M[static_cast<std::size_t>(i)] * drho[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)];
+                            val += lambda[static_cast<std::size_t>(dof_i)] * derivative_force;
+                        }
+                        df_dx_local[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] += val;
+                    }
                 }
-                df_dx[static_cast<std::size_t>(e)][0] += val;
             }
+
+            std::vector<double> local_flat = flatten(df_dx_local);
+            std::vector<double> global_flat(local_flat.size(), 0.0);
+            MPI_Allreduce(local_flat.data(), global_flat.data(), static_cast<int>(local_flat.size()), MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+            std::vector<std::vector<double>> df_dx = unflatten(global_flat, fem.NElem, nvar);
+            add_scaled(df_dx, object.d_explicit_df_dx, 1.0);
+            return df_dx;
         }
 
         std::vector<std::vector<double>> dynamic_elastic_base_full_impl(const FEM &fem,
@@ -369,8 +413,7 @@ namespace stage2
             VecDuplicate(lambda, &eta_new);
             VecDuplicate(lambda, &Mlambda);
 
-            const int nvar = nvar_of(filtering_state.xPhys);
-            std::vector<std::vector<double>> dfdx_local = zeros(fem.NElem, nvar);
+            std::vector<std::vector<double>> lambda_all(static_cast<std::size_t>(nstep + 1));
 
             int k = nstep;
             set_vec_from_column_root(mu, object.d_explicit_dfda_all, k);
@@ -380,7 +423,7 @@ namespace stage2
             VecAXPY(rhs, -dLdu, eta);
             set_vec_fixed_from_column_root(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
             solve_adjoint_full(*object.ROM, Keff, rhs, lambda, analysis, Iter, k);
-            add_explicit_gradient_step(fem, analysis, filtering_state.xPhys, lambda, k, dfdx_local);
+            lambda_all[static_cast<std::size_t>(k)] = gather_vec_to_all_local(lambda);
 
             for (k = nstep - 1; k >= 0; --k)
             {
@@ -411,14 +454,11 @@ namespace stage2
                 }
                 set_vec_fixed_from_column_root(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
                 solve_adjoint_full(*object.ROM, k == 0 ? K0 : Keff, rhs, lambda, analysis, Iter, k);
-                add_explicit_gradient_step(fem, analysis, filtering_state.xPhys, lambda, k, dfdx_local);
+                lambda_all[static_cast<std::size_t>(k)] = gather_vec_to_all_local(lambda);
             }
 
-            std::vector<double> local_flat = flatten(dfdx_local);
-            std::vector<double> global_flat(local_flat.size(), 0.0);
-            MPI_Allreduce(local_flat.data(), global_flat.data(), static_cast<int>(local_flat.size()), MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
-            std::vector<std::vector<double>> dfdx_phys = unflatten(global_flat, fem.NElem, nvar);
-            add_scaled(dfdx_phys, object.d_explicit_df_dx, 1.0);
+            std::vector<std::vector<double>> dfdx_phys =
+                explicit_gradient_dynamic(fem, analysis, filtering_state.xPhys, object, lambda_all);
 
             MatDestroy(&K0);
             MatDestroy(&Keff);

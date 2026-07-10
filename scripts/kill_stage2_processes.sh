@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Purpose:
+#   Stop local stage2/MPI processes left behind by runs or aborted debug sessions.
+# Usage:
+#   bash scripts/kill_stage2_processes.sh
+
 pkill -f 'stage2_dynamic_forward|mpiexec|hydra_pmi_proxy|hydra_nameserver' || true
 sleep 2
 pkill -9 -f 'stage2_dynamic_forward|mpiexec|hydra_pmi_proxy|hydra_nameserver' || true

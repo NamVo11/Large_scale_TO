@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Purpose:
+#   Build PETSc against the project MPICH stack with MKL/PARDISO and MUMPS enabled.
+# Usage:
+#   Run manually on each Ubuntu machine:
+#   bash scripts/build_petsc_mkl_mumps.sh
+
 # Build PETSc with the existing MPICH stack, Intel MKL/PARDISO, and MUMPS.
 # This script is intentionally a template: run it manually on each machine,
 # or run once on master and rsync the installed prefix to worker after success.

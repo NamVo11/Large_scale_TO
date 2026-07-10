@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Purpose:
+#   Launch stage2_dynamic_forward across multiple Ubuntu nodes with MPICH.
+# Usage:
+#   bash scripts/run_stage2_multinode.sh localhost,192.168.11.21 8 [stage2 args...]
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # shellcheck disable=SC1091

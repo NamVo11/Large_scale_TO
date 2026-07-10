@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 
+# Purpose:
+#   Define the shared PETSc/MPICH/MKL runtime for Large_scale_TO stage2.
+# Usage:
+#   source scripts/env_petsc_mpi.sh
+#   stage2_unset_runtime_env
+#   stage2_setup_runtime_env
+
 # Shared runtime environment for stage2 on both master and worker.
 # Source this file from scripts, tasks, or a clean shell before running.
 

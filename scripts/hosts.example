@@ -1,8 +1,9 @@
-# Edit this file after the remote machines are ready.
-# Use hostnames or IPs reachable by SSH from this master node.
+# Purpose:
+#   Example host list for helper scripts such as check_remote_hosts.sh and sync_to_hosts.sh.
+# Usage:
+#   Edit this file with worker IPs or hostnames reachable through scripts/ssh_worker_2222.sh.
 #
 # Example:
-# 192.168.252.98 slots=8
-# 192.168.1.42 slots=16
+#   192.168.11.21 slots=8
 
 localhost slots=8

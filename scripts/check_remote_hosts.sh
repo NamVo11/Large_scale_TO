@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HOSTFILE="${1:-scripts/hosts.txt}"
+# Purpose:
+#   Verify SSH access and basic runtime tools on worker machines.
+# Usage:
+#   bash scripts/check_remote_hosts.sh
+#   bash scripts/check_remote_hosts.sh scripts/hosts.example
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HOSTFILE="${1:-$ROOT/scripts/hosts.example}"
 
 cd "$ROOT"
 if [[ ! -f "$HOSTFILE" ]]; then
@@ -17,8 +23,9 @@ for host in $hosts; do
     continue
   fi
   echo "== $host =="
-  ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" \
-    'hostname; hostname -I; nproc; free -h; command -v mpirun; mpirun --version | head -2; pkg-config --modversion PETSc'
+  "$ROOT/scripts/ssh_worker_2222.sh" \
+    -o BatchMode=yes -o ConnectTimeout=5 "$host" \
+    'hostname; hostname -I; nproc; free -h; command -v mpiexec; mpiexec -version | head -2; pkg-config --modversion PETSc'
 done
 
 echo "Remote host check complete."

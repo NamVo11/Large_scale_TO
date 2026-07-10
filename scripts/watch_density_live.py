@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""Purpose:
+Serve the latest saved stage2 density frame as a small local web viewer.
+
+Usage:
+    python3 scripts/watch_density_live.py case_study/test1/result --port 8765
+"""
+
 import argparse
 import csv
 import http.server
