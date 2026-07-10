@@ -5,7 +5,7 @@
             "name": "Debug: single node single rank",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build-mpich-debug/stage2_dynamic_forward",
+            "program": "/home/votrongnam/PROJECT/Large_scale_TO/build-mpich-debug/stage2_dynamic_forward",
             "args": [
                 "-run_optimization",
                 "1",
@@ -18,8 +18,8 @@
                 "-out_dir",
                 "case_study/Debug"
             ],
-            "stopAtEntry": true,
-            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "cwd": "/home/votrongnam/PROJECT/Large_scale_TO",
             "environment": [
                 {
                     "value": "40000:41000",
@@ -58,8 +58,14 @@
                     "description": "Enable pretty-printing for gdb",
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
+                },
+                {
+                    "description": "Break at main for reliable WSL startup",
+                    "text": "break main",
+                    "ignoreFailures": true
                 }
             ],
+            "launchCompleteCommand": "exec-run",
             "preLaunchTask": "CMake: build stage2 Debug"
         }
     ]
