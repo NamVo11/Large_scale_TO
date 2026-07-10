@@ -21,7 +21,6 @@ export OMP_PLACES="${OMP_PLACES:-cores}"
 PETSC_PREFIX="${PETSC_PREFIX:-/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps}"
 MPICH_HOME="${MPICH_HOME:-/home/votrongnam/opt/mpich-4.0-ch3-cxx}"
 MKLROOT="${MKLROOT:-/opt/intel/oneapi/mkl/2025.0}"
-
 BUILD_DIR="${BUILD_DIR:?BUILD_DIR is not set}"
 
 if [[ "$BUILD_DIR" != /* ]]; then

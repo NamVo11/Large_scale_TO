@@ -173,34 +173,6 @@
       "dependsOn": "CMake: build stage2 Release",
       "group": "test",
       "problemMatcher": []
-    },
-    //------------------------------------------------------------------
-    {
-      "label": "Run: single node single rank Debug",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "scripts/run_stage2_case.sh"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "BUILD_DIR": "build-mpich-debug",
-          "CASE_CONFIG": "case_study/test1/600x200_sin_1cycle_125Hz.conf",
-          "NP": "1",
-          "HOSTS": "localhost",
-          "KSP_TYPE": "preonly",
-          "PC_TYPE": "lu",
-          "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso",
-          "OMP_NUM_THREADS": "1",
-          "MKL_NUM_THREADS": "1",
-          "OMP_PROC_BIND": "spread",
-          "OMP_PLACES": "cores"
-        }
-      },
-      "dependsOn": "CMake: build stage2 Debug",
-      "group": "test",
-      "problemMatcher": []
     }
   ]
 }
