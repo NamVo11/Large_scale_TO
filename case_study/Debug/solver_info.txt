@@ -1,0 +1,15 @@
+mode=stage2_matlab_like_forward
+mesh_type=2D_Q4
+dim=2
+nnodes=65
+nelem=48
+ndof=130
+nstep=5
+dt=0.0016000000000000001
+tmax=0.0080000000000000002
+rom_name=MyStrategy
+mpi_size=1
+assembly_time=0.0011100440024165437
+solve_time=0.00094598000214318745
+ksp_iterations=,1,1,1,1,0
+ksp_residuals=,0,0,0,0,0.00063267934266421691

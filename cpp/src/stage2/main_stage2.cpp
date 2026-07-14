@@ -94,21 +94,21 @@ int main(int argc, char** argv) {
         geom.Lx = 1200.0;
         geom.Ly = 400.0;
         geom.Lz = 400.0;
-        geom.nelx = 12;
-        geom.nely = 4;
+        geom.nelx = 600;
+        geom.nely = 200;
         geom.nelz = 1;
 
         std::string fem_type = "plane_stress";
-        int nstep = 5;
+        int nstep = 100;
         double tmax = 0.008;
         double x_initial = 0.5;
         double force_amp = 3333.0;
-        std::string solve_mode = "FOM"; //FOM
+        std::string solve_mode = "ROM"; //FOM
         std::string method_name = "MyStrategy";
         std::string fom_solver_type = "iterative";
         std::string out_dir = "case_study/Debug";
         int run_optimization = 0;
-        int max_iter = 2;
+        int max_iter = 100;
         double volume_limit = 0.4;
         double move = 0.1;
         double debug_fd_epsilon = 1e-6;
@@ -117,8 +117,8 @@ int main(int argc, char** argv) {
         int save_density_interval = 1;
         std::string sens_type = "AVM";
         double rom_tol = 0.02;
-        int rom_rank1 = 0;
-        int rom_max_rank = 10;
+        int rom_rank1 = 10;
+        int rom_max_rank = 20;
         int rom_online = 1;
         double p_rho = 0.0;
 
