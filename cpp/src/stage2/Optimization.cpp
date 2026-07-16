@@ -415,6 +415,19 @@ namespace stage2
 
             std::vector<std::vector<double>> lambda_all(static_cast<std::size_t>(nstep + 1));
 
+            PetscMPIInt mpi_rank = 0;
+            MPI_Comm_rank(PETSC_COMM_WORLD, &mpi_rank);
+            PetscLogDouble tf0 = 0.0;
+            PetscLogDouble tf1 = 0.0;
+            PetscTime(&tf0);
+            object.ROM->set_factorization(Keff);
+            PetscTime(&tf1);
+            if (mpi_rank == 0)
+            {
+                std::cout << "  factorization[s]: obj_sens Keff = "
+                          << static_cast<double>(tf1 - tf0) << "\n";
+            }
+
             int k = nstep;
             set_vec_from_column_root(mu, object.d_explicit_dfda_all, k);
             set_vec_from_column_root(eta, object.d_explicit_dfdv_all, k);
@@ -453,6 +466,17 @@ namespace stage2
                     VecAXPY(rhs, -dLdu, eta);
                 }
                 set_vec_fixed_from_column_root(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
+                if (k == 0)
+                {
+                    PetscTime(&tf0);
+                    object.ROM->set_factorization(K0);
+                    PetscTime(&tf1);
+                    if (mpi_rank == 0)
+                    {
+                        std::cout << "  factorization[s]: obj_sens K0 = "
+                                  << static_cast<double>(tf1 - tf0) << "\n";
+                    }
+                }
                 solve_adjoint_full(*object.ROM, k == 0 ? K0 : Keff, rhs, lambda, analysis, Iter, k);
                 lambda_all[static_cast<std::size_t>(k)] = gather_vec_to_all_local(lambda);
             }
@@ -542,6 +566,44 @@ namespace stage2
                         values[i][j] = static_cast<double>(r.rank);
                     else if (field == "threshold")
                         values[i][j] = r.threshold;
+                    else if (field == "error")
+                        values[i][j] = r.error;
+                    else if (field == "basis_error")
+                        values[i][j] = r.basis_error;
+                    else if (field == "timing_total")
+                        values[i][j] = r.timing_total;
+                    else if (field == "timing_petsc_to_eigen_vec")
+                        values[i][j] = r.timing_petsc_to_eigen_vec;
+                    else if (field == "timing_petsc_to_eigen_mat")
+                        values[i][j] = r.timing_petsc_to_eigen_mat;
+                    else if (field == "timing_projection")
+                        values[i][j] = r.timing_projection;
+                    else if (field == "timing_reduced_rhs")
+                        values[i][j] = r.timing_reduced_rhs;
+                    else if (field == "timing_reduced_solve")
+                        values[i][j] = r.timing_reduced_solve;
+                    else if (field == "timing_reconstruct")
+                        values[i][j] = r.timing_reconstruct;
+                    else if (field == "timing_residual")
+                        values[i][j] = r.timing_residual;
+                    else if (field == "timing_fom_fallback")
+                        values[i][j] = r.timing_fom_fallback;
+                    else if (field == "timing_fom_factorization")
+                        values[i][j] = r.timing_fom_factorization;
+                    else if (field == "timing_fom_solve")
+                        values[i][j] = r.timing_fom_solve;
+                    else if (field == "timing_basis_update")
+                        values[i][j] = r.timing_basis_update;
+                    else if (field == "timing_basis1_update")
+                        values[i][j] = r.timing_basis1_update;
+                    else if (field == "timing_online_basis_update")
+                        values[i][j] = r.timing_online_basis_update;
+                    else if (field == "timing_end_basis_update")
+                        values[i][j] = r.timing_end_basis_update;
+                    else if (field == "timing_basis_copy_reset")
+                        values[i][j] = r.timing_basis_copy_reset;
+                    else if (field == "timing_snapshot")
+                        values[i][j] = r.timing_snapshot;
                 }
             }
             return values;
@@ -553,9 +615,22 @@ namespace stage2
         {
             if (!rom)
                 return;
-            const std::vector<std::string> fields = {
-                "rom_used", "fom_used", "accepted", "residual",
-                "ksp_iterations", "rank", "threshold"};
+            std::vector<std::string> fields = {
+                "fom_used", "accepted", "residual", "ksp_iterations",
+                "timing_total", "timing_fom_factorization", "timing_fom_solve"};
+            if (rom->use_mor)
+            {
+                fields = {
+                    "rom_used", "fom_used", "accepted", "residual",
+                    "ksp_iterations", "rank", "threshold", "error", "basis_error",
+                    "timing_total", "timing_petsc_to_eigen_vec", "timing_petsc_to_eigen_mat",
+                    "timing_projection", "timing_reduced_rhs", "timing_reduced_solve",
+                    "timing_reconstruct", "timing_residual", "timing_fom_fallback",
+                    "timing_fom_factorization", "timing_fom_solve",
+                    "timing_basis_update", "timing_basis1_update", "timing_online_basis_update",
+                    "timing_end_basis_update", "timing_basis_copy_reset",
+                    "timing_snapshot"};
+            }
             for (const std::string &field : fields)
                 write_rom_matrix_csv(out_dir + "/" + prefix + "_" + field + ".csv",
                                      rom_info_matrix(rom->ROM_info, field));
@@ -619,7 +694,9 @@ namespace stage2
             if (rank != 0 || xPhys.empty())
                 return;
 
-            const std::filesystem::path dir = std::filesystem::path(output.outDir_mat) / "density";
+            const std::filesystem::path dir = output.densityDir.empty()
+                                                  ? std::filesystem::path(output.outDir_mat) / "density"
+                                                  : std::filesystem::path(output.densityDir);
             std::filesystem::create_directories(dir);
 
             char name[64] = {0};
@@ -1157,11 +1234,13 @@ namespace stage2
             if (Iter >= Opt.MaxIter)
             {
                 const double iteration_time = elapsed(iter_t0, Clock::now());
-                Opt.history.iteration_time.back() = iteration_time;
-                if (rank == 0)
-                    std::cout << " mma=0 iter_total=" << iteration_time << "\n";
-                break;
-            }
+	                Opt.history.iteration_time.back() = iteration_time;
+	                if (rank == 0)
+	                    std::cout << " mma=0 iter_total=" << iteration_time << "\n";
+	                save_history(Opt, Output);
+	                save_rom_histories(analysis_all, Opt, Output);
+	                break;
+	            }
 
             t0 = Clock::now();
             std::vector<double> xvec = flatten(Opt.x);
@@ -1197,15 +1276,18 @@ namespace stage2
                 if (rank == 0)
                     std::cout << "Parameter beta increased to " << Opt.filtering.beta << ".\n";
             }
-            if (rank == 0)
-            {
-                std::cout << " mma=" << mma_time
-                          << " iter_total=" << Opt.history.iteration_time.back() << "\n";
-            }
-            ++Iter;
-        }
+	            if (rank == 0)
+	            {
+	                std::cout << " mma=" << mma_time
+	                          << " iter_total=" << Opt.history.iteration_time.back() << "\n";
+	            }
+	            save_history(Opt, Output);
+	            save_rom_histories(analysis_all, Opt, Output);
+	            ++Iter;
+	        }
         save_history(Opt, Output);
         save_rom_histories(analysis_all, Opt, Output);
     }
 
 } // namespace stage2
+

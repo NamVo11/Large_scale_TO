@@ -64,3 +64,5 @@ This is the file that the project scripts use for:
 - library path
 
 That is why task runs should stay consistent across master and worker.
+
+dmesg -T | grep -Ei "out of memory|killed process|oom" | tail -50

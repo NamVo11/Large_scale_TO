@@ -12,11 +12,28 @@
                 "-density_plot_interval",
                 "1",
                 "-stage2_out",
-                "case_study/Debug",
+                "case_study/Debug/result",
+                "-density_out",
+                "case_study/Debug/density",
                 "-fom_solver_type",
                 "direct",
+                "-pod_backend",
+                "snapshot_mkl",
+                // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
+                "-online_backend",
+                "incremental_mkl",
+                // incremental_mkl: MKL IncrementalSVD; incremental_eigen: Eigen IncrementalSVD
+                "-ksp_type",
+                "preonly",
+                // preonly: direct solve; cg: iterative SPD
+                "-pc_type",
+                "cholesky",
+                // cholesky: SPD direct; lu: general direct; gamg: iterative
+                "-pc_factor_mat_solver_type",
+                "mkl_pardiso",
+                // mkl_pardiso: single-node direct; mumps: MPI/multinode direct
                 "-out_dir",
-                "case_study/Debug"
+                "case_study/Debug/result"
             ],
             "stopAtEntry": false,
             "cwd": "/home/votrongnam/PROJECT/Large_scale_TO",
@@ -44,6 +61,22 @@
                 {
                     "value": "/opt/intel/oneapi/mkl/2025.0",
                     "name": "MKLROOT"
+                },
+                {
+                    "value": "1",
+                    "name": "OMP_NUM_THREADS"
+                },
+                {
+                    "value": "1",
+                    "name": "MKL_NUM_THREADS"
+                },
+                {
+                    "value": "spread",
+                    "name": "OMP_PROC_BIND"
+                },
+                {
+                    "value": "cores",
+                    "name": "OMP_PLACES"
                 },
                 {
                     "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:/opt/intel/oneapi/mkl/2025.0/lib",

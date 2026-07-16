@@ -3,7 +3,7 @@
 Serve the latest saved stage2 density frame as a small local web viewer.
 
 Usage:
-    python3 scripts/watch_density_live.py case_study/test1/result --port 8765
+    python3 scripts/watch_density_live.py case_study/test1 --port 8765
 """
 
 import argparse
@@ -111,7 +111,7 @@ def csv_to_gray(csv_path: Path) -> Image.Image:
     return gray
 
 
-def convert_latest(density_dir: Path, scale: int, last_seen: Path | None):
+def convert_latest(density_dir: Path, latest_dir: Path, scale: int, last_seen: Path | None):
     frame = latest_frame(density_dir)
     if frame is None or frame == last_seen:
         return last_seen, False
@@ -124,8 +124,8 @@ def convert_latest(density_dir: Path, scale: int, last_seen: Path | None):
         gray = gray.resize((gray.width * scale, gray.height * scale), nearest)
     color = gray.convert("P")
     color.putpalette(jet_palette())
-    color.save(density_dir / "latest_density.png")
-    (density_dir / "latest_density.txt").write_text(frame.name + "\n", encoding="utf-8")
+    color.save(latest_dir / "latest_density.png")
+    (latest_dir / "latest_density.txt").write_text(frame.name + "\n", encoding="utf-8")
     return frame, True
 
 
@@ -137,7 +137,7 @@ def serve(directory: Path, port: int):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Watch stage2 density files and expose a live browser view.")
-    parser.add_argument("result_dir", help="Stage2 result directory, e.g. results/Nam1111")
+    parser.add_argument("case_dir", help="Case directory containing density/.")
     parser.add_argument("--scale", type=int, default=4, help="Nearest-neighbor display scale factor.")
     parser.add_argument("--refresh", type=float, default=0.5, help="Watcher refresh interval in seconds.")
     parser.add_argument("--port", type=int, default=8765, help="HTTP port for browser view.")
@@ -145,29 +145,29 @@ def main() -> int:
     parser.add_argument("--no-server", action="store_true", help="Do not start the HTTP server.")
     args = parser.parse_args()
 
-    result_dir = Path(args.result_dir)
-    density_dir = result_dir / "density"
+    case_dir = Path(args.case_dir)
+    density_dir = case_dir / "density"
     density_dir.mkdir(parents=True, exist_ok=True)
     html = HTML.replace("REFRESH_MS", str(max(100, int(args.refresh * 1000))))
-    html = html.replace("WATCH_DIR", str(result_dir))
-    (density_dir / "index.html").write_text(html, encoding="utf-8")
+    html = html.replace("WATCH_DIR", str(case_dir))
+    (case_dir / "density_index.html").write_text(html, encoding="utf-8")
 
-    last_seen, updated = convert_latest(density_dir, args.scale, None)
+    last_seen, updated = convert_latest(density_dir, case_dir, args.scale, None)
     if args.once:
         if updated:
-            print(f"Updated {density_dir / 'latest_density.png'} from {last_seen.name}")
+            print(f"Updated {case_dir / 'latest_density.png'} from {last_seen.name}")
         else:
             print(f"No density_iter_*.pgm found in {density_dir}")
         return 0
 
     if not args.no_server:
-        thread = threading.Thread(target=serve, args=(density_dir, args.port), daemon=True)
+        thread = threading.Thread(target=serve, args=(case_dir, args.port), daemon=True)
         thread.start()
-        print(f"Open http://localhost:{args.port}/index.html")
+        print(f"Open http://localhost:{args.port}/density_index.html")
     print(f"Watching {density_dir}")
 
     while True:
-        last_seen, updated = convert_latest(density_dir, args.scale, last_seen)
+        last_seen, updated = convert_latest(density_dir, case_dir, args.scale, last_seen)
         if updated:
             print(f"Updated latest_density.png from {last_seen.name}", flush=True)
         time.sleep(args.refresh)

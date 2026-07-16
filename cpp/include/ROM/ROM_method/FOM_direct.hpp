@@ -17,7 +17,7 @@ public:
 
 private:
     KSP ksp_ = nullptr;
+    double last_factorization_time_ = 0.0;
 };
 
 } // namespace stage2
-

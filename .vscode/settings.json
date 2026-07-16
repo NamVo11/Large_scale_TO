@@ -7,8 +7,24 @@
     "-DPETSC_PKG=PETSc"
   ],
   "cmake.configureEnvironment": {
-    "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx/lib/pkgconfig"
+    "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps",
+    "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx",
+    "MKLROOT": "/opt/intel/oneapi/mkl/2025.0",
+    "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps/lib/pkgconfig"
   },
   "cmake.buildBeforeRun": true,
-  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
+  "C_Cpp.default.compilerPath": "/home/votrongnam/opt/mpich-4.0-ch3-cxx/bin/mpicxx",
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build-mpich-release/compile_commands.json",
+  "C_Cpp.default.cppStandard": "c++17",
+  "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
+  "C_Cpp.default.includePath": [
+    "${workspaceFolder}/cpp/include",
+    "${workspaceFolder}/cpp/third_party/eigen",
+    "${workspaceFolder}/cpp/third_party/mma",
+    "${workspaceFolder}/cpp/third_party/mma_matlab_port",
+    "${workspaceFolder}/cpp/third_party/mma_jdumas",
+    "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps/include",
+    "/home/votrongnam/opt/mpich-4.0-ch3-cxx/include",
+    "/opt/intel/oneapi/mkl/2025.0/include"
+  ]
 }

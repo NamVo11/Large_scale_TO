@@ -1,9 +1,17 @@
 #include "ROM/Reduced_Basis_Agorithm/IncrementalSVD.hpp"
 
-#include "ROM/Utils/rom_petsc_utils.hpp"
+#include <Eigen/QR>
+#include <Eigen/SVD>
+
+#ifdef EIGEN_USE_LAPACKE
+#include <mkl_cblas.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <string>
+#include <utility>
 
 namespace stage2 {
 
@@ -13,6 +21,16 @@ IncrementalSVD::IncrementalSVD(int r_reset_in, double eps_svd_in, double tol_in,
     r_reset = r_reset_in;
     eps_svd = eps_svd_in;
     tol = tol_in;
+    backend = backendFromEnvironment();
+}
+
+IncrementalSVD::Backend IncrementalSVD::backendFromEnvironment() {
+    const char* value = std::getenv("STAGE2_ONLINE_BACKEND");
+    if (!value) return Backend::MKL;
+    const std::string backend_name(value);
+    if (backend_name == "incremental_eigen" || backend_name == "eigen") return Backend::Eigen;
+    if (backend_name == "incremental_mkl" || backend_name == "mkl") return Backend::MKL;
+    return Backend::MKL;
 }
 
 void IncrementalSVD::reset() {
@@ -24,235 +42,177 @@ int IncrementalSVD::resolveResetRank() const {
     return r_reset > 0 ? r_reset : max_rank;
 }
 
-bool IncrementalSVD::initialize(Vec c) {
-    clear_vectors(V);
-    s.clear();
-    PetscReal c_norm = 0.0;
-    VecNorm(c, NORM_2, &c_norm);
-    if (c_norm < PETSC_MACHINE_EPSILON) return false;
-
-    Vec v = duplicate_vec(c);
-    VecScale(v, 1.0 / c_norm);
-    V.push_back(v);
-    s.push_back(static_cast<double>(c_norm));
+bool IncrementalSVD::initialize(const Eigen::VectorXd& c) {
+    const double c_norm = c.norm();
+    if (c_norm < 1e-14) {
+        V.resize(0, 0);
+        s.resize(0);
+        ++basis_version;
+        return false;
+    }
+    V.resize(c.size(), 1);
+    V.col(0) = c / c_norm;
+    s.resize(1);
+    s[0] = c_norm;
+    ++basis_version;
     return true;
 }
 
-void IncrementalSVD::truncateState(std::vector<Vec>& V_new, std::vector<double>& s_new) {
-    if (s_new.empty()) {
-        clear_vectors(V_new);
+void IncrementalSVD::truncateState(Eigen::MatrixXd& V_new, Eigen::VectorXd& s_new) {
+    if (s_new.size() == 0 || s_new.maxCoeff() <= 0.0) {
+        V_new.resize(0, 0);
+        s_new.resize(0);
         return;
     }
-    const double s_max = *std::max_element(s_new.begin(), s_new.end());
-    if (s_max <= 0.0) {
-        clear_vectors(V_new);
-        s_new.clear();
-        return;
-    }
-
+    const double cutoff = tol * s_new.maxCoeff();
     int keep_count = 0;
-    for (double value : s_new) {
-        if (value > tol * s_max) ++keep_count;
+    for (Eigen::Index i = 0; i < s_new.size(); ++i) {
+        if (s_new[i] > cutoff) ++keep_count;
     }
-    const int r = std::min({max_rank, keep_count, static_cast<int>(V_new.size()), static_cast<int>(s_new.size())});
-    for (int i = r; i < static_cast<int>(V_new.size()); ++i) {
-        if (V_new[static_cast<std::size_t>(i)]) VecDestroy(&V_new[static_cast<std::size_t>(i)]);
+    const int r = std::min({max_rank, keep_count, static_cast<int>(V_new.cols()), static_cast<int>(s_new.size())});
+    if (r <= 0) {
+        V_new.resize(0, 0);
+        s_new.resize(0);
+        return;
     }
-    V_new.resize(static_cast<std::size_t>(std::max(r, 0)));
-    s_new.resize(static_cast<std::size_t>(std::max(r, 0)));
+    V_new = V_new.leftCols(r).eval();
+    s_new = s_new.head(r).eval();
 }
 
-bool IncrementalSVD::rankOneUpdate(Vec c) {
-    const int r_old = static_cast<int>(V.size());
-    std::vector<double> ell(static_cast<std::size_t>(r_old), 0.0);
-    Vec h = duplicate_vec(c);
-    for (int i = 0; i < r_old; ++i) {
-        PetscScalar dot = 0.0;
-        VecDot(V[static_cast<std::size_t>(i)], c, &dot);
-        ell[static_cast<std::size_t>(i)] = PetscRealPart(dot);
-        VecAXPY(h, -ell[static_cast<std::size_t>(i)], V[static_cast<std::size_t>(i)]);
-    }
+bool IncrementalSVD::rankOneUpdate(const Eigen::VectorXd& c) {
+    if (backend == Backend::MKL) return rankOneUpdateMKL(c);
+    return rankOneUpdateEigen(c);
+}
 
-    PetscReal p_raw = 0.0;
-    VecNorm(h, NORM_2, &p_raw);
-    const double p = static_cast<double>(p_raw);
+bool IncrementalSVD::rankOneUpdateEigen(const Eigen::VectorXd& c) {
+    const int r_old = static_cast<int>(V.cols());
+    Eigen::VectorXd ell;
+    ell.noalias() = V.transpose() * c;
+    Eigen::VectorXd h = c;
+    h.noalias() -= V * ell;
+    const double p = h.norm();
     const bool update_flag = p > eps_svd;
-    const int q_rows = update_flag ? r_old + 1 : r_old;
-    const int q_cols = r_old + 1;
-    if (q_rows <= 0) {
-        VecDestroy(&h);
-        return false;
-    }
 
-    std::vector<Vec> V_aug;
-    V_aug.reserve(static_cast<std::size_t>(q_rows));
-    for (Vec v : V) V_aug.push_back(duplicate_vec(v));
+    Eigen::MatrixXd Q;
     if (update_flag) {
-        VecScale(h, 1.0 / p);
-        V_aug.push_back(h);
-        h = nullptr;
+        Q.setZero(r_old + 1, r_old + 1);
+        Q.topLeftCorner(r_old, r_old) = s.asDiagonal();
+        Q.topRightCorner(r_old, 1) = ell;
+        Q(r_old, r_old) = p;
+    } else {
+        Q.setZero(r_old, r_old + 1);
+        Q.leftCols(r_old) = s.asDiagonal();
+        Q.rightCols(1) = ell;
     }
-    if (h) VecDestroy(&h);
 
-    std::vector<double> q(static_cast<std::size_t>(q_rows * q_cols), 0.0);
-    for (int i = 0; i < r_old; ++i) {
-        q[static_cast<std::size_t>(i * q_cols + i)] = s[static_cast<std::size_t>(i)];
-        q[static_cast<std::size_t>(i * q_cols + r_old)] = ell[static_cast<std::size_t>(i)];
-    }
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(Q, Eigen::ComputeThinU);
+    Eigen::VectorXd s_new = svd.singularValues();
+    const Eigen::MatrixXd& U = svd.matrixU();
+    Eigen::MatrixXd V_new(V.rows(), U.cols());
+    V_new.noalias() = V * U.topRows(r_old);
     if (update_flag) {
-        q[static_cast<std::size_t>(r_old * q_cols + r_old)] = p;
+        V_new.noalias() += (h / p) * U.row(r_old);
     }
-
-    std::vector<double> qqt(static_cast<std::size_t>(q_rows * q_rows), 0.0);
-    for (int i = 0; i < q_rows; ++i) {
-        for (int j = i; j < q_rows; ++j) {
-            double value = 0.0;
-            for (int k = 0; k < q_cols; ++k) {
-                value += q[static_cast<std::size_t>(i * q_cols + k)] *
-                         q[static_cast<std::size_t>(j * q_cols + k)];
-            }
-            qqt[static_cast<std::size_t>(i * q_rows + j)] = value;
-            qqt[static_cast<std::size_t>(j * q_rows + i)] = value;
-        }
-    }
-
-    std::vector<double> lambda;
-    std::vector<double> Uq;
-    if (!symmetric_eigen_jacobi(std::move(qqt), q_rows, lambda, Uq)) {
-        clear_vectors(V_aug);
-        return false;
-    }
-
-    std::vector<double> s_new(static_cast<std::size_t>(q_rows), 0.0);
-    for (int i = 0; i < q_rows; ++i) {
-        s_new[static_cast<std::size_t>(i)] = std::sqrt(std::max(0.0, lambda[static_cast<std::size_t>(i)]));
-    }
-
-    std::vector<Vec> V_new;
-    V_new.reserve(static_cast<std::size_t>(q_rows));
-    for (int k = 0; k < q_rows; ++k) {
-        Vec v = nullptr;
-        VecDuplicate(V_aug.front(), &v);
-        VecSet(v, 0.0);
-        for (int a = 0; a < q_rows; ++a) {
-            VecAXPY(v, Uq[static_cast<std::size_t>(a * q_rows + k)], V_aug[static_cast<std::size_t>(a)]);
-        }
-        V_new.push_back(v);
-    }
-
-    clear_vectors(V_aug);
     truncateState(V_new, s_new);
-    clear_vectors(V);
-    V.swap(V_new);
-    s.swap(s_new);
-    clear_vectors(V_new);
+
+    V = std::move(V_new);
+    s = std::move(s_new);
+    ++basis_version;
     return update_flag;
 }
 
-double IncrementalSVD::orthError(const std::vector<Vec>& basis) const {
-    const int r = static_cast<int>(basis.size());
-    if (r == 0) return 0.0;
-    double sum = 0.0;
-    for (int i = 0; i < r; ++i) {
-        for (int j = 0; j < r; ++j) {
-            PetscScalar dot = 0.0;
-            VecDot(basis[static_cast<std::size_t>(i)], basis[static_cast<std::size_t>(j)], &dot);
-            const double target = i == j ? 1.0 : 0.0;
-            const double diff = PetscRealPart(dot) - target;
-            sum += diff * diff;
+bool IncrementalSVD::rankOneUpdateMKL(const Eigen::VectorXd& c) {
+#ifdef EIGEN_USE_LAPACKE
+    const int rows = static_cast<int>(V.rows());
+    const int r_old = static_cast<int>(V.cols());
+    Eigen::VectorXd ell(r_old);
+    cblas_dgemv(CblasColMajor, CblasTrans,
+                rows, r_old, 1.0,
+                V.data(), rows,
+                c.data(), 1,
+                0.0, ell.data(), 1);
+
+    Eigen::VectorXd h = c;
+    cblas_dgemv(CblasColMajor, CblasNoTrans,
+                rows, r_old, -1.0,
+                V.data(), rows,
+                ell.data(), 1,
+                1.0, h.data(), 1);
+    const double p = cblas_dnrm2(rows, h.data(), 1);
+    const bool update_flag = p > eps_svd;
+
+    Eigen::MatrixXd Q;
+    if (update_flag) {
+        Q.setZero(r_old + 1, r_old + 1);
+        Q.topLeftCorner(r_old, r_old) = s.asDiagonal();
+        Q.topRightCorner(r_old, 1) = ell;
+        Q(r_old, r_old) = p;
+    } else {
+        Q.setZero(r_old, r_old + 1);
+        Q.leftCols(r_old) = s.asDiagonal();
+        Q.rightCols(1) = ell;
+    }
+
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(Q, Eigen::ComputeThinU);
+    Eigen::VectorXd s_new = svd.singularValues();
+    const Eigen::MatrixXd& U = svd.matrixU();
+    Eigen::MatrixXd V_new(rows, U.cols());
+    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
+                rows, static_cast<int>(U.cols()), r_old,
+                1.0,
+                V.data(), rows,
+                U.data(), static_cast<int>(U.rows()),
+                0.0,
+                V_new.data(), rows);
+    if (update_flag) {
+        for (int j = 0; j < static_cast<int>(U.cols()); ++j) {
+            cblas_daxpy(rows,
+                        U(r_old, j) / p,
+                        h.data(), 1,
+                        V_new.col(j).data(), 1);
         }
     }
-    return std::sqrt(sum);
+    truncateState(V_new, s_new);
+
+    V = std::move(V_new);
+    s = std::move(s_new);
+    ++basis_version;
+    return update_flag;
+#else
+    return rankOneUpdateEigen(c);
+#endif
+}
+
+double IncrementalSVD::orthError(const Eigen::MatrixXd& basis) const {
+    if (basis.cols() == 0) return 0.0;
+    return (basis.transpose() * basis - Eigen::MatrixXd::Identity(basis.cols(), basis.cols())).norm();
 }
 
 void IncrementalSVD::reorthogonalizeIfNeeded() {
-    if (V.empty() || orthError(V) <= orth_tol) return;
+    if (V.cols() == 0 || orthError(V) <= orth_tol) return;
 
-    std::vector<Vec> q_basis;
-    std::vector<double> rmat(static_cast<std::size_t>(V.size() * V.size()), 0.0);
-    q_basis.reserve(V.size());
-    for (int j = 0; j < static_cast<int>(V.size()); ++j) {
-        Vec q = duplicate_vec(V[static_cast<std::size_t>(j)]);
-        for (int i = 0; i < static_cast<int>(q_basis.size()); ++i) {
-            PetscScalar dot = 0.0;
-            VecDot(q_basis[static_cast<std::size_t>(i)], q, &dot);
-            rmat[static_cast<std::size_t>(i * V.size() + j)] = PetscRealPart(dot);
-            VecAXPY(q, -PetscRealPart(dot), q_basis[static_cast<std::size_t>(i)]);
-        }
-        PetscReal nrm = 0.0;
-        VecNorm(q, NORM_2, &nrm);
-        rmat[static_cast<std::size_t>(q_basis.size() * V.size() + j)] = static_cast<double>(nrm);
-        if (nrm > 1e-14) {
-            VecScale(q, 1.0 / nrm);
-            q_basis.push_back(q);
-        } else {
-            VecDestroy(&q);
-        }
-    }
+    Eigen::HouseholderQR<Eigen::MatrixXd> qr(V);
+    const Eigen::Index rows = V.rows();
+    const Eigen::Index cols = V.cols();
+    Eigen::MatrixXd Vq = qr.householderQ() * Eigen::MatrixXd::Identity(rows, cols);
+    Eigen::MatrixXd R = qr.matrixQR().topRows(cols).template triangularView<Eigen::Upper>();
+    Eigen::MatrixXd M = R * s.asDiagonal();
 
-    const int q_rows = static_cast<int>(q_basis.size());
-    const int q_cols = static_cast<int>(V.size());
-    if (q_rows == 0) {
-        clear_vectors(q_basis);
-        clear_vectors(V);
-        s.clear();
-        return;
-    }
-
-    std::vector<double> m(static_cast<std::size_t>(q_rows * q_cols), 0.0);
-    for (int i = 0; i < q_rows; ++i) {
-        for (int j = 0; j < q_cols; ++j) {
-            m[static_cast<std::size_t>(i * q_cols + j)] =
-                rmat[static_cast<std::size_t>(i * V.size() + j)] * s[static_cast<std::size_t>(j)];
-        }
-    }
-
-    std::vector<double> mmt(static_cast<std::size_t>(q_rows * q_rows), 0.0);
-    for (int i = 0; i < q_rows; ++i) {
-        for (int j = i; j < q_rows; ++j) {
-            double value = 0.0;
-            for (int k = 0; k < q_cols; ++k) {
-                value += m[static_cast<std::size_t>(i * q_cols + k)] *
-                         m[static_cast<std::size_t>(j * q_cols + k)];
-            }
-            mmt[static_cast<std::size_t>(i * q_rows + j)] = value;
-            mmt[static_cast<std::size_t>(j * q_rows + i)] = value;
-        }
-    }
-
-    std::vector<double> lambda;
-    std::vector<double> Um;
-    if (!symmetric_eigen_jacobi(std::move(mmt), q_rows, lambda, Um)) {
-        clear_vectors(q_basis);
-        return;
-    }
-
-    std::vector<Vec> V_new;
-    std::vector<double> s_new(static_cast<std::size_t>(q_rows), 0.0);
-    for (int k = 0; k < q_rows; ++k) {
-        Vec v = nullptr;
-        VecDuplicate(q_basis.front(), &v);
-        VecSet(v, 0.0);
-        for (int a = 0; a < q_rows; ++a) {
-            VecAXPY(v, Um[static_cast<std::size_t>(a * q_rows + k)], q_basis[static_cast<std::size_t>(a)]);
-        }
-        V_new.push_back(v);
-        s_new[static_cast<std::size_t>(k)] = std::sqrt(std::max(0.0, lambda[static_cast<std::size_t>(k)]));
-    }
-
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(M, Eigen::ComputeThinU);
+    Eigen::MatrixXd V_new;
+    V_new.noalias() = Vq * svd.matrixU();
+    Eigen::VectorXd s_new = svd.singularValues();
     truncateState(V_new, s_new);
-    clear_vectors(V);
-    V.swap(V_new);
-    s.swap(s_new);
-    clear_vectors(V_new);
-    clear_vectors(q_basis);
+    V = std::move(V_new);
+    s = std::move(s_new);
+    ++basis_version;
 }
 
-void IncrementalSVD::update(Vec solution, const ROMContext& context) {
-    addSnapshot(solution, context);
-    const int rank_old = static_cast<int>(V.size());
+void IncrementalSVD::update(const Eigen::VectorXd& solution, const ROMContext& context) {
+    if (store_snapshots) addSnapshot(solution, context);
+    const int rank_old = static_cast<int>(V.cols());
     const int r_reset_eff = resolveResetRank();
-    const bool reset_flag = V.empty() || s.empty() || rank_old >= r_reset_eff;
+    const bool reset_flag = V.cols() == 0 || s.size() == 0 || rank_old >= r_reset_eff;
     bool update_flag = false;
     if (reset_flag) {
         update_flag = initialize(solution);

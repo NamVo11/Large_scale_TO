@@ -6,6 +6,32 @@ set -euo pipefail
 # Usage:
 #   Set BUILD_DIR, CASE_CONFIG, NP, HOSTS, solver env vars, then run:
 #   bash scripts/run_stage2_case.sh
+#
+# Main runtime choices used by VS Code tasks:
+#   KSP_TYPE:
+#     preonly      direct factorization solve; use with PC_TYPE=lu/cholesky
+#     cg           iterative SPD solve; use with PC_TYPE=gamg
+#   PC_TYPE:
+#     cholesky     fastest direct option for SPD elastic matrices
+#     lu           general direct option when SPD is not guaranteed
+#     gamg         iterative AMG preconditioner, usually with KSP_TYPE=cg
+#   PC_FACTOR_MAT_SOLVER_TYPE:
+#     mkl_pardiso  best for single-node/single-rank direct solves
+#     mumps        distributed direct solver for MPI/multinode
+#     empty        use PETSc/default, or leave empty for iterative runs
+#   POD_BACKEND:
+#     snapshot_mkl    fast MATLAB-equivalent snapshot POD using MKL BLAS/LAPACK
+#     snapshot_eigen  fast MATLAB-equivalent snapshot POD
+#     bdcsvd          old Eigen BDCSVD backend for comparison/debug
+#   ONLINE_BACKEND:
+#     incremental_mkl    IncrementalSVD with MKL BLAS kernels
+#     incremental_eigen  IncrementalSVD with Eigen kernels
+#   METHOD_NAME:
+#     MyStrategy         MATLAB-like strategy with IncrementalSVD online basis
+#     MyStrategy2        experimental strategy with MyIncrementalQR1 online basis
+#   Threads:
+#     mkl_pardiso: try OMP_NUM_THREADS=MKL_NUM_THREADS=4,8,16
+#     MPI/GAMG/MUMPS many-rank runs: usually start with 1 thread/rank
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -22,6 +48,8 @@ HOSTS="${HOSTS:?HOSTS is not set}"
 KSP_TYPE="${KSP_TYPE:?KSP_TYPE is not set}"
 PC_TYPE="${PC_TYPE:?PC_TYPE is not set}"
 PC_FACTOR_MAT_SOLVER_TYPE="${PC_FACTOR_MAT_SOLVER_TYPE:-}"
+POD_BACKEND="${POD_BACKEND:-snapshot_mkl}"
+ONLINE_BACKEND="${ONLINE_BACKEND:-incremental_mkl}"
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:?OMP_NUM_THREADS is not set}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:?MKL_NUM_THREADS is not set}"
@@ -68,6 +96,7 @@ CASE_DIR="$(dirname "$CASE_CONFIG")"
 LABEL="$(basename "$CASE_DIR")"
 
 OUT="${OUT:-$CASE_DIR/result}"
+DENSITY_OUT="${DENSITY_OUT:-$CASE_DIR/density}"
 
 
 # ============================================================
@@ -89,7 +118,7 @@ if [[ ! -x "$BINARY" ]]; then
     exit 1
 fi
 
-mkdir -p "$OUT"
+mkdir -p "$OUT" "$DENSITY_OUT"
 
 # ============================================================
 # Application arguments
@@ -102,6 +131,8 @@ APP_ARGS=(
     -solve_mode "$SOLVE_MODE"
     -method_name "$METHOD_NAME"
     -fom_solver_type "$FOM_SOLVER_TYPE"
+    -pod_backend "$POD_BACKEND"
+    -online_backend "$ONLINE_BACKEND"
 
     -rom_tol "$ROM_TOL"
     -rank1 "$RANK1"
@@ -132,6 +163,7 @@ APP_ARGS=(
     -p_rho "$P_RHO"
 
     -stage2_out "$OUT"
+    -density_out "$DENSITY_OUT"
 
     -save_density_each_iter "$SAVE_DENSITY"
     -density_plot_interval "$DENSITY_INTERVAL"
@@ -158,10 +190,13 @@ echo "  case_config               = $CASE_CONFIG"
 echo "  label                     = $CASE_DIR"
 echo "  binary                    = $BINARY"
 echo "  output                    = $OUT"
+echo "  density                   = $DENSITY_OUT"
 echo
 echo "  solve_mode                = $SOLVE_MODE"
 echo "  method_name               = $METHOD_NAME"
 echo "  fom_solver_type           = $FOM_SOLVER_TYPE"
+echo "  pod_backend               = $POD_BACKEND"
+echo "  online_backend            = $ONLINE_BACKEND"
 echo
 echo "  geometry                  = ${LX} x ${LY} x ${LZ}"
 echo "  mesh                      = ${NELX} x ${NELY} x ${NELZ}"

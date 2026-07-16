@@ -6,6 +6,7 @@
 #include <petscksp.h>
 
 #include <filesystem>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -32,6 +33,16 @@ void get_string_option(const char* name, std::string& value) {
     PetscBool set = PETSC_FALSE;
     PetscOptionsGetString(nullptr, nullptr, name, buf, sizeof(buf), &set);
     if (set) value = buf;
+}
+
+bool option_is_set(const char* name) {
+    PetscBool set = PETSC_FALSE;
+    PetscOptionsHasName(nullptr, nullptr, name, &set);
+    return set == PETSC_TRUE;
+}
+
+void set_default_option_if_missing(const char* name, const char* value) {
+    if (!option_is_set(name)) PetscOptionsSetValue(nullptr, name, value);
 }
 
 void write_matrix_columns(const std::string& path, const std::vector<std::vector<double>>& cols) {
@@ -103,12 +114,22 @@ int main(int argc, char** argv) {
         double tmax = 0.008;
         double x_initial = 0.5;
         double force_amp = 3333.0;
-        std::string solve_mode = "ROM"; //FOM
-        std::string method_name = "MyStrategy";
-        std::string fom_solver_type = "iterative";
+        std::string solve_mode = "ROM"; // ROM or FOM
+        std::string method_name = "MyStrategy"; // MyStrategy or MyStrategy2
+        std::string fom_solver_type = "direct"; // direct or iterative/pcg
+        std::string pod_backend = "snapshot_mkl"; // snapshot_mkl, snapshot_eigen, or bdcsvd
+        std::string online_backend = "incremental_mkl"; // incremental_mkl or incremental_eigen
+        // Default PETSc direct-solver options if a task/launch forgets to pass them:
+        //   -ksp_type: preonly(direct), cg(iterative SPD)
+        //   -pc_type: cholesky(SPD direct), lu(general direct), gamg(iterative)
+        //   -pc_factor_mat_solver_type: mkl_pardiso(single-node), mumps(MPI/multinode)
+        set_default_option_if_missing("-ksp_type", "preonly");
+        set_default_option_if_missing("-pc_type", "cholesky");
+        set_default_option_if_missing("-pc_factor_mat_solver_type", "mkl_pardiso");
         std::string out_dir = "case_study/Debug";
+        std::string density_dir;
         int run_optimization = 0;
-        int max_iter = 100;
+        int max_iter = 5;
         double volume_limit = 0.4;
         double move = 0.1;
         double debug_fd_epsilon = 1e-6;
@@ -150,8 +171,17 @@ int main(int argc, char** argv) {
         get_string_option("-solve_mode", solve_mode);
         get_string_option("-method_name", method_name);
         get_string_option("-fom_solver_type", fom_solver_type);
+        get_string_option("-pod_backend", pod_backend);
+        get_string_option("-online_backend", online_backend);
         get_string_option("-sens_type", sens_type);
         get_string_option("-stage2_out", out_dir);
+        get_string_option("-density_out", density_dir);
+        if (!pod_backend.empty()) {
+            setenv("STAGE2_POD_BACKEND", pod_backend.c_str(), 1);
+        }
+        if (!online_backend.empty()) {
+            setenv("STAGE2_ONLINE_BACKEND", online_backend.c_str(), 1);
+        }
 
         FEM fem;
         fem.type = fem_type;
@@ -164,6 +194,7 @@ int main(int argc, char** argv) {
         Output.outDir_mat = out_dir;
         Output.outDir_mat_FOM = out_dir;
         Output.outDir_vtk = out_dir + "/vtk_file";
+        Output.densityDir = density_dir.empty() ? out_dir + "/density" : density_dir;
 
         std::vector<Material> Mat;
         Mat.push_back(Material{1, "elastic", 1e-3, 0.0, 0.3, 1e-12});

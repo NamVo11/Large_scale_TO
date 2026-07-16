@@ -1,50 +1,53 @@
 #include "ROM/Reduced_Basis_Agorithm/UpdateBase.hpp"
 
+#include <stdexcept>
+#include <utility>
+
 namespace stage2 {
 
 UpdateBase::UpdateBase(int max_rank_in) : max_rank(max_rank_in) {}
 
-UpdateBase::~UpdateBase() {
-    reset();
-}
-
-const std::vector<Vec>& UpdateBase::getBasis(const ROMContext&) const {
+const Eigen::MatrixXd& UpdateBase::getBasis(const ROMContext&) const {
     return V;
 }
 
-void UpdateBase::setBasis(const std::vector<Vec>& V_in, const std::vector<double>& s_in) {
-    clear_vectors(V);
-    for (Vec v : V_in) V.push_back(duplicate_vec(v));
+void UpdateBase::setBasis(const Eigen::MatrixXd& V_in, const Eigen::VectorXd& s_in) {
+    V = V_in;
     s = s_in;
+    ++basis_version;
 }
 
-void UpdateBase::addSnapshot(Vec solution, const ROMContext&) {
-    snapshots.push_back(duplicate_vec(solution));
+void UpdateBase::setBasis(Eigen::MatrixXd&& V_in, Eigen::VectorXd&& s_in) {
+    V = std::move(V_in);
+    s = std::move(s_in);
+    ++basis_version;
+}
+
+void UpdateBase::addSnapshot(const Eigen::VectorXd& solution, const ROMContext&) {
+    if (solution.size() == 0) return;
+    if (snapshots.size() == 0) {
+        snapshots.resize(solution.size(), 1);
+        snapshots.col(0) = solution;
+        return;
+    }
+    if (snapshots.rows() != solution.size()) {
+        throw std::runtime_error("UpdateBase::addSnapshot: snapshot size mismatch");
+    }
+    const Eigen::Index old_cols = snapshots.cols();
+    snapshots.conservativeResize(Eigen::NoChange, old_cols + 1);
+    snapshots.col(old_cols) = solution;
 }
 
 void UpdateBase::clearSnapshots() {
-    clear_vectors(snapshots);
+    snapshots.resize(0, 0);
 }
 
 void UpdateBase::reset() {
-    clear_vectors(V);
-    clear_vectors(snapshots);
-    s.clear();
-    W.clear();
-}
-
-Vec UpdateBase::duplicate_vec(Vec source) {
-    Vec out = nullptr;
-    VecDuplicate(source, &out);
-    VecCopy(source, out);
-    return out;
-}
-
-void UpdateBase::clear_vectors(std::vector<Vec>& vecs) {
-    for (Vec& v : vecs) {
-        if (v) VecDestroy(&v);
-    }
-    vecs.clear();
+    V.resize(0, 0);
+    snapshots.resize(0, 0);
+    s.resize(0);
+    W.resize(0, 0);
+    ++basis_version;
 }
 
 } // namespace stage2

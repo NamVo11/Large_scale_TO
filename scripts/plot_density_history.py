@@ -3,7 +3,7 @@
 Convert saved density frames into PNG images and an animated GIF for review.
 
 Usage:
-    python3 scripts/plot_density_history.py case_study/test1/result --scale 8
+    python3 scripts/plot_density_history.py case_study/test1 --scale 8
 """
 
 import argparse
@@ -28,13 +28,13 @@ def jet_palette():
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Convert saved density PGM files to PNG frames and an animated GIF.")
-    parser.add_argument("result_dir", help="Stage2 result directory, e.g. results/stage2_density_plot_test")
+    parser.add_argument("case_dir", help="Case directory containing density/.")
     parser.add_argument("--scale", type=int, default=4, help="Nearest-neighbor image scale factor.")
     parser.add_argument("--duration", type=int, default=250, help="GIF frame duration in milliseconds.")
     args = parser.parse_args()
 
-    result_dir = Path(args.result_dir)
-    density_dir = result_dir / "density"
+    case_dir = Path(args.case_dir)
+    density_dir = case_dir / "density"
     pgms = sorted(density_dir.glob("density_iter_*.pgm"))
     if not pgms:
         raise SystemExit(f"No density_iter_*.pgm files found in {density_dir}")

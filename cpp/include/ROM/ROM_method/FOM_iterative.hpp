@@ -20,7 +20,7 @@ public:
 private:
     KSP ksp_ = nullptr;
     Mat factor = nullptr;
+    double last_factorization_time_ = 0.0;
 };
 
 } // namespace stage2
-

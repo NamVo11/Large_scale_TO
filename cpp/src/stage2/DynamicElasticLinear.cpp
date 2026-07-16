@@ -186,7 +186,15 @@ void dynamic_elastic_linear(Analysis& analysis,
     set_neum(analysis, f_ext, 0);
     VecCopy(f_ext, rhs);
     set_dirich_zero(rhs, SPCdofs);
+    PetscLogDouble tf0 = 0.0;
+    PetscLogDouble tf1 = 0.0;
+    PetscTime(&tf0);
     analysis.ROM->set_factorization(K_initial);
+    PetscTime(&tf1);
+    if (rank == 0) {
+        std::cout << "  factorization[s]: forward K_initial = "
+                  << static_cast<double>(tf1 - tf0) << "\n";
+    }
     analysis.ROM->main(K_initial, rhs, u, make_context(analysis, Iter, 1, 0, "initial_equilibrium", analysis.Nstep == 0));
 
     const double initial_residual = residual_norm_free(K_initial, u, rhs, SPCdofs);
@@ -202,7 +210,13 @@ void dynamic_elastic_linear(Analysis& analysis,
     MatDuplicate(K, MAT_COPY_VALUES, &K_eff);
     MatAXPY(K_eff, a0c, M, SAME_NONZERO_PATTERN);
     if (fixed_is) MatZeroRowsColumnsIS(K_eff, fixed_is, 1.0, nullptr, nullptr);
+    PetscTime(&tf0);
     analysis.ROM->set_factorization(K_eff);
+    PetscTime(&tf1);
+    if (rank == 0) {
+        std::cout << "  factorization[s]: forward K_eff = "
+                  << static_cast<double>(tf1 - tf0) << "\n";
+    }
 
     analysis.results.U.clear();
     analysis.results.V.clear();

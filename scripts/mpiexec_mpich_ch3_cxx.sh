@@ -12,5 +12,4 @@ source "$SCRIPT_DIR/env_petsc_mpi.sh"
 stage2_setup_runtime_env
 
 exec "$MPICH_HOME/bin/mpiexec" \
-    -iface eth1 \
     "$@"
