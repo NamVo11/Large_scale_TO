@@ -1,6 +1,40 @@
 {
+  
   "version": "2.0.0",
+  
   "tasks": [
+    //----------------- batch single node single rank, sequential cases -----------------
+    {
+      "label": "Run batch: single node single rank",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "scripts/run_stage2_case.sh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "BUILD_DIR": "build-mpich-release",
+          "CASE_CONFIGS": "case_study/600X200_sin_1cycle_125Hz/FOM/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy2_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf",
+          // Add/remove case configs above. They run sequentially with the same solver settings.
+          "NP": "1",
+          "HOSTS": "localhost",
+          "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD
+          "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD
+          "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso", // single-node direct solver; alternatives: mumps
+          "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
+          "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: IncrementalSVD only; ignored by MyStrategy2
+          "OMP_NUM_THREADS": "1", // use 1 for method comparison; try 4,8,16 for fast production runs
+          "MKL_NUM_THREADS": "1", // match OMP_NUM_THREADS unless testing MKL threading
+          "OMP_PROC_BIND": "spread", // spread or close
+          "OMP_PLACES": "cores" // cores or threads
+        }
+      },
+      "dependsOn": "CMake: build stage2 Release",
+      "group": "test",
+      "problemMatcher": []
+    },
+    // ------------------ configure stage2 Debug--------------------------------------------------
     {
       "label": "CMake: configure stage2 Debug",
       "type": "shell",
@@ -24,7 +58,7 @@
       "group": "build",
       "problemMatcher": []
     },
-    //------------------------------------------------------------------
+    //---------------------build stage2 Debug---------------------------------------------
     {
       "label": "CMake: build stage2 Debug",
       "type": "shell",
@@ -45,7 +79,7 @@
       "dependsOn": "CMake: configure stage2 Debug",
       "problemMatcher": "$gcc"
     },
-    //------------------------------------------------------------------
+    //--------------------- configure stage2 Release---------------------------------------------
     {
       "label": "CMake: configure stage2 Release",
       "type": "shell",
@@ -69,7 +103,7 @@
       "group": "build",
       "problemMatcher": []
     },
-    //------------------------------------------------------------------
+    //--------------------- build stage2 Release---------------------------------------------
     {
       "label": "CMake: build stage2 Release",
       "type": "shell",
@@ -164,8 +198,7 @@
         "cwd": "${workspaceFolder}",
         "env": {
           "BUILD_DIR": "build-mpich-release",
-          "CASE_CONFIG": "case_study/test3/600x200_sin_1cycle_125Hz.conf",
-          "METHOD_NAME": "MyStrategy2", // MyStrategy: IncrementalSVD; MyStrategy2: MyIncrementalQR1 QR online basis
+          "CASE_CONFIG": "case_study/test4_FOM/600x200_sin_1cycle_125Hz.conf",
           "NP": "1",
           "HOSTS": "localhost",
           "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD
@@ -246,13 +279,14 @@
       "group": "test",
       "problemMatcher": []
     },
+    //----------------------------- Watch: main_Nam -------------------------------------
     {
       "label": "Watch: main_Nam",
       "type": "shell",
       "command": "python3",
       "args": [
         "scripts/watch_optimization_live.py",
-        "case_study/test3",
+        "case_study/test4_FOM",
         // Case folder to watch. Change this to case_study/test1, case_study/Debug, etc.
         "--scale",
         "8",
@@ -279,6 +313,7 @@
       "isBackground": true,
       "problemMatcher": []
     },
+    //----------------------------- Save figures: main_Nam once -------------------------------------
     {
       "label": "Save figures: main_Nam once",
       "type": "shell",

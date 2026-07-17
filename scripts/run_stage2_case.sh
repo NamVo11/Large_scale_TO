@@ -40,6 +40,35 @@ cd "$ROOT"
 source "$ROOT/scripts/env_petsc_mpi.sh"
 stage2_setup_runtime_env
 
+if [[ -n "${CASE_CONFIGS:-}" ]]; then
+    echo
+    echo "============================================================"
+    echo "Running stage2 batch"
+    echo "============================================================"
+    echo "$CASE_CONFIGS" | tr ' ' '\n' | sed '/^$/d' | nl -w2 -s'. '
+    echo "============================================================"
+    echo
+
+    case_id=0
+    for cfg in $CASE_CONFIGS; do
+        case_id=$((case_id + 1))
+        echo
+        echo "============================================================"
+        echo "Batch case $case_id"
+        echo "CASE_CONFIG=$cfg"
+        echo "============================================================"
+        echo
+
+        CASE_CONFIG="$cfg" CASE_CONFIGS= bash "$ROOT/scripts/run_stage2_case.sh"
+    done
+
+    echo
+    echo "============================================================"
+    echo "Stage2 batch finished"
+    echo "============================================================"
+    exit 0
+fi
+
 CASE_CONFIG="${CASE_CONFIG:?CASE_CONFIG is not set}"
 
 NP="${NP:?NP is not set}"
