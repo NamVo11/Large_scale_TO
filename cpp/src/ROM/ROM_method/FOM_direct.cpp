@@ -1,6 +1,63 @@
 #include "ROM/ROM_method/FOM_direct.hpp"
 
+#include <petscsys.h>
+
+#include <algorithm>
+#include <cstdlib>
+
+#if defined(__has_include)
+#if __has_include(<mkl_service.h>)
+#include <mkl_service.h>
+#define STAGE2_HAS_MKL_SERVICE 1
+#endif
+#endif
+
 namespace stage2 {
+
+namespace {
+
+int env_int_or_default(const char* name, int fallback) {
+    const char* value = std::getenv(name);
+    if (!value || !*value) return fallback;
+    return std::max(1, std::atoi(value));
+}
+
+int factor_threads_for_mat(Mat A) {
+    PetscMPIInt size = 1;
+    MPI_Comm_size(PetscObjectComm((PetscObject)A), &size);
+    if (size != 1) return 1;
+    return env_int_or_default("FACTOR_NUM_THREADS", env_int_or_default("MKL_NUM_THREADS", 1));
+}
+
+int runtime_mkl_threads_for_mat(Mat A) {
+    PetscMPIInt size = 1;
+    MPI_Comm_size(PetscObjectComm((PetscObject)A), &size);
+    if (size != 1) return 1;
+    return env_int_or_default("MKL_NUM_THREADS", 1);
+}
+
+class MKLThreadGuard {
+public:
+    MKLThreadGuard(int factor_threads, int runtime_threads)
+        : runtime_threads_(std::max(1, runtime_threads)) {
+#if defined(STAGE2_HAS_MKL_SERVICE)
+        mkl_set_num_threads_local(std::max(1, factor_threads));
+#else
+        (void)factor_threads;
+#endif
+    }
+
+    ~MKLThreadGuard() {
+#if defined(STAGE2_HAS_MKL_SERVICE)
+        mkl_set_num_threads_local(runtime_threads_);
+#endif
+    }
+
+private:
+    int runtime_threads_ = 1;
+};
+
+} // namespace
 
 FOM_direct::FOM_direct() : ROMBase({}) {
     name = "FOM_direct";
@@ -15,6 +72,8 @@ void FOM_direct::set_factorization(Mat factor_in) {
     PetscLogDouble t0 = 0.0;
     PetscLogDouble t1 = 0.0;
     PetscTime(&t0);
+    MKLThreadGuard mkl_threads(factor_threads_for_mat(factor_in),
+                               runtime_mkl_threads_for_mat(factor_in));
     factor = factor_in;
     if (!ksp_) KSPCreate(PETSC_COMM_WORLD, &ksp_);
     KSPSetOperators(ksp_, factor, factor);

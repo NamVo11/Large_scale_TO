@@ -59,6 +59,7 @@ FEM Mesh(const Geometry& geom, FEM fem) {
     const std::string type = lower(fem.type);
     fem.Node.clear();
     fem.Element.clear();
+    fem.ElementDofs.clear();
     fem.elem_center.clear();
     fem.nelx = geom.nelx;
     fem.nely = geom.nely;
@@ -136,6 +137,19 @@ FEM Mesh(const Geometry& geom, FEM fem) {
 void PrecomputeFEM(FEM& fem) {
     if (fem.mesh_type != "2D_Q4" && fem.mesh_type != "3D_H8") {
         throw std::runtime_error("PrecomputeFEM: unsupported mesh type");
+    }
+
+    fem.ElementDofs.resize(static_cast<std::size_t>(fem.NElem));
+    for (int e = 0; e < fem.NElem; ++e) {
+        const auto& elem = fem.Element.at(static_cast<std::size_t>(e));
+        auto& dofs = fem.ElementDofs[static_cast<std::size_t>(e)];
+        dofs.resize(elem.size() * static_cast<std::size_t>(fem.dim));
+        for (std::size_t a = 0; a < elem.size(); ++a) {
+            for (int d = 0; d < fem.dim; ++d) {
+                dofs[a * static_cast<std::size_t>(fem.dim) + static_cast<std::size_t>(d)] =
+                    static_cast<PetscInt>(fem.dim * elem[a] + d);
+            }
+        }
     }
 }
 

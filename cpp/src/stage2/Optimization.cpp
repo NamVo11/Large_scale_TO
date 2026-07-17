@@ -10,7 +10,9 @@
 #include <petscksp.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
+#include <cstdlib>
 #include <cmath>
 #include <chrono>
 #include <filesystem>
@@ -20,6 +22,8 @@
 #include <numeric>
 #include <stdexcept>
 #include <utility>
+
+#include <omp.h>
 
 namespace stage2
 {
@@ -100,15 +104,12 @@ namespace stage2
             return 1.0 / (c * c);
         }
 
-        void element_dofs(const FEM &fem, int elem_id, std::vector<int> &dofs)
+        [[maybe_unused]] void element_dofs(const FEM &fem, int elem_id, std::vector<int> &dofs)
         {
-            const auto &elem = fem.Element[static_cast<std::size_t>(elem_id)];
-            dofs.resize(elem.size() * static_cast<std::size_t>(fem.dim));
-            for (std::size_t a = 0; a < elem.size(); ++a)
-            {
-                for (int d = 0; d < fem.dim; ++d)
-                    dofs[a * fem.dim + static_cast<std::size_t>(d)] = fem.dim * elem[a] + d;
-            }
+            const auto &elem_dofs = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
+            dofs.resize(elem_dofs.size());
+            for (std::size_t i = 0; i < elem_dofs.size(); ++i)
+                dofs[i] = static_cast<int>(elem_dofs[i]);
         }
 
         double ramp_derivative(const std::vector<double> &para, double x, double p)
@@ -120,6 +121,21 @@ namespace stage2
 
         std::vector<double> gather_vec_to_all_local(Vec v)
         {
+            PetscMPIInt size = 1;
+            MPI_Comm_size(PetscObjectComm((PetscObject)v), &size);
+            if (size == 1)
+            {
+                PetscInt n = 0;
+                VecGetLocalSize(v, &n);
+                std::vector<double> out(static_cast<std::size_t>(n));
+                const PetscScalar *a = nullptr;
+                VecGetArrayRead(v, &a);
+                for (PetscInt i = 0; i < n; ++i)
+                    out[static_cast<std::size_t>(i)] = PetscRealPart(a[i]);
+                VecRestoreArrayRead(v, &a);
+                return out;
+            }
+
             Vec vall = nullptr;
             VecScatter scatter = nullptr;
             VecScatterCreateToAll(v, &scatter, &vall);
@@ -141,6 +157,27 @@ namespace stage2
 
         void set_vec_from_column_root(Vec v, const std::vector<std::vector<double>> &values, int k, double scale = 1.0)
         {
+            PetscMPIInt size = 1;
+            MPI_Comm_size(PetscObjectComm((PetscObject)v), &size);
+            if (size == 1)
+            {
+                if (values.empty())
+                {
+                    VecSet(v, 0.0);
+                    return;
+                }
+                PetscInt n = 0;
+                VecGetLocalSize(v, &n);
+                if (static_cast<std::size_t>(n) != values.size())
+                    throw std::runtime_error("set_vec_from_column_root: vector size mismatch");
+                PetscScalar *a = nullptr;
+                VecGetArray(v, &a);
+                for (PetscInt i = 0; i < n; ++i)
+                    a[i] = scale * values[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)];
+                VecRestoreArray(v, &a);
+                return;
+            }
+
             PetscMPIInt rank = 0;
             MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
             VecSet(v, 0.0);
@@ -162,6 +199,26 @@ namespace stage2
         {
             if (fixed.empty())
                 return;
+            PetscMPIInt size = 1;
+            MPI_Comm_size(PetscObjectComm((PetscObject)v), &size);
+            if (size == 1)
+            {
+                if (values.empty())
+                    return;
+                PetscInt n = 0;
+                VecGetLocalSize(v, &n);
+                PetscScalar *a = nullptr;
+                VecGetArray(v, &a);
+                for (int id : fixed)
+                {
+                    if (id < 0 || id >= n)
+                        throw std::runtime_error("set_vec_fixed_from_column_root: fixed dof out of range");
+                    a[id] = scale * values[static_cast<std::size_t>(id)][static_cast<std::size_t>(k)];
+                }
+                VecRestoreArray(v, &a);
+                return;
+            }
+
             PetscMPIInt rank = 0;
             MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
             if (rank == 0)
@@ -180,6 +237,24 @@ namespace stage2
         {
             if (fixed.empty())
                 return;
+            PetscMPIInt size = 1;
+            MPI_Comm_size(PetscObjectComm((PetscObject)v), &size);
+            if (size == 1)
+            {
+                PetscInt n = 0;
+                VecGetLocalSize(v, &n);
+                PetscScalar *a = nullptr;
+                VecGetArray(v, &a);
+                for (int id : fixed)
+                {
+                    if (id < 0 || id >= n)
+                        throw std::runtime_error("zero_fixed: fixed dof out of range");
+                    a[id] = 0.0;
+                }
+                VecRestoreArray(v, &a);
+                return;
+            }
+
             PetscMPIInt rank = 0;
             MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
             if (rank == 0)
@@ -283,12 +358,15 @@ namespace stage2
                 c.d_explicit_df_dx[static_cast<std::size_t>(e)][static_cast<std::size_t>(val_id)] = 1.0 / static_cast<double>(fem.NElem);
         }
 
+        /*
         std::vector<std::vector<double>> explicit_gradient_dynamic(const FEM &fem,
                                                                    const Analysis &analysis,
                                                                    const std::vector<std::vector<double>> &xPhys,
                                                                    const ObjectiveGroup &object,
                                                                    const std::vector<std::vector<double>> &lambda_all)
         {
+            using Clock = std::chrono::steady_clock;
+            const auto timer_begin = Clock::now();
             PetscMPIInt rank = 0;
             PetscMPIInt size = 1;
             MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
@@ -298,6 +376,7 @@ namespace stage2
             const int elem_start = (fem.NElem * rank) / size;
             const int elem_end = (fem.NElem * (rank + 1)) / size;
 
+            auto t0 = Clock::now();
             std::vector<std::vector<double>> dE(static_cast<std::size_t>(fem.NElem),
                                                 std::vector<double>(static_cast<std::size_t>(nvar), 0.0));
             std::vector<std::vector<double>> drho(static_cast<std::size_t>(fem.NElem),
@@ -314,12 +393,22 @@ namespace stage2
                         ramp_derivative(region.mat_paras.rho, x, region.interp.p_rho);
                 }
             }
+            auto t1 = Clock::now();
+            const double timing_interp_derivative = std::chrono::duration<double>(t1 - t0).count();
 
             const Region &region = analysis.regions.front();
             const double nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
+            t0 = Clock::now();
             const ElementMatrix em = compute_element_matrices(fem, 0, nu, fem.Thickness);
+            t1 = Clock::now();
+            const double timing_element_matrix = std::chrono::duration<double>(t1 - t0).count();
 
+            t0 = Clock::now();
             std::vector<std::vector<double>> df_dx_local = zeros(fem.NElem, nvar);
+            t1 = Clock::now();
+            const double timing_alloc_gradient = std::chrono::duration<double>(t1 - t0).count();
+
+            t0 = Clock::now();
             std::vector<int> dofs;
             for (int k = 0; k <= nstep; ++k)
             {
@@ -360,12 +449,191 @@ namespace stage2
                     }
                 }
             }
+            t1 = Clock::now();
+            const double timing_element_loop = std::chrono::duration<double>(t1 - t0).count();
 
+            t0 = Clock::now();
             std::vector<double> local_flat = flatten(df_dx_local);
             std::vector<double> global_flat(local_flat.size(), 0.0);
+            t1 = Clock::now();
+            const double timing_flatten = std::chrono::duration<double>(t1 - t0).count();
+
+            t0 = Clock::now();
             MPI_Allreduce(local_flat.data(), global_flat.data(), static_cast<int>(local_flat.size()), MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+            t1 = Clock::now();
+            const double timing_allreduce = std::chrono::duration<double>(t1 - t0).count();
+
+            t0 = Clock::now();
             std::vector<std::vector<double>> df_dx = unflatten(global_flat, fem.NElem, nvar);
             add_scaled(df_dx, object.d_explicit_df_dx, 1.0);
+            t1 = Clock::now();
+            const double timing_unflatten_add = std::chrono::duration<double>(t1 - t0).count();
+            if (rank == 0)
+            {
+                const double timing_total = std::chrono::duration<double>(Clock::now() - timer_begin).count();
+                std::cout << "  explicit_gradient_dynamic[s]:"
+                          << " interp_derivative=" << timing_interp_derivative
+                          << " element_matrix=" << timing_element_matrix
+                          << " alloc_gradient=" << timing_alloc_gradient
+                          << " element_loop=" << timing_element_loop
+                          << " flatten=" << timing_flatten
+                          << " allreduce=" << timing_allreduce
+                          << " unflatten_add=" << timing_unflatten_add
+                          << " total=" << timing_total
+                          << "\n";
+            }
+            return df_dx;
+        }
+        */
+
+        std::vector<std::vector<double>> explicit_gradient_dynamic(const FEM &fem,
+                                                                   const Analysis &analysis,
+                                                                   const std::vector<std::vector<double>> &xPhys,
+                                                                   const ObjectiveGroup &object,
+                                                                   const std::vector<std::vector<double>> &lambda_all)
+        {
+            using Clock = std::chrono::steady_clock;
+            const auto timer_begin = Clock::now();
+            PetscMPIInt rank = 0;
+            PetscMPIInt size = 1;
+            MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+            MPI_Comm_size(PETSC_COMM_WORLD, &size);
+
+            const int nstep = analysis.Nstep;
+            const int nvar = nvar_of(xPhys);
+            const int elem_start = (fem.NElem * rank) / size;
+            const int elem_end = (fem.NElem * (rank + 1)) / size;
+            int sens_element_threads = 1;
+            if (const char *env = std::getenv("SENS_ELEMENT_THREADS"))
+                sens_element_threads = std::max(1, std::atoi(env));
+            if (size != 1)
+                sens_element_threads = 1;
+            const Region &region = analysis.regions.front();
+            const double nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
+
+            auto t0 = Clock::now();
+            std::vector<double> dE(static_cast<std::size_t>(fem.NElem * nvar), 0.0);
+            std::vector<double> drho(static_cast<std::size_t>(fem.NElem * nvar), 0.0);
+            for (int e = elem_start; e < elem_end; ++e)
+            {
+                for (int v = 0; v < nvar; ++v)
+                {
+                    const double x = xPhys[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)];
+                    const std::size_t id = static_cast<std::size_t>(e * nvar + v);
+                    dE[id] = ramp_derivative(region.mat_paras.E_inf, x, region.interp.p_E_elastic);
+                    drho[id] = ramp_derivative(region.mat_paras.rho, x, region.interp.p_rho);
+                }
+            }
+            auto t1 = Clock::now();
+            const double timing_interp_derivative = std::chrono::duration<double>(t1 - t0).count();
+
+            t0 = Clock::now();
+            ElementMatrix uniform_em;
+            if (fem.uniform_element_matrices)
+                uniform_em = compute_element_matrices(fem, analysis.regions.front().elem_ids.front(), nu, fem.Thickness);
+            t1 = Clock::now();
+            const double timing_element_matrix = std::chrono::duration<double>(t1 - t0).count();
+
+            t0 = Clock::now();
+            std::vector<double> df_dx_local(static_cast<std::size_t>(fem.NElem * nvar), 0.0);
+            t1 = Clock::now();
+            const double timing_alloc_gradient = std::chrono::duration<double>(t1 - t0).count();
+
+            t0 = Clock::now();
+            #pragma omp parallel for schedule(static) num_threads(sens_element_threads) if(sens_element_threads > 1)
+            for (int e = elem_start; e < elem_end; ++e)
+            {
+                ElementMatrix local_em;
+                const ElementMatrix *em_ptr = &uniform_em;
+                if (!fem.uniform_element_matrices)
+                {
+                    local_em = compute_element_matrices(fem, e, nu, fem.Thickness);
+                    em_ptr = &local_em;
+                }
+                const ElementMatrix &em = *em_ptr;
+                if (em.ndof > 24)
+                    throw std::runtime_error("explicit_gradient_dynamic: element ndof > 24 is not supported by stack buffer");
+
+                const auto &dofs = fem.ElementDofs.at(static_cast<std::size_t>(e));
+                std::array<double, 24> row_K{};
+                std::array<double, 24> row_M{};
+
+                for (int k = 0; k <= nstep; ++k)
+                {
+                    row_K.fill(0.0);
+                    row_M.fill(0.0);
+                    const auto &u = analysis.results.U[static_cast<std::size_t>(k)];
+                    const auto &acc = analysis.results.A[static_cast<std::size_t>(k)];
+                    const auto &lambda = lambda_all[static_cast<std::size_t>(k)];
+
+                    for (int i = 0; i < em.ndof; ++i)
+                    {
+                        const std::size_t row = static_cast<std::size_t>(i * em.ndof);
+                        for (int j = 0; j < em.ndof; ++j)
+                        {
+                            const int dof_j = static_cast<int>(dofs[static_cast<std::size_t>(j)]);
+                            row_K[static_cast<std::size_t>(i)] +=
+                                em.ke[row + static_cast<std::size_t>(j)] * u[static_cast<std::size_t>(dof_j)];
+                            if (k != 0)
+                            {
+                                row_M[static_cast<std::size_t>(i)] +=
+                                    em.me[row + static_cast<std::size_t>(j)] * acc[static_cast<std::size_t>(dof_j)];
+                            }
+                        }
+                    }
+
+                    for (int v = 0; v < nvar; ++v)
+                    {
+                        double val = 0.0;
+                        const std::size_t ev = static_cast<std::size_t>(e * nvar + v);
+                        const double dE_ev = dE[ev];
+                        const double drho_ev = drho[ev];
+                        for (int i = 0; i < em.ndof; ++i)
+                        {
+                            const int dof_i = static_cast<int>(dofs[static_cast<std::size_t>(i)]);
+                            const double derivative_force =
+                                row_K[static_cast<std::size_t>(i)] * dE_ev +
+                                row_M[static_cast<std::size_t>(i)] * drho_ev;
+                            val += lambda[static_cast<std::size_t>(dof_i)] * derivative_force;
+                        }
+                        df_dx_local[ev] += val;
+                    }
+                }
+            }
+            t1 = Clock::now();
+            const double timing_element_loop = std::chrono::duration<double>(t1 - t0).count();
+
+            t0 = Clock::now();
+            std::vector<double> global_flat(df_dx_local.size(), 0.0);
+            t1 = Clock::now();
+            const double timing_flatten = std::chrono::duration<double>(t1 - t0).count();
+
+            t0 = Clock::now();
+            MPI_Allreduce(df_dx_local.data(), global_flat.data(), static_cast<int>(df_dx_local.size()), MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+            t1 = Clock::now();
+            const double timing_allreduce = std::chrono::duration<double>(t1 - t0).count();
+
+            t0 = Clock::now();
+            std::vector<std::vector<double>> df_dx = unflatten(global_flat, fem.NElem, nvar);
+            add_scaled(df_dx, object.d_explicit_df_dx, 1.0);
+            t1 = Clock::now();
+            const double timing_unflatten_add = std::chrono::duration<double>(t1 - t0).count();
+
+            if (rank == 0)
+            {
+                const double timing_total = std::chrono::duration<double>(Clock::now() - timer_begin).count();
+                std::cout << "  explicit_gradient_dynamic[s]:"
+                          << " threads=" << sens_element_threads
+                          << " interp_derivative=" << timing_interp_derivative
+                          << " element_matrix=" << timing_element_matrix
+                          << " alloc_gradient=" << timing_alloc_gradient
+                          << " element_loop=" << timing_element_loop
+                          << " flatten=" << timing_flatten
+                          << " allreduce=" << timing_allreduce
+                          << " unflatten_add=" << timing_unflatten_add
+                          << " total=" << timing_total
+                          << "\n";
+            }
             return df_dx;
         }
 

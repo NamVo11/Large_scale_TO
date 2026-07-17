@@ -220,17 +220,25 @@ void assemble_K_M(const FEM& fem,
     const int elem_end = (fem.NElem * (rank + 1)) / size;
 
     for (const Region& region : analysis.regions) {
+        const double region_nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
+        ElementMatrix uniform_em;
+        if (fem.uniform_element_matrices) {
+            if (region.elem_ids.empty()) throw std::runtime_error("assemble_K_M: region has no elements");
+            uniform_em = compute_element_matrices(fem, region.elem_ids.front(), region_nu, fem.Thickness);
+        }
+
         for (int elem_id : region.elem_ids) {
             if (elem_id < elem_start || elem_id >= elem_end) continue;
             const double x = y_elem.at(static_cast<std::size_t>(elem_id)).front();
             const auto [Eeff, rhoeff] = interp_region(region, x);
-            const double nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
-            const ElementMatrix em = compute_element_matrices(fem, elem_id, nu, fem.Thickness);
-            std::vector<PetscInt> rows(static_cast<std::size_t>(em.ndof));
-            const auto& elem = fem.Element.at(static_cast<std::size_t>(elem_id));
-            for (std::size_t a = 0; a < elem.size(); ++a) {
-                for (int d = 0; d < fem.dim; ++d) rows[a * fem.dim + d] = fem.dim * elem[a] + d;
+            ElementMatrix local_em;
+            const ElementMatrix* em_ptr = &uniform_em;
+            if (!fem.uniform_element_matrices) {
+                local_em = compute_element_matrices(fem, elem_id, region_nu, fem.Thickness);
+                em_ptr = &local_em;
             }
+            const ElementMatrix& em = *em_ptr;
+            const auto& rows = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
             std::vector<PetscScalar> ke(em.ke.size());
             std::vector<PetscScalar> me(em.me.size());
             for (std::size_t i = 0; i < em.ke.size(); ++i) {

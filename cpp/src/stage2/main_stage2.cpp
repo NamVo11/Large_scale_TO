@@ -136,6 +136,9 @@ int main(int argc, char** argv) {
         int debug_fd_max_checks = 20;
         int save_density_each_iter = 1;
         int save_density_interval = 1;
+        int fem_uniform = 1;
+        int factor_num_threads = 1;
+        int sens_element_threads = 1;
         std::string sens_type = "AVM";
         double rom_tol = 0.02;
         int rom_rank1 = 10;
@@ -162,6 +165,9 @@ int main(int argc, char** argv) {
         get_int_option("-save_density_each_iter", save_density_each_iter);
         get_int_option("-save_density_interval", save_density_interval);
         get_int_option("-density_plot_interval", save_density_interval);
+        get_int_option("-fem_uniform", fem_uniform);
+        get_int_option("-factor_num_threads", factor_num_threads);
+        get_int_option("-sens_element_threads", sens_element_threads);
         get_real_option("-rom_tol", rom_tol);
         get_real_option("-p_rho", p_rho);
         get_int_option("-rank1", rom_rank1);
@@ -176,6 +182,13 @@ int main(int argc, char** argv) {
         get_string_option("-sens_type", sens_type);
         get_string_option("-stage2_out", out_dir);
         get_string_option("-density_out", density_dir);
+        if (size != 1)
+        {
+            factor_num_threads = 1;
+            sens_element_threads = 1;
+        }
+        setenv("FACTOR_NUM_THREADS", std::to_string(std::max(1, factor_num_threads)).c_str(), 1);
+        setenv("SENS_ELEMENT_THREADS", std::to_string(std::max(1, sens_element_threads)).c_str(), 1);
         if (!pod_backend.empty()) {
             setenv("STAGE2_POD_BACKEND", pod_backend.c_str(), 1);
         }
@@ -187,6 +200,7 @@ int main(int argc, char** argv) {
         fem.type = fem_type;
         fem.nu = 0.3;
         fem.Thickness = 1.0;
+        fem.uniform_element_matrices = fem_uniform != 0;
         fem = Mesh(geom, fem);
         PrecomputeFEM(fem);
 
@@ -315,6 +329,9 @@ int main(int argc, char** argv) {
                       << " ndof=" << fem.ndof
                       << " nelem=" << fem.NElem
                       << " nstep=" << A1.Nstep
+                      << " fem_uniform=" << (fem.uniform_element_matrices ? 1 : 0)
+                      << " factor_threads=" << factor_num_threads
+                      << " sens_element_threads=" << sens_element_threads
                       << " mpi_size=" << size << "\n";
         }
 

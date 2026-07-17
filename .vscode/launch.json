@@ -32,6 +32,12 @@
                 "-pc_factor_mat_solver_type",
                 "mkl_pardiso",
                 // mkl_pardiso: single-node direct; mumps: MPI/multinode direct
+                "-factor_num_threads",
+                "1",
+                // factor_num_threads: MKL/Pardiso threads only during factorization; forced to 1 when MPI size > 1
+                "-sens_element_threads",
+                "4",
+                // sens_element_threads: OpenMP threads for explicit_gradient_dynamic element loop; forced to 1 when MPI size > 1
                 "-out_dir",
                 "case_study/Debug/result"
             ],
@@ -69,6 +75,14 @@
                 {
                     "value": "1",
                     "name": "MKL_NUM_THREADS"
+                },
+                {
+                    "value": "1",
+                    "name": "FACTOR_NUM_THREADS"
+                },
+                {
+                    "value": "4",
+                    "name": "SENS_ELEMENT_THREADS"
                 },
                 {
                     "value": "spread",

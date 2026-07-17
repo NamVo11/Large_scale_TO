@@ -14,14 +14,26 @@
 namespace stage2 {
 namespace {
 
-std::vector<double> gather_vec_to_root(Vec v) {
+void gather_vec_to_root_into(Vec v, std::vector<double>& out) {
+    PetscMPIInt size = 1;
+    MPI_Comm_size(PetscObjectComm((PetscObject)v), &size);
+    if (size == 1) {
+        PetscInt n = 0;
+        VecGetLocalSize(v, &n);
+        out.resize(static_cast<std::size_t>(n));
+        const PetscScalar* a = nullptr;
+        VecGetArrayRead(v, &a);
+        for (PetscInt i = 0; i < n; ++i) out[static_cast<std::size_t>(i)] = PetscRealPart(a[i]);
+        VecRestoreArrayRead(v, &a);
+        return;
+    }
+
     Vec vall = nullptr;
     VecScatter scatter = nullptr;
     VecScatterCreateToAll(v, &scatter, &vall);
     VecScatterBegin(scatter, v, vall, INSERT_VALUES, SCATTER_FORWARD);
     VecScatterEnd(scatter, v, vall, INSERT_VALUES, SCATTER_FORWARD);
 
-    std::vector<double> out;
     PetscInt n = 0;
     VecGetSize(vall, &n);
     out.resize(static_cast<std::size_t>(n));
@@ -32,7 +44,6 @@ std::vector<double> gather_vec_to_root(Vec v) {
 
     VecScatterDestroy(&scatter);
     VecDestroy(&vall);
-    return out;
 }
 
 std::vector<PetscInt> fixed_dofs(const Analysis& analysis) {
@@ -113,7 +124,7 @@ ROMContext make_context(const Analysis& analysis,
     return ctx;
 }
 
-double residual_norm_free(Mat A, Vec u, Vec rhs, const std::vector<PetscInt>& fixed) {
+[[maybe_unused]] double residual_norm_free(Mat A, Vec u, Vec rhs, const std::vector<PetscInt>& fixed) {
     Vec r = nullptr;
     VecDuplicate(rhs, &r);
     MatMult(A, u, r);
@@ -141,6 +152,25 @@ void dynamic_elastic_linear(Analysis& analysis,
 
     PetscLogDouble t0 = 0.0;
     PetscLogDouble t1 = 0.0;
+    PetscLogDouble ts0 = 0.0;
+    PetscLogDouble ts1 = 0.0;
+    PetscLogDouble rhs_t0 = 0.0;
+    PetscLogDouble rhs_t1 = 0.0;
+    double timing_bc_and_initial_matrix = 0.0;
+    double timing_vec_setup = 0.0;
+    double timing_initial_rhs = 0.0;
+    double timing_initial_solve = 0.0;
+    double timing_keff_prepare = 0.0;
+    double timing_predictor = 0.0;
+    double timing_rhs_build = 0.0;
+    double timing_rhs_set_neum = 0.0;
+    double timing_rhs_matmult_mass = 0.0;
+    double timing_rhs_vec_ops = 0.0;
+    double timing_rhs_dirich = 0.0;
+    double timing_solve_wall = 0.0;
+    double timing_newmark_update = 0.0;
+    double timing_history_store = 0.0;
+    double timing_final_matrix_store = 0.0;
     PetscTime(&t0);
 
     Mat K = nullptr;
@@ -153,7 +183,12 @@ void dynamic_elastic_linear(Analysis& analysis,
     assemble_K_M(fem, analysis, y_elem, K, M);
     PetscTime(&t1);
     analysis.results.assembly_time = t1 - t0;
+    if (rank == 0) {
+        std::cout << "  assembly[s]: forward K/M = "
+                  << analysis.results.assembly_time << "\n";
+    }
 
+    PetscTime(&ts0);
     const auto SPCdofs = fixed_dofs(analysis);
     IS fixed_is = nullptr;
     if (!SPCdofs.empty()) {
@@ -163,7 +198,10 @@ void dynamic_elastic_linear(Analysis& analysis,
     Mat K_initial = nullptr;
     MatDuplicate(K, MAT_COPY_VALUES, &K_initial);
     if (fixed_is) MatZeroRowsColumnsIS(K_initial, fixed_is, 1.0, nullptr, nullptr);
+    PetscTime(&ts1);
+    timing_bc_and_initial_matrix += static_cast<double>(ts1 - ts0);
 
+    PetscTime(&ts0);
     Vec u = nullptr;
     Vec v = nullptr;
     Vec acc = nullptr;
@@ -182,10 +220,16 @@ void dynamic_elastic_linear(Analysis& analysis,
     VecSet(u, 0.0);
     VecSet(v, 0.0);
     VecSet(acc, 0.0);
+    PetscTime(&ts1);
+    timing_vec_setup += static_cast<double>(ts1 - ts0);
 
+    PetscTime(&ts0);
     set_neum(analysis, f_ext, 0);
     VecCopy(f_ext, rhs);
     set_dirich_zero(rhs, SPCdofs);
+    PetscTime(&ts1);
+    timing_initial_rhs += static_cast<double>(ts1 - ts0);
+
     PetscLogDouble tf0 = 0.0;
     PetscLogDouble tf1 = 0.0;
     PetscTime(&tf0);
@@ -195,11 +239,17 @@ void dynamic_elastic_linear(Analysis& analysis,
         std::cout << "  factorization[s]: forward K_initial = "
                   << static_cast<double>(tf1 - tf0) << "\n";
     }
-    analysis.ROM->main(K_initial, rhs, u, make_context(analysis, Iter, 1, 0, "initial_equilibrium", analysis.Nstep == 0));
+    PetscTime(&ts0);
+    const SolveStats initial_stats = analysis.ROM->main(
+        K_initial, rhs, u, make_context(analysis, Iter, 1, 0, "initial_equilibrium", analysis.Nstep == 0));
+    PetscTime(&ts1);
+    timing_initial_solve += static_cast<double>(ts1 - ts0);
 
-    const double initial_residual = residual_norm_free(K_initial, u, rhs, SPCdofs);
+    // Full residual_norm_free() costs one extra MatMult per step. Keep the
+    // function available for debug, but use solver-reported residual in runs.
+    const double initial_residual = initial_stats.residual_norm;
     if (rank == 0) {
-        std::cout << "step   0: ||res_free||_2 = " << initial_residual << "\n";
+        std::cout << "step   0: solve_res = " << initial_residual << "\n";
     }
 
     const double beta = 0.25;
@@ -207,9 +257,13 @@ void dynamic_elastic_linear(Analysis& analysis,
     const double a0c = 1.0 / (beta * analysis.dt * analysis.dt);
 
     Mat K_eff = nullptr;
+    PetscTime(&ts0);
     MatDuplicate(K, MAT_COPY_VALUES, &K_eff);
     MatAXPY(K_eff, a0c, M, SAME_NONZERO_PATTERN);
     if (fixed_is) MatZeroRowsColumnsIS(K_eff, fixed_is, 1.0, nullptr, nullptr);
+    PetscTime(&ts1);
+    timing_keff_prepare += static_cast<double>(ts1 - ts0);
+
     PetscTime(&tf0);
     analysis.ROM->set_factorization(K_eff);
     PetscTime(&tf1);
@@ -218,42 +272,73 @@ void dynamic_elastic_linear(Analysis& analysis,
                   << static_cast<double>(tf1 - tf0) << "\n";
     }
 
-    analysis.results.U.clear();
-    analysis.results.V.clear();
-    analysis.results.A.clear();
-    analysis.results.F_ext.clear();
+    const std::size_t nstore = static_cast<std::size_t>(analysis.Nstep + 1);
+    analysis.results.U.resize(nstore);
+    analysis.results.V.resize(nstore);
+    analysis.results.A.resize(nstore);
+    analysis.results.F_ext.resize(nstore);
     analysis.results.ksp_iterations.clear();
     analysis.results.ksp_residuals.clear();
     analysis.results.SPCdofs = to_ints(SPCdofs);
     analysis.results.free = free_dofs(ndof, SPCdofs);
-    analysis.results.U.push_back(gather_vec_to_root(u));
-    analysis.results.V.push_back(gather_vec_to_root(v));
-    analysis.results.A.push_back(gather_vec_to_root(acc));
-    analysis.results.F_ext.push_back(gather_vec_to_root(f_ext));
+    PetscTime(&ts0);
+    gather_vec_to_root_into(u, analysis.results.U[0]);
+    gather_vec_to_root_into(v, analysis.results.V[0]);
+    gather_vec_to_root_into(acc, analysis.results.A[0]);
+    gather_vec_to_root_into(f_ext, analysis.results.F_ext[0]);
+    PetscTime(&ts1);
+    timing_history_store += static_cast<double>(ts1 - ts0);
 
     PetscTime(&t0);
     for (int istep = 1; istep <= analysis.Nstep; ++istep) {
         //if (rank == 0) std::cout << "step " << istep << "/" << analysis.Nstep << "\n";
 
+        PetscTime(&ts0);
         VecCopy(u, u_pred);
         VecAXPY(u_pred, analysis.dt, v);
         VecAXPY(u_pred, analysis.dt * analysis.dt * (0.5 - beta), acc);
 
         VecCopy(v, v_pred);
         VecAXPY(v_pred, analysis.dt * (1.0 - gamma), acc);
+        PetscTime(&ts1);
+        timing_predictor += static_cast<double>(ts1 - ts0);
 
+        PetscTime(&rhs_t0);
+
+        PetscTime(&ts0);
         set_neum(analysis, f_ext, istep);
+        PetscTime(&ts1);
+        timing_rhs_set_neum += static_cast<double>(ts1 - ts0);
+
+        PetscTime(&ts0);
         MatMult(M, u_pred, tmp);
+        PetscTime(&ts1);
+        timing_rhs_matmult_mass += static_cast<double>(ts1 - ts0);
+
+        PetscTime(&ts0);
         VecCopy(f_ext, rhs);
         VecAXPY(rhs, a0c, tmp);
-        set_dirich_zero(rhs, SPCdofs);
+        PetscTime(&ts1);
+        timing_rhs_vec_ops += static_cast<double>(ts1 - ts0);
 
+        PetscTime(&ts0);
+        set_dirich_zero(rhs, SPCdofs);
+        PetscTime(&ts1);
+        timing_rhs_dirich += static_cast<double>(ts1 - ts0);
+
+        PetscTime(&rhs_t1);
+        timing_rhs_build += static_cast<double>(rhs_t1 - rhs_t0);
+
+        PetscTime(&ts0);
         const SolveStats stats = analysis.ROM->main(
             K_eff, rhs, u, make_context(analysis, Iter, istep + 1, istep, "newmark_effective", istep == analysis.Nstep));
+        PetscTime(&ts1);
+        timing_solve_wall += static_cast<double>(ts1 - ts0);
         analysis.results.ksp_iterations.push_back(stats.ksp_iterations);
         analysis.results.ksp_residuals.push_back(stats.residual_norm);
-        const double step_residual = residual_norm_free(K_eff, u, rhs, SPCdofs);
+        const double step_residual = stats.residual_norm;
 
+        PetscTime(&ts0);
         VecCopy(u, tmp);
         VecAXPY(tmp, -1.0, u_pred);
         VecCopy(tmp, acc);
@@ -261,25 +346,54 @@ void dynamic_elastic_linear(Analysis& analysis,
 
         VecCopy(v_pred, v);
         VecAXPY(v, gamma * analysis.dt, acc);
+        PetscTime(&ts1);
+        timing_newmark_update += static_cast<double>(ts1 - ts0);
 
         if (rank == 0) {
-            std::cout << "step " << istep << ": ||res_free||_2 = "
+            std::cout << "step " << istep << ": solve_res = "
                       << step_residual
                       << ", ksp_it = " << stats.ksp_iterations
                       << ", ksp_res = " << stats.residual_norm << "\n";
         }
 
-        analysis.results.U.push_back(gather_vec_to_root(u));
-        analysis.results.V.push_back(gather_vec_to_root(v));
-        analysis.results.A.push_back(gather_vec_to_root(acc));
-        analysis.results.F_ext.push_back(gather_vec_to_root(f_ext));
+        const std::size_t store_id = static_cast<std::size_t>(istep);
+        PetscTime(&ts0);
+        gather_vec_to_root_into(u, analysis.results.U[store_id]);
+        gather_vec_to_root_into(v, analysis.results.V[store_id]);
+        gather_vec_to_root_into(acc, analysis.results.A[store_id]);
+        gather_vec_to_root_into(f_ext, analysis.results.F_ext[store_id]);
+        PetscTime(&ts1);
+        timing_history_store += static_cast<double>(ts1 - ts0);
     }
     PetscTime(&t1);
     analysis.results.solve_time = t1 - t0;
 
+    PetscTime(&ts0);
     MatDuplicate(K, MAT_COPY_VALUES, &analysis.results.K_inf);
     MatDuplicate(M, MAT_COPY_VALUES, &analysis.results.M);
     MatDuplicate(K_eff, MAT_COPY_VALUES, &analysis.results.K_eff);
+    PetscTime(&ts1);
+    timing_final_matrix_store += static_cast<double>(ts1 - ts0);
+
+    if (rank == 0) {
+        std::cout << "  forward breakdown[s]:"
+                  << " bc_initial_matrix=" << timing_bc_and_initial_matrix
+                  << " vec_setup=" << timing_vec_setup
+                  << " initial_rhs=" << timing_initial_rhs
+                  << " initial_solve=" << timing_initial_solve
+                  << " keff_prepare=" << timing_keff_prepare
+                  << " predictor=" << timing_predictor
+                  << " rhs_build=" << timing_rhs_build
+                  << " rhs_set_neum=" << timing_rhs_set_neum
+                  << " rhs_matmult_mass=" << timing_rhs_matmult_mass
+                  << " rhs_vec_ops=" << timing_rhs_vec_ops
+                  << " rhs_dirich=" << timing_rhs_dirich
+                  << " solve_wall=" << timing_solve_wall
+                  << " newmark_update=" << timing_newmark_update
+                  << " history_store=" << timing_history_store
+                  << " final_matrix_store=" << timing_final_matrix_store
+                  << "\n";
+    }
 
     VecDestroy(&u);
     VecDestroy(&v);

@@ -28,9 +28,11 @@ struct FEM {
 
     std::vector<std::array<double, 3>> Node;
     std::vector<std::vector<int>> Element;
+    std::vector<std::vector<PetscInt>> ElementDofs;
     std::vector<std::array<double, 3>> elem_center;
     int dim = 2;
     std::string mesh_type = "2D_Q4";
+    bool uniform_element_matrices = true;
     int NNode = 0;
     int NElem = 0;
     int ndof = 0;

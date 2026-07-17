@@ -126,6 +126,15 @@ LABEL="$(basename "$CASE_DIR")"
 
 OUT="${OUT:-$CASE_DIR/result}"
 DENSITY_OUT="${DENSITY_OUT:-$CASE_DIR/density}"
+FEM_UNIFORM="${FEM_UNIFORM:-1}"
+FACTOR_NUM_THREADS="${FACTOR_NUM_THREADS:-${MKL_NUM_THREADS:-1}}"
+SENS_ELEMENT_THREADS="${SENS_ELEMENT_THREADS:-1}"
+if [[ "$NP" != "1" ]]; then
+    FACTOR_NUM_THREADS="1"
+    SENS_ELEMENT_THREADS="1"
+fi
+export FACTOR_NUM_THREADS
+export SENS_ELEMENT_THREADS
 
 
 # ============================================================
@@ -179,6 +188,9 @@ APP_ARGS=(
     -nelz "$NELZ"
 
     -fem_type "$fem_type"
+    -fem_uniform "$FEM_UNIFORM"
+    -factor_num_threads "$FACTOR_NUM_THREADS"
+    -sens_element_threads "$SENS_ELEMENT_THREADS"
 
     -nstep "$NSTEP"
 
@@ -229,6 +241,7 @@ echo "  online_backend            = $ONLINE_BACKEND"
 echo
 echo "  geometry                  = ${LX} x ${LY} x ${LZ}"
 echo "  mesh                      = ${NELX} x ${NELY} x ${NELZ}"
+echo "  fem_uniform               = $FEM_UNIFORM"
 echo "  tmax                      = $TMAX"
 echo "  nstep                     = $NSTEP"
 echo
@@ -236,6 +249,8 @@ echo "  hosts                     = $HOSTS"
 echo "  MPI processes             = $NP"
 echo "  OMP threads/process       = $OMP_NUM_THREADS"
 echo "  MKL threads/process       = $MKL_NUM_THREADS"
+echo "  factorization threads     = $FACTOR_NUM_THREADS"
+echo "  sensitivity elem threads  = $SENS_ELEMENT_THREADS"
 echo
 echo "  ksp_type                  = $KSP_TYPE"
 echo "  pc_type                   = $PC_TYPE"
