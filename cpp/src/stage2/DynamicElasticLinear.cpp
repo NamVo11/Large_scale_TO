@@ -84,7 +84,8 @@ void clear_stored_petsc(AnalysisResult& r) {
 }
 
 void store_factorized_solver(KSP& target, KSP source) {
-    if (source) PetscObjectReference((PetscObject)source);
+     if (!source) return;
+    PetscObjectReference((PetscObject)source);
     if (target) KSPDestroy(&target);
     target = source;
 }
@@ -243,6 +244,7 @@ void dynamic_elastic_linear(Analysis& analysis,
         K_initial, rhs, u, make_context(analysis, Iter, 1, 0, "initial_equilibrium", analysis.Nstep == 0));
     PetscTime(&ts1);
     timing_initial_solve += static_cast<double>(ts1 - ts0);
+    timing_solve_wall += timing_initial_solve;
     store_factorized_solver(analysis.results.factorized_K_initial,
                             analysis.ROM->get_factorized_solver(K_initial));
 
@@ -327,10 +329,10 @@ void dynamic_elastic_linear(Analysis& analysis,
             K_eff, rhs, u, make_context(analysis, Iter, istep + 1, istep, "newmark_effective", istep == analysis.Nstep));
         PetscTime(&ts1);
         timing_solve_wall += static_cast<double>(ts1 - ts0);
-        if (istep == 1) {
-            store_factorized_solver(analysis.results.factorized_K_eff,
+
+        store_factorized_solver(analysis.results.factorized_K_eff,
                                     analysis.ROM->get_factorized_solver(K_eff));
-        }
+      
         analysis.results.ksp_iterations.push_back(stats.ksp_iterations);
         analysis.results.ksp_residuals.push_back(stats.residual_norm);
         const double step_residual = stats.residual_norm;

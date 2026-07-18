@@ -3,6 +3,11 @@
 #include <iostream>
 
 namespace stage2 {
+namespace {
+
+constexpr PetscReal kZeroRhsTol = 1e-14;
+
+} // namespace
 
 FOM_iterative::FOM_iterative(std::string method_in) : ROMBase({}), method(std::move(method_in)) {
     name = "FOM_iterative";
@@ -48,6 +53,15 @@ void FOM_iterative::set_factorized_solver(Mat lhs, KSP ksp) {
 }
 
 SolveStats FOM_iterative::FOM_main(Mat lhs, Vec rhs, Vec u, const ROMContext& context) {
+    SolveStats stats;
+    PetscReal rhs_norm = 0.0;
+    VecNorm(rhs, NORM_2, &rhs_norm);
+    if (rhs_norm < kZeroRhsTol) {
+        VecSet(u, 0.0);
+        stats.residual_norm = static_cast<double>(rhs_norm);
+        return stats;
+    }
+
     double factorization_time = 0.0;
     if (!ksp_ || lhs != factor) {
         set_factorization(lhs);
@@ -65,7 +79,6 @@ SolveStats FOM_iterative::FOM_main(Mat lhs, Vec rhs, Vec u, const ROMContext& co
     PetscTime(&t0);
     KSPSolve(ksp_, rhs, u);
     PetscTime(&t1);
-    SolveStats stats;
     PetscInt its = 0;
     PetscReal rnorm = 0.0;
     KSPGetIterationNumber(ksp_, &its);

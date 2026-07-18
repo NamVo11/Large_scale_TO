@@ -114,6 +114,7 @@
           "PC_FACTOR_MAT_SOLVER_TYPE": "", // empty for iterative; direct options: mkl_pardiso(single-node), mumps(MPI/multinode)
           "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
           "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: MKL IncrementalSVD; incremental_eigen: Eigen IncrementalSVD
+          "STAGE2_MYSTRATEGY2_FULL_PROJECTION": "0", // MyStrategy2 only: 0 incremental projection; 1 full V'AV rebuild when projection is needed
           "OMP_NUM_THREADS": "1", // MPI-heavy runs usually use 1; single-rank direct can use 4,8,16
           "MKL_NUM_THREADS": "1", // match OMP_NUM_THREADS for MKL/Pardiso; use 1 for many MPI ranks
           "OMP_PROC_BIND": "spread", // spread or close
@@ -145,6 +146,7 @@
           "PC_FACTOR_MAT_SOLVER_TYPE": "", // empty for iterative; direct options: mkl_pardiso(single-node), mumps(MPI/multinode)
           "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
           "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: MKL IncrementalSVD; incremental_eigen: Eigen IncrementalSVD
+          "STAGE2_MYSTRATEGY2_FULL_PROJECTION": "0", // MyStrategy2 only: 0 incremental projection; 1 full V'AV rebuild when projection is needed
           "OMP_NUM_THREADS": "1", // MPI-heavy runs usually use 1; single-rank direct can use 4,8,16
           "MKL_NUM_THREADS": "1", // match OMP_NUM_THREADS for MKL/Pardiso; use 1 for many MPI ranks
           "OMP_PROC_BIND": "spread", // spread or close
@@ -176,6 +178,7 @@
           "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
           "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: MKL IncrementalSVD; incremental_eigen: Eigen IncrementalSVD,
           // used only by MyStrategy/IncrementalSVD; ignored by MyStrategy2
+          "STAGE2_MYSTRATEGY2_FULL_PROJECTION": "0", // MyStrategy2 only: 0 incremental projection; 1 full V'AV rebuild when projection is needed
           "OMP_NUM_THREADS": "1", // try 4,8,16 for single-rank Pardiso; benchmark per machine/model
           "MKL_NUM_THREADS": "1", // match OMP_NUM_THREADS for mkl_pardiso
           "FACTOR_NUM_THREADS": "1", // used only when NP=1; script forces 1 for MPI/multinode
@@ -209,6 +212,7 @@
           "PC_FACTOR_MAT_SOLVER_TYPE": "mumps", // mumps: MPI direct; mkl_pardiso: single-node/shared-memory direct
           "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
           "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: MKL IncrementalSVD; incremental_eigen: Eigen IncrementalSVD
+          "STAGE2_MYSTRATEGY2_FULL_PROJECTION": "0", // MyStrategy2 only: 0 incremental projection; 1 full V'AV rebuild when projection is needed
           "OMP_NUM_THREADS": "1", // many MPI ranks usually use 1; hybrid test: 2,4
           "MKL_NUM_THREADS": "1", // use 1 for many MPI ranks unless testing hybrid
           "OMP_PROC_BIND": "spread", // spread or close
@@ -240,6 +244,7 @@
           "PC_FACTOR_MAT_SOLVER_TYPE": "mumps", // multinode direct solver; mkl_pardiso is not for multinode
           "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
           "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: MKL IncrementalSVD; incremental_eigen: Eigen IncrementalSVD
+          "STAGE2_MYSTRATEGY2_FULL_PROJECTION": "0", // MyStrategy2 only: 0 incremental projection; 1 full V'AV rebuild when projection is needed
           "OMP_NUM_THREADS": "1", // many MPI ranks usually use 1; hybrid test: 2,4
           "MKL_NUM_THREADS": "1", // use 1 for many MPI ranks unless testing hybrid
           "OMP_PROC_BIND": "spread", // spread or close
@@ -250,7 +255,7 @@
       "group": "test",
       "problemMatcher": []
     },
-     //----------------- batch single node single rank, sequential cases -----------------
+    //----------------- batch single node single rank, sequential cases -----------------
     {
       "label": "Run batch: single node single rank",
       "type": "shell",
@@ -263,15 +268,51 @@
         "env": {
           "BUILD_DIR": "build-mpich-release",
           //"CASE_CONFIGS": "case_study/3D/FOM/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy2_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf",
-          "CASE_CONFIGS": "case_study/3D/strategy2/600x200_sin_1cycle_125Hz.conf",
+          "CASE_CONFIGS": "case_study/non_symmetry_bug/600x200_sin_1cycle_125Hz.conf",
           // Add/remove case configs above. They run sequentially with the same solver settings.
           "NP": "1",
           "HOSTS": "localhost",
-          "KSP_TYPE": "cg", // preonly: direct solve; cg: iterative SPD// preonly
-          "PC_TYPE": "gamg", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky
+          "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
+          "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
           "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso", // single-node direct solver; alternatives: mumps // mkl_pardiso
           "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
           "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: IncrementalSVD only; ignored by MyStrategy2
+          "STAGE2_MYSTRATEGY2_FULL_PROJECTION": "0", // MyStrategy2 only: 0 incremental projection; 1 full V'AV rebuild when projection is needed
+          "OMP_NUM_THREADS": "1", // use 1 for method comparison; try 4,8,16 for fast production runs
+          "MKL_NUM_THREADS": "1", // match OMP_NUM_THREADS unless testing MKL threading
+          "FACTOR_NUM_THREADS": "8", // used only when NP=1; script forces 1 for MPI/multinode
+          "SENS_ELEMENT_THREADS": "8", // used only when NP=1; script forces 1 for MPI/multinode
+          "OMP_PROC_BIND": "spread", // spread or close
+          "OMP_PLACES": "cores" // cores or threads
+        }
+      },
+      "dependsOn": "CMake: build stage2 Release",
+      "group": "test",
+      "problemMatcher": []
+    },
+    //----------------- batch single node iterative solver, sequential cases -----------------
+    {
+      "label": "Run batch: single node iterative solver",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "scripts/run_stage2_case.sh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "BUILD_DIR": "build-mpich-release",
+          //"CASE_CONFIGS": "case_study/3D/FOM/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy2_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf",
+          "CASE_CONFIGS": "case_study/3D/strategy2/3D.conf",
+          // Add/remove case configs above. They run sequentially with the same solver settings.
+          "NP": "1",
+          "HOSTS": "localhost",
+          "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
+          "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
+          "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso", // single-node direct solver; alternatives: mumps // mkl_pardiso
+          "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
+          "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: IncrementalSVD only; ignored by MyStrategy2
+          "STAGE2_MYSTRATEGY2_FULL_PROJECTION": "0", // MyStrategy2 only: 0 incremental projection; 1 full V'AV rebuild when projection is needed
           "OMP_NUM_THREADS": "8", // use 1 for method comparison; try 4,8,16 for fast production runs
           "MKL_NUM_THREADS": "8", // match OMP_NUM_THREADS unless testing MKL threading
           "FACTOR_NUM_THREADS": "8", // used only when NP=1; script forces 1 for MPI/multinode

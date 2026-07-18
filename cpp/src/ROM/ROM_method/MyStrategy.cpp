@@ -22,6 +22,12 @@ double now_time() {
     return static_cast<double>(t);
 }
 
+int env_int_or_default(const char* name, int fallback) {
+    const char* value = std::getenv(name);
+    if (!value || !*value) return fallback;
+    return std::atoi(value);
+}
+
 void append_basis_debug(const char* phase,
                         const ROMContext& context,
                         int basis_id,
@@ -455,7 +461,9 @@ SolveStats MyStrategy2::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context)
                                       A_r_cache.rows() != rank;
         if (needs_projection) {
             bool cache_ok = false;
-            if (A_r_lhs_cache2_ == lhs) {
+            const bool force_full_projection =
+                env_int_or_default("STAGE2_MYSTRATEGY2_FULL_PROJECTION", 0) != 0;
+            if (!force_full_projection && A_r_lhs_cache2_ == lhs) {
                 cache_ok = update_reduced_cache_incremental(A_e, V, basis_runtime, info);
             }
             if (!cache_ok) {

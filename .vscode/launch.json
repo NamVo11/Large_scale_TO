@@ -85,6 +85,10 @@
                     "name": "SENS_ELEMENT_THREADS"
                 },
                 {
+                    "value": "0",
+                    "name": "STAGE2_MYSTRATEGY2_FULL_PROJECTION"
+                },
+                {
                     "value": "spread",
                     "name": "OMP_PROC_BIND"
                 },
