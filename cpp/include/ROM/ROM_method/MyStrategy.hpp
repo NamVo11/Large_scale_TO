@@ -4,6 +4,7 @@
 #include "ROM/ROM_method/ROM_Base.hpp"
 
 #include <Eigen/Dense>
+#include <Eigen/LU>
 #include <Eigen/Sparse>
 
 #include <memory>
@@ -17,6 +18,8 @@ public:
     std::shared_ptr<ROMBase> fom_solver;
     std::shared_ptr<ErrorEstimatorBase> error_estimator;
     Eigen::MatrixXd A_r_cache;
+    
+    Eigen::PartialPivLU<Eigen::MatrixXd> factorized_A_r;
     int fom_flag = 1;
     double aaa = 0.0;
     double bbbb = 0.0;

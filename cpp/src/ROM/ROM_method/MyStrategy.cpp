@@ -169,6 +169,7 @@ SolveStats MyStrategy::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context) 
             const double t0 = now_time();
             const Eigen::MatrixXd AV = A_e * V;
             A_r_cache = V.transpose() * AV;
+            factorized_A_r.compute(A_r_cache);
             info.timing_projection += now_time() - t0;
             A_r_lhs_cache_ = lhs;
             A_r_rank_cache_ = rank;
@@ -185,17 +186,29 @@ SolveStats MyStrategy::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context) 
         Eigen::VectorXd coeff;
         {
             const double t0 = now_time();
-                Eigen::PartialPivLU<Eigen::MatrixXd> lu(A_r_cache);
-                if (A_r_cache.rows() == 0 || A_r_cache.cols() == 0) {
+            /*
+            Eigen::PartialPivLU<Eigen::MatrixXd> lu(A_r_cache);
+            if (A_r_cache.rows() == 0 || A_r_cache.cols() == 0) {
+                use_fom = true;
+                fom_flag = 1;
+            } else {
+                coeff = lu.solve(b_r);
+                if (!coeff.allFinite()) {
                     use_fom = true;
                     fom_flag = 1;
-                } else {
-                    coeff = lu.solve(b_r);
-                    if (!coeff.allFinite()) {
-                        use_fom = true;
-                        fom_flag = 1;
-                    }
                 }
+            }
+            */
+            if (A_r_cache.rows() == 0 || A_r_cache.cols() == 0) {
+                use_fom = true;
+                fom_flag = 1;
+            } else {
+                coeff = factorized_A_r.solve(b_r);
+                if (!coeff.allFinite()) {
+                    use_fom = true;
+                    fom_flag = 1;
+                }
+            }
             info.timing_reduced_solve += now_time() - t0;
         }
 
@@ -352,6 +365,7 @@ void MyStrategy2::rebuild_reduced_cache(const Eigen::SparseMatrix<double>& A_e,
     const double t0 = now_time();
     AV_cache2_ = A_e * V;
     A_r_cache = V.transpose() * AV_cache2_;
+    factorized_A_r.compute(A_r_cache);
     info.timing_projection += now_time() - t0;
     A_r_lhs_cache2_ = lhs;
     A_r_rank_cache2_ = static_cast<int>(V.cols());
@@ -387,6 +401,7 @@ bool MyStrategy2::update_reduced_cache_incremental(const Eigen::SparseMatrix<dou
         if (new_rank > 1) AV_new.leftCols(new_rank - 1) = AV_base;
         AV_new.col(new_rank - 1) = Av_new;
         A_r_cache = std::move(A_r_new);
+        factorized_A_r.compute(A_r_cache);
         AV_cache2_ = std::move(AV_new);
     };
 
@@ -418,6 +433,7 @@ bool MyStrategy2::update_reduced_cache_incremental(const Eigen::SparseMatrix<dou
 
         if (rank == kept_rank) {
             A_r_cache = std::move(A_r_kept);
+            factorized_A_r.compute(A_r_cache);
             AV_cache2_ = std::move(AV_kept);
         } else {
             append_column(A_r_kept, AV_kept, V.col(rank - 1), rank);
@@ -483,11 +499,19 @@ SolveStats MyStrategy2::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context)
         Eigen::VectorXd coeff;
         {
             const double t0 = now_time();
+            /*
             Eigen::PartialPivLU<Eigen::MatrixXd> lu(A_r_cache);
             if (A_r_cache.rows() == 0 || A_r_cache.cols() == 0) {
                 use_fom = true;
             } else {
                 coeff = lu.solve(b_r);
+                if (!coeff.allFinite()) use_fom = true;
+            }
+            */
+            if (A_r_cache.rows() == 0 || A_r_cache.cols() == 0) {
+                use_fom = true;
+            } else {
+                coeff = factorized_A_r.solve(b_r);
                 if (!coeff.allFinite()) use_fom = true;
             }
             info.timing_reduced_solve += now_time() - t0;
