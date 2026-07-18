@@ -1,5 +1,7 @@
 #include "ROM/ROM_method/FOM_iterative.hpp"
 
+#include <iostream>
+
 namespace stage2 {
 
 FOM_iterative::FOM_iterative(std::string method_in) : ROMBase({}), method(std::move(method_in)) {
@@ -15,8 +17,12 @@ void FOM_iterative::set_factorization(Mat factor_in) {
     PetscLogDouble t0 = 0.0;
     PetscLogDouble t1 = 0.0;
     PetscTime(&t0);
+    if (ksp_) {
+        KSPDestroy(&ksp_);
+        ksp_ = nullptr;
+    }
     factor = factor_in;
-    if (!ksp_) KSPCreate(PETSC_COMM_WORLD, &ksp_);
+    KSPCreate(PETSC_COMM_WORLD, &ksp_);
     KSPSetOperators(ksp_, factor, factor);
     KSPSetType(ksp_, KSPCG);
     KSPSetTolerances(ksp_, pcg_tol, PETSC_DEFAULT, PETSC_DEFAULT, pcg_maxit);
@@ -29,11 +35,30 @@ void FOM_iterative::set_factorization(Mat factor_in) {
     last_factorization_time_ = static_cast<double>(t1 - t0);
 }
 
-SolveStats FOM_iterative::FOM_main(Mat lhs, Vec rhs, Vec u, const ROMContext&) {
+KSP FOM_iterative::get_factorized_solver(Mat lhs) const {
+    if (lhs == factor && ksp_) return ksp_;
+    return nullptr;
+}
+
+void FOM_iterative::set_factorized_solver(Mat lhs, KSP ksp) {
+    if (ksp) PetscObjectReference((PetscObject)ksp);
+    if (ksp_) KSPDestroy(&ksp_);
+    ksp_ = ksp;
+    factor = lhs;
+}
+
+SolveStats FOM_iterative::FOM_main(Mat lhs, Vec rhs, Vec u, const ROMContext& context) {
     double factorization_time = 0.0;
     if (!ksp_ || lhs != factor) {
         set_factorization(lhs);
         factorization_time = last_factorization_time_;
+        PetscMPIInt rank = 0;
+        MPI_Comm_rank(PetscObjectComm((PetscObject)lhs), &rank);
+        if (rank == 0) {
+            std::cout << "  factorization[s]: " << context.role
+                      << " " << context.system_type << " = "
+                      << factorization_time << "\n";
+        }
     }
     PetscLogDouble t0 = 0.0;
     PetscLogDouble t1 = 0.0;

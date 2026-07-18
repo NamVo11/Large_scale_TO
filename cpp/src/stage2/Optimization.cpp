@@ -683,18 +683,7 @@ namespace stage2
 
             std::vector<std::vector<double>> lambda_all(static_cast<std::size_t>(nstep + 1));
 
-            PetscMPIInt mpi_rank = 0;
-            MPI_Comm_rank(PETSC_COMM_WORLD, &mpi_rank);
-            PetscLogDouble tf0 = 0.0;
-            PetscLogDouble tf1 = 0.0;
-            PetscTime(&tf0);
-            object.ROM->set_factorization(Keff);
-            PetscTime(&tf1);
-            if (mpi_rank == 0)
-            {
-                std::cout << "  factorization[s]: obj_sens Keff = "
-                          << static_cast<double>(tf1 - tf0) << "\n";
-            }
+            object.ROM->set_factorized_solver(Keff, analysis.results.factorized_K_eff);
 
             int k = nstep;
             set_vec_from_column_root(mu, object.d_explicit_dfda_all, k);
@@ -736,14 +725,7 @@ namespace stage2
                 set_vec_fixed_from_column_root(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
                 if (k == 0)
                 {
-                    PetscTime(&tf0);
-                    object.ROM->set_factorization(K0);
-                    PetscTime(&tf1);
-                    if (mpi_rank == 0)
-                    {
-                        std::cout << "  factorization[s]: obj_sens K0 = "
-                                  << static_cast<double>(tf1 - tf0) << "\n";
-                    }
+                    object.ROM->set_factorized_solver(K0, analysis.results.factorized_K_initial);
                 }
                 solve_adjoint_full(*object.ROM, k == 0 ? K0 : Keff, rhs, lambda, analysis, Iter, k);
                 lambda_all[static_cast<std::size_t>(k)] = gather_vec_to_all_local(lambda);

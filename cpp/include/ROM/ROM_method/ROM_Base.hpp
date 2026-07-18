@@ -77,7 +77,8 @@ public:
     virtual SolveStats main(Mat lhs, Vec rhs, Vec u, const ROMContext& context) = 0;
     virtual SolveStats main_test(Mat lhs, Vec rhs, Vec u, const ROMContext& context);
     virtual SolveStats FOM_main(Mat lhs, Vec rhs, Vec u, const ROMContext& context);
-    virtual void set_factorization(Mat factor) = 0;
+    virtual KSP get_factorized_solver(Mat lhs) const;
+    virtual void set_factorized_solver(Mat lhs, KSP ksp);
 
     void store_info(const ROMInfo& info, const ROMContext& context);
 };

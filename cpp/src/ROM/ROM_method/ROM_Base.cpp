@@ -16,6 +16,13 @@ SolveStats ROMBase::FOM_main(Mat, Vec, Vec, const ROMContext&) {
     throw std::runtime_error(name + " does not implement FOM_main");
 }
 
+KSP ROMBase::get_factorized_solver(Mat) const {
+    return nullptr;
+}
+
+void ROMBase::set_factorized_solver(Mat, KSP) {
+}
+
 void ROMBase::store_info(const ROMInfo& info, const ROMContext& context) {
     const int row = std::max(0, context.opt_iter);
     const int col = std::max(0, context.time_step);
@@ -27,4 +34,3 @@ void ROMBase::store_info(const ROMInfo& info, const ROMContext& context) {
 }
 
 } // namespace stage2
-

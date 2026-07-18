@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include <petscmat.h>
+#include <petscksp.h>
 
 namespace stage2 {
 
@@ -116,6 +116,8 @@ struct AnalysisResult {
     Mat K_inf = nullptr;
     Mat M = nullptr;
     Mat K_eff = nullptr;
+    KSP factorized_K_initial = nullptr;
+    KSP factorized_K_eff = nullptr;
     double assembly_time = 0.0;
     double solve_time = 0.0;
 };

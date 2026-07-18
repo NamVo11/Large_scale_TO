@@ -79,6 +79,14 @@ void clear_stored_petsc(AnalysisResult& r) {
     if (r.K_inf) MatDestroy(&r.K_inf);
     if (r.M) MatDestroy(&r.M);
     if (r.K_eff) MatDestroy(&r.K_eff);
+    if (r.factorized_K_initial) KSPDestroy(&r.factorized_K_initial);
+    if (r.factorized_K_eff) KSPDestroy(&r.factorized_K_eff);
+}
+
+void store_factorized_solver(KSP& target, KSP source) {
+    if (source) PetscObjectReference((PetscObject)source);
+    if (target) KSPDestroy(&target);
+    target = source;
 }
 
 void set_dirich_zero(Vec rhs, const std::vector<PetscInt>& fixed) {
@@ -230,20 +238,13 @@ void dynamic_elastic_linear(Analysis& analysis,
     PetscTime(&ts1);
     timing_initial_rhs += static_cast<double>(ts1 - ts0);
 
-    PetscLogDouble tf0 = 0.0;
-    PetscLogDouble tf1 = 0.0;
-    PetscTime(&tf0);
-    analysis.ROM->set_factorization(K_initial);
-    PetscTime(&tf1);
-    if (rank == 0) {
-        std::cout << "  factorization[s]: forward K_initial = "
-                  << static_cast<double>(tf1 - tf0) << "\n";
-    }
     PetscTime(&ts0);
     const SolveStats initial_stats = analysis.ROM->main(
         K_initial, rhs, u, make_context(analysis, Iter, 1, 0, "initial_equilibrium", analysis.Nstep == 0));
     PetscTime(&ts1);
     timing_initial_solve += static_cast<double>(ts1 - ts0);
+    store_factorized_solver(analysis.results.factorized_K_initial,
+                            analysis.ROM->get_factorized_solver(K_initial));
 
     // Full residual_norm_free() costs one extra MatMult per step. Keep the
     // function available for debug, but use solver-reported residual in runs.
@@ -263,14 +264,6 @@ void dynamic_elastic_linear(Analysis& analysis,
     if (fixed_is) MatZeroRowsColumnsIS(K_eff, fixed_is, 1.0, nullptr, nullptr);
     PetscTime(&ts1);
     timing_keff_prepare += static_cast<double>(ts1 - ts0);
-
-    PetscTime(&tf0);
-    analysis.ROM->set_factorization(K_eff);
-    PetscTime(&tf1);
-    if (rank == 0) {
-        std::cout << "  factorization[s]: forward K_eff = "
-                  << static_cast<double>(tf1 - tf0) << "\n";
-    }
 
     const std::size_t nstore = static_cast<std::size_t>(analysis.Nstep + 1);
     analysis.results.U.resize(nstore);
@@ -334,6 +327,10 @@ void dynamic_elastic_linear(Analysis& analysis,
             K_eff, rhs, u, make_context(analysis, Iter, istep + 1, istep, "newmark_effective", istep == analysis.Nstep));
         PetscTime(&ts1);
         timing_solve_wall += static_cast<double>(ts1 - ts0);
+        if (istep == 1) {
+            store_factorized_solver(analysis.results.factorized_K_eff,
+                                    analysis.ROM->get_factorized_solver(K_eff));
+        }
         analysis.results.ksp_iterations.push_back(stats.ksp_iterations);
         analysis.results.ksp_residuals.push_back(stats.residual_norm);
         const double step_residual = stats.residual_norm;

@@ -105,19 +105,20 @@ MyStrategy::MyStrategy(std::vector<std::shared_ptr<UpdateBase>> basis_list_in,
     name = "MyStrategy";
 }
 
-void MyStrategy::set_factorization(Mat factor) {
+KSP MyStrategy::get_factorized_solver(Mat lhs) const {
+    if (!fom_solver) return nullptr;
+    return fom_solver->get_factorized_solver(lhs);
+}
+
+void MyStrategy::set_factorized_solver(Mat lhs, KSP ksp) {
     if (!fom_solver) throw std::runtime_error("MyStrategy needs fom_solver");
-    fom_solver->set_factorization(factor);
-    eigen_lhs_cache_ = nullptr;
-    eigen_lhs_cache_matrix_.resize(0, 0);
-    clear_reduced_cache();
+    fom_solver->set_factorized_solver(lhs, ksp);
 }
 
 void MyStrategy::clear_reduced_cache() {
     A_r_cache.resize(0, 0);
     A_r_lhs_cache_ = nullptr;
     A_r_rank_cache_ = 0;
-    A_r_basis_version_cache_ = -1;
 }
 
 const Eigen::SparseMatrix<double>& MyStrategy::eigen_lhs(Mat lhs, ROMInfo& info) {
@@ -155,9 +156,9 @@ SolveStats MyStrategy::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context) 
     SolveStats stats;
 
     if (!use_fom) {
-        const bool rebuild_projection = fom_flag || context.time_step == 0 || A_r_lhs_cache_ != lhs ||
-                                        A_r_rank_cache_ != rank ||
-                                        A_r_basis_version_cache_ != basis_runtime.basis_version;
+        const bool rebuild_projection = fom_flag ||
+                                        A_r_lhs_cache_ != lhs ||
+                                        A_r_rank_cache_ != rank;
         if (rebuild_projection) {
             const double t0 = now_time();
             const Eigen::MatrixXd AV = A_e * V;
@@ -165,9 +166,7 @@ SolveStats MyStrategy::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context) 
             info.timing_projection += now_time() - t0;
             A_r_lhs_cache_ = lhs;
             A_r_rank_cache_ = rank;
-            A_r_basis_version_cache_ = basis_runtime.basis_version;
-            if (context.time_step == 0) fom_flag = 1;
-            else fom_flag = 0;
+            fom_flag = 0;
         }
 
         Eigen::VectorXd b_r;
@@ -224,6 +223,7 @@ SolveStats MyStrategy::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context) 
         // const double tf = now_time();
         stats = fom_solver->FOM_main(lhs, rhs, u, context);
         //info.timing_fom_fallback += now_time() - tf;
+        info.timing_fom_factorization += stats.factorization_time;
         info.timing_fom_solve += stats.solve_time;
         info.fom_used = true;
         info.ksp_iterations = stats.ksp_iterations;
@@ -245,6 +245,7 @@ SolveStats MyStrategy::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context) 
             info.timing_online_basis_update += dt;
             info.timing_basis_update += dt;
         }
+        fom_flag = 1;
     } else {
         const double tw = now_time();
         eigen_to_petsc_vec(u_rom, u);
@@ -253,7 +254,7 @@ SolveStats MyStrategy::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context) 
         info.rom_used = true;
         info.used_rom = true;
         info.accepted = true;
-        fom_flag = context.time_step == 0 ? 1 : 0;
+        fom_flag = 0;
     }
 
     {
@@ -310,12 +311,14 @@ MyStrategy2::MyStrategy2(std::vector<std::shared_ptr<UpdateBase>> basis_list_in,
     name = "MyStrategy2";
 }
 
-void MyStrategy2::set_factorization(Mat factor) {
+KSP MyStrategy2::get_factorized_solver(Mat lhs) const {
+    if (!fom_solver) return nullptr;
+    return fom_solver->get_factorized_solver(lhs);
+}
+
+void MyStrategy2::set_factorized_solver(Mat lhs, KSP ksp) {
     if (!fom_solver) throw std::runtime_error("MyStrategy2 needs fom_solver");
-    fom_solver->set_factorization(factor);
-    eigen_lhs_cache2_ = nullptr;
-    eigen_lhs_cache_matrix2_.resize(0, 0);
-    clear_reduced_cache2();
+    fom_solver->set_factorized_solver(lhs, ksp);
 }
 
 void MyStrategy2::clear_reduced_cache2() {
@@ -323,7 +326,6 @@ void MyStrategy2::clear_reduced_cache2() {
     AV_cache2_.resize(0, 0);
     A_r_lhs_cache2_ = nullptr;
     A_r_rank_cache2_ = 0;
-    A_r_basis_version_cache2_ = -1;
 }
 
 const Eigen::SparseMatrix<double>& MyStrategy2::eigen_lhs2(Mat lhs, ROMInfo& info) {
@@ -340,7 +342,6 @@ const Eigen::SparseMatrix<double>& MyStrategy2::eigen_lhs2(Mat lhs, ROMInfo& inf
 void MyStrategy2::rebuild_reduced_cache(const Eigen::SparseMatrix<double>& A_e,
                                         const Eigen::MatrixXd& V,
                                         Mat lhs,
-                                        const UpdateBase& basis_runtime,
                                         ROMInfo& info) {
     const double t0 = now_time();
     AV_cache2_ = A_e * V;
@@ -348,7 +349,7 @@ void MyStrategy2::rebuild_reduced_cache(const Eigen::SparseMatrix<double>& A_e,
     info.timing_projection += now_time() - t0;
     A_r_lhs_cache2_ = lhs;
     A_r_rank_cache2_ = static_cast<int>(V.cols());
-    A_r_basis_version_cache2_ = basis_runtime.basis_version;
+    fom_flag = 0;
 }
 
 bool MyStrategy2::update_reduced_cache_incremental(const Eigen::SparseMatrix<double>& A_e,
@@ -358,7 +359,6 @@ bool MyStrategy2::update_reduced_cache_incremental(const Eigen::SparseMatrix<dou
     const int rank = static_cast<int>(V.cols());
     const int old_rank = A_r_rank_cache2_;
     if (rank <= 0 || A_r_cache.rows() != old_rank || AV_cache2_.cols() != old_rank) return false;
-    if (basis_runtime.basis_version == A_r_basis_version_cache2_ && rank == old_rank) return true;
 
     const auto* qr_basis = dynamic_cast<const MyIncrementalQR1*>(&basis_runtime);
     const int drop_index = qr_basis ? qr_basis->base_rank : -1;
@@ -388,7 +388,7 @@ bool MyStrategy2::update_reduced_cache_incremental(const Eigen::SparseMatrix<dou
         append_column(A_r_cache, AV_cache2_, V.col(rank - 1), rank);
         info.timing_projection += now_time() - t0;
         A_r_rank_cache2_ = rank;
-        A_r_basis_version_cache2_ = basis_runtime.basis_version;
+        fom_flag = 0;
         return true;
     }
 
@@ -418,7 +418,7 @@ bool MyStrategy2::update_reduced_cache_incremental(const Eigen::SparseMatrix<dou
         }
         info.timing_projection += now_time() - t0;
         A_r_rank_cache2_ = rank;
-        A_r_basis_version_cache2_ = basis_runtime.basis_version;
+        fom_flag = 0;
         return true;
     }
 
@@ -449,18 +449,17 @@ SolveStats MyStrategy2::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context)
     SolveStats stats;
 
     if (!use_fom) {
-        const bool needs_projection = A_r_lhs_cache2_ != lhs ||
+        const bool needs_projection = fom_flag ||
+                                      A_r_lhs_cache2_ != lhs ||
                                       A_r_rank_cache2_ != rank ||
-                                      A_r_basis_version_cache2_ != basis_runtime.basis_version ||
-                                      A_r_cache.rows() != rank ||
-                                      context.time_step == 0;
+                                      A_r_cache.rows() != rank;
         if (needs_projection) {
             bool cache_ok = false;
-            if (A_r_lhs_cache2_ == lhs && context.time_step != 0) {
+            if (A_r_lhs_cache2_ == lhs) {
                 cache_ok = update_reduced_cache_incremental(A_e, V, basis_runtime, info);
             }
             if (!cache_ok) {
-                rebuild_reduced_cache(A_e, V, lhs, basis_runtime, info);
+                rebuild_reduced_cache(A_e, V, lhs, info);
             } else {
                 A_r_lhs_cache2_ = lhs;
             }
@@ -512,6 +511,7 @@ SolveStats MyStrategy2::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context)
     Eigen::VectorXd solution_e;
     if (use_fom) {
         stats = fom_solver->FOM_main(lhs, rhs, u, context);
+        info.timing_fom_factorization += stats.factorization_time;
         info.timing_fom_solve += stats.solve_time;
         info.fom_used = true;
         info.ksp_iterations = stats.ksp_iterations;
@@ -533,6 +533,7 @@ SolveStats MyStrategy2::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context)
             info.timing_online_basis_update += dt;
             info.timing_basis_update += dt;
         }
+        fom_flag = 1;
     } else {
         const double tw = now_time();
         eigen_to_petsc_vec(u_rom, u);
@@ -541,6 +542,7 @@ SolveStats MyStrategy2::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context)
         info.rom_used = true;
         info.used_rom = true;
         info.accepted = true;
+        fom_flag = 0;
     }
 
     {

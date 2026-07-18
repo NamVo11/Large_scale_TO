@@ -30,12 +30,12 @@ public:
                bool online_in);
 
     SolveStats main(Mat lhs, Vec rhs, Vec u, const ROMContext& context) override;
-    void set_factorization(Mat factor) override;
+    KSP get_factorized_solver(Mat lhs) const override;
+    void set_factorized_solver(Mat lhs, KSP ksp) override;
 
 private:
     Mat A_r_lhs_cache_ = nullptr;
     int A_r_rank_cache_ = 0;
-    int A_r_basis_version_cache_ = -1;
     Mat eigen_lhs_cache_ = nullptr;
     Eigen::SparseMatrix<double> eigen_lhs_cache_matrix_;
 
@@ -53,12 +53,12 @@ public:
                 bool online_in);
 
     SolveStats main(Mat lhs, Vec rhs, Vec u, const ROMContext& context) override;
-    void set_factorization(Mat factor) override;
+    KSP get_factorized_solver(Mat lhs) const override;
+    void set_factorized_solver(Mat lhs, KSP ksp) override;
 
 private:
     Mat A_r_lhs_cache2_ = nullptr;
     int A_r_rank_cache2_ = 0;
-    int A_r_basis_version_cache2_ = -1;
     Mat eigen_lhs_cache2_ = nullptr;
     Eigen::SparseMatrix<double> eigen_lhs_cache_matrix2_;
     Eigen::MatrixXd AV_cache2_;
@@ -72,7 +72,6 @@ private:
     void rebuild_reduced_cache(const Eigen::SparseMatrix<double>& A_e,
                                const Eigen::MatrixXd& V,
                                Mat lhs,
-                               const UpdateBase& basis_runtime,
                                ROMInfo& info);
 };
 
