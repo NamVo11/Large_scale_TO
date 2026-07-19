@@ -342,7 +342,7 @@
           //"PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
           //"MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
 
-          "CASE_CONFIGS": "case_study/600X200_sin_1cycle_125Hz_r1_10_max_25/FOM/conf.conf",
+          "CASE_CONFIGS": "case_study/3/strategy_1thread/conf.conf",
           //"CASE_CONFIGS": "case_study/3D/FOM/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy2_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf",
           //"CASE_CONFIGS": "case_study/3/strategy2/conf.conf   case_study/3/strategy/conf.conf   case_study/3/FOM/conf.conf",
 
@@ -356,8 +356,8 @@
           "STAGE2_MYSTRATEGY2_FULL_PROJECTION": "0", // MyStrategy2 only: 0 incremental projection; 1 full V'AV rebuild when projection is needed
           "OMP_NUM_THREADS": "1", // use 1 for method comparison; try 4,8,16 for fast production runs
           "MKL_NUM_THREADS": "1", // match OMP_NUM_THREADS unless testing MKL threading
-          "FACTOR_NUM_THREADS": "8", // used only when NP=1; script forces 1 for MPI/multinode
-          "SENS_ELEMENT_THREADS": "8", // used only when NP=1; script forces 1 for MPI/multinode
+          "FACTOR_NUM_THREADS": "1", // used only when NP=1; script forces 1 for MPI/multinode
+          "SENS_ELEMENT_THREADS": "1", // used only when NP=1; script forces 1 for MPI/multinode
           "OMP_PROC_BIND": "spread", // spread or close
           "OMP_PLACES": "cores" // cores or threads
         }
@@ -416,7 +416,7 @@
       "command": "python3",
       "args": [
         "scripts/watch_optimization_live.py",
-        "case_study/600X200_sin_1cycle_125Hz_r1_15_max_25/strategy",
+        "case_study/3/strategy_1thread",
         // Case folder to watch. Change this to case_study/test1, case_study/Debug, etc.
         "--scale",
         "8",
@@ -427,7 +427,7 @@
         "--port",
         "8765",
         // Browser port, open http://localhost:8765.
-        "--once",
+        //"--once",
         // Run one time, save/update figures and HTML, then exit.
         // "--no-server",
         // Do not start the browser server.
