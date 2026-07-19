@@ -19,8 +19,8 @@ stage2_unset_runtime_env() {
 }
 
 stage2_setup_runtime_env() {
-    export PETSC_PREFIX="${PETSC_PREFIX:-/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps}"
-    export MPICH_HOME="${MPICH_HOME:-/home/votrongnam/opt/mpich-4.0-ch3-cxx}"
+    export PETSC_PREFIX="${PETSC_PREFIX:-/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13}"
+    export MPICH_HOME="${MPICH_HOME:-/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13}"
     export MKLROOT="${MKLROOT:-/opt/intel/oneapi/mkl/2025.0}"
 
     export MPIEXEC_PORT_RANGE="${MPIEXEC_PORT_RANGE:-40000:41000}"

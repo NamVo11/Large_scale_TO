@@ -1,11 +1,22 @@
 {
     "version": "0.2.0",
     "configurations": [
+        // Toolchain switch values:
+        // GCC13 active:
+        //   program: build-mpich-debug-gcc13/stage2_dynamic_forward
+        //   MPICH: /home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13
+        //   PETSc: /home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13
+        // GCC11 option:
+        //   program: build-mpich-debug-gcc11/stage2_dynamic_forward
+        //   MPICH: /home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11
+        //   PETSc: /home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11
         {
             "name": "Debug: single node single rank",
             "type": "cppdbg",
             "request": "launch",
-            "program": "/home/votrongnam/PROJECT/Large_scale_TO/build-mpich-debug/stage2_dynamic_forward",
+            "program": "/home/votrongnam/PROJECT/Large_scale_TO/build-mpich-debug-gcc13/stage2_dynamic_forward",
+            // GCC11 option:
+            // "program": "/home/votrongnam/PROJECT/Large_scale_TO/build-mpich-debug-gcc11/stage2_dynamic_forward",
             "args": [
                 "-run_optimization",
                 "1",
@@ -57,12 +68,22 @@
                     "name": "HWLOC_COMPONENTS"
                 },
                 {
-                    "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps",
+                    "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13",
+                    // GCC11 option:
+                    // "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
                     "name": "PETSC_PREFIX"
                 },
                 {
-                    "value": "/home/votrongnam/opt/mpich-4.0-ch3-cxx",
+                    "value": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
+                    // GCC11 option:
+                    // "value": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
                     "name": "MPICH_HOME"
+                },
+                {
+                    "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13/lib:/opt/intel/oneapi/mkl/2025.0/lib",
+                    // GCC11 option:
+                    // "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11/lib:/opt/intel/oneapi/mkl/2025.0/lib",
+                    "name": "LD_LIBRARY_PATH"
                 },
                 {
                     "value": "/opt/intel/oneapi/mkl/2025.0",
@@ -95,10 +116,6 @@
                 {
                     "value": "cores",
                     "name": "OMP_PLACES"
-                },
-                {
-                    "value": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps/lib:/home/votrongnam/opt/mpich-4.0-ch3-cxx/lib:/opt/intel/oneapi/mkl/2025.0/lib",
-                    "name": "LD_LIBRARY_PATH"
                 }
             ],
             "externalConsole": false,

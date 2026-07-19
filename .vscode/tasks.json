@@ -3,6 +3,21 @@
   "version": "2.0.0",
   
   "tasks": [
+    // Toolchain switch values:
+    // GCC13 active:
+    //   build release/debug: build-mpich-release-gcc13, build-mpich-debug-gcc13
+    //   MPICH: /home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13
+    //   PETSc: /home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13
+    // GCC11 option:
+    //   build release/debug: build-mpich-release-gcc11, build-mpich-debug-gcc11
+    //   MPICH: /home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11
+    //   PETSc: /home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11
+    //
+    // When switching compiler stack, change the adjacent gcc13/gcc11 lines for:
+    //   - build directory
+    //   - CMAKE_CXX_COMPILER
+    //   - PKG_CONFIG_PATH
+    //   - BUILD_DIR/PETSC_PREFIX/MPICH_HOME in run tasks
     // ------------------ configure stage2 Debug--------------------------------------------------
     {
       "label": "CMake: configure stage2 Debug",
@@ -12,16 +27,22 @@
         "-S",
         "${workspaceFolder}",
         "-B",
-        "${workspaceFolder}/build-mpich-debug",
+        "${workspaceFolder}/build-mpich-debug-gcc13",
+        // GCC11 option:
+        // "${workspaceFolder}/build-mpich-debug-gcc11",
         "-DCMAKE_BUILD_TYPE=Debug",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        "-DCMAKE_CXX_COMPILER=/home/votrongnam/opt/mpich-4.0-ch3-cxx/bin/mpicxx",
+        "-DCMAKE_CXX_COMPILER=/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13/bin/mpicxx",
+        // GCC11 option:
+        // "-DCMAKE_CXX_COMPILER=/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11/bin/mpicxx",
         "-DPETSC_PKG=PETSc"
       ],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps/lib/pkgconfig"
+          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13/lib/pkgconfig"
+          // GCC11 option:
+          // "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11/lib/pkgconfig"
         }
       },
       "group": "build",
@@ -34,16 +55,15 @@
       "command": "cmake",
       "args": [
         "--build",
-        "${workspaceFolder}/build-mpich-debug",
+        "${workspaceFolder}/build-mpich-debug-gcc13",
+        // GCC11 option:
+        // "${workspaceFolder}/build-mpich-debug-gcc11",
         "--target",
         "stage2_dynamic_forward",
         "-j"
       ],
       "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps/lib/pkgconfig"
-        }
+        "cwd": "${workspaceFolder}"
       },
       "dependsOn": "CMake: configure stage2 Debug",
       "problemMatcher": "$gcc"
@@ -57,16 +77,24 @@
         "-S",
         "${workspaceFolder}",
         "-B",
-        "${workspaceFolder}/build-mpich-release",
+        "${workspaceFolder}/build-mpich-release-gcc13",
+       
+        //"${workspaceFolder}/build-mpich-release-gcc11",
+
         "-DCMAKE_BUILD_TYPE=Release",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        "-DCMAKE_CXX_COMPILER=/home/votrongnam/opt/mpich-4.0-ch3-cxx/bin/mpicxx",
+
+        "-DCMAKE_CXX_COMPILER=/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13/bin/mpicxx",
+       
+        //"-DCMAKE_CXX_COMPILER=/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11/bin/mpicxx",
         "-DPETSC_PKG=PETSc"
       ],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps/lib/pkgconfig"
+          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13/lib/pkgconfig"
+          
+          //"PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11/lib/pkgconfig"
         }
       },
       "group": "build",
@@ -79,16 +107,16 @@
       "command": "cmake",
       "args": [
         "--build",
-        "${workspaceFolder}/build-mpich-release",
+        "${workspaceFolder}/build-mpich-release-gcc13",
+        
+        //"${workspaceFolder}/build-mpich-release-gcc11",
+
         "--target",
         "stage2_dynamic_forward",
         "-j"
       ],
       "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "PKG_CONFIG_PATH": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps/lib/pkgconfig"
-        }
+        "cwd": "${workspaceFolder}"
       },
       "dependsOn": "CMake: configure stage2 Release",
       "problemMatcher": "$gcc"
@@ -104,7 +132,15 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "BUILD_DIR": "build-mpich-release",
+          "BUILD_DIR": "build-mpich-release-gcc13",
+          // GCC11 option:
+          // "BUILD_DIR": "build-mpich-release-gcc11",
+          "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13",
+          // GCC11 option:
+          // "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
+          "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
+          // GCC11 option:
+          // "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
           "CASE_CONFIG": "case_study/test1/600x200_sin_1cycle_125Hz.conf",
           "METHOD_NAME": "MyStrategy", // MyStrategy: IncrementalSVD; MyStrategy2: MyIncrementalQR1 QR online basis
           "NP": "8",
@@ -136,7 +172,15 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "BUILD_DIR": "build-mpich-release",
+          "BUILD_DIR": "build-mpich-release-gcc13",
+          // GCC11 option:
+          // "BUILD_DIR": "build-mpich-release-gcc11",
+          "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13",
+          // GCC11 option:
+          // "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
+          "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
+          // GCC11 option:
+          // "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
           "CASE_CONFIG": "case_study/test1/600x200_sin_1cycle_125Hz.conf",
           "METHOD_NAME": "MyStrategy", // MyStrategy: IncrementalSVD; MyStrategy2: MyIncrementalQR1 QR online basis
           "NP": "8",
@@ -168,7 +212,15 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "BUILD_DIR": "build-mpich-release",
+          "BUILD_DIR": "build-mpich-release-gcc13",
+          // GCC11 option:
+          // "BUILD_DIR": "build-mpich-release-gcc11",
+          "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13",
+          // GCC11 option:
+          // "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
+          "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
+          // GCC11 option:
+          // "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
           "CASE_CONFIG": "case_study/test4_FOM/600x200_sin_1cycle_125Hz.conf",
           "NP": "1",
           "HOSTS": "localhost",
@@ -202,7 +254,15 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "BUILD_DIR": "build-mpich-release",
+          "BUILD_DIR": "build-mpich-release-gcc13",
+          // GCC11 option:
+          // "BUILD_DIR": "build-mpich-release-gcc11",
+          "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13",
+          // GCC11 option:
+          // "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
+          "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
+          // GCC11 option:
+          // "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
           "CASE_CONFIG": "case_study/test1/600x200_sin_1cycle_125Hz.conf",
           "METHOD_NAME": "MyStrategy", // MyStrategy: IncrementalSVD; MyStrategy2: MyIncrementalQR1 QR online basis
           "NP": "8",
@@ -234,7 +294,15 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "BUILD_DIR": "build-mpich-release",
+          "BUILD_DIR": "build-mpich-release-gcc13",
+          // GCC11 option:
+          // "BUILD_DIR": "build-mpich-release-gcc11",
+          "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13",
+          // GCC11 option:
+          // "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
+          "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
+          // GCC11 option:
+          // "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
           "CASE_CONFIG": "case_study/test1/600x200_sin_1cycle_125Hz.conf",
           "METHOD_NAME": "MyStrategy", // MyStrategy: IncrementalSVD; MyStrategy2: MyIncrementalQR1 QR online basis
           "NP": "8",
@@ -266,11 +334,18 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "BUILD_DIR": "build-mpich-release",
+          "BUILD_DIR": "build-mpich-release-gcc13",
+          "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13",
+          "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
+
+          //"BUILD_DIR": "build-mpich-release-gcc11",
+          //"PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
+          //"MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
+
+          "CASE_CONFIGS": "case_study/600X200_sin_1cycle_125Hz_r1_10_max_25/FOM/conf.conf",
           //"CASE_CONFIGS": "case_study/3D/FOM/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy2_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf",
           //"CASE_CONFIGS": "case_study/3/strategy2/conf.conf   case_study/3/strategy/conf.conf   case_study/3/FOM/conf.conf",
-          "CASE_CONFIGS": "case_study/600X200_sin_1cycle_125Hz_r1_10_max_25/FOM/conf.conf",
-          // Add/remove case configs above. They run sequentially with the same solver settings.
+
           "NP": "1",
           "HOSTS": "localhost",
           "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
@@ -302,7 +377,15 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "BUILD_DIR": "build-mpich-release",
+          "BUILD_DIR": "build-mpich-release-gcc13",
+          // GCC11 option:
+          // "BUILD_DIR": "build-mpich-release-gcc11",
+          "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13",
+          // GCC11 option:
+          // "PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
+          "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
+          // GCC11 option:
+          // "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
           //"CASE_CONFIGS": "case_study/3D/FOM/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy2_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf",
           "CASE_CONFIGS": "case_study/3D/strategy2_iterative/3D.conf",
           // Add/remove case configs above. They run sequentially with the same solver settings.
