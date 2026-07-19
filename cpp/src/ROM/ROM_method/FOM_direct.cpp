@@ -75,8 +75,29 @@ void FOM_direct::set_factorization(Mat factor_in) {
     PetscLogDouble t0 = 0.0;
     PetscLogDouble t1 = 0.0;
     PetscTime(&t0);
+    const int requested_factor_threads = factor_threads_for_mat(factor_in);
+    const int requested_runtime_threads = runtime_mkl_threads_for_mat(factor_in);
     MKLThreadGuard mkl_threads(factor_threads_for_mat(factor_in),
                                runtime_mkl_threads_for_mat(factor_in));
+    // TEMP THREAD DEBUG: comment out this block after comparing master/worker.
+    {
+        PetscMPIInt rank = 0;
+        MPI_Comm_rank(PetscObjectComm((PetscObject)factor_in), &rank);
+        if (rank == 0) {
+#if defined(STAGE2_HAS_MKL_SERVICE)
+            std::cout << "  thread_debug factorization: requested_factor_threads="
+                      << requested_factor_threads
+                      << " requested_runtime_threads=" << requested_runtime_threads
+                      << " mkl_get_max_threads=" << mkl_get_max_threads()
+                      << "\n";
+#else
+            std::cout << "  thread_debug factorization: MKL service header not available"
+                      << " requested_factor_threads=" << requested_factor_threads
+                      << " requested_runtime_threads=" << requested_runtime_threads
+                      << "\n";
+#endif
+        }
+    }
     if (ksp_) {
         KSPDestroy(&ksp_);
         ksp_ = nullptr;

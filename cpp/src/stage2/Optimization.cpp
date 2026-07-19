@@ -540,6 +540,21 @@ namespace stage2
             const double timing_alloc_gradient = std::chrono::duration<double>(t1 - t0).count();
 
             t0 = Clock::now();
+            // TEMP THREAD DEBUG: comment out this block after comparing master/worker.
+            if (rank == 0)
+            {
+                int actual_threads = 1;
+                #pragma omp parallel num_threads(sens_element_threads) if(sens_element_threads > 1)
+                {
+                    #pragma omp single
+                    actual_threads = omp_get_num_threads();
+                }
+                std::cout << "  thread_debug explicit_gradient_dynamic: requested_threads="
+                          << sens_element_threads
+                          << " actual_threads=" << actual_threads
+                          << " omp_get_max_threads=" << omp_get_max_threads()
+                          << "\n";
+            }
             #pragma omp parallel for schedule(static) num_threads(sens_element_threads) if(sens_element_threads > 1)
             for (int e = elem_start; e < elem_end; ++e)
             {
