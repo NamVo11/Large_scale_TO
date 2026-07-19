@@ -268,7 +268,8 @@
         "env": {
           "BUILD_DIR": "build-mpich-release",
           //"CASE_CONFIGS": "case_study/3D/FOM/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy2_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf",
-          "CASE_CONFIGS": "case_study/non_symmetry_bug/600x200_sin_1cycle_125Hz.conf",
+          //"CASE_CONFIGS": "case_study/3/strategy2/conf.conf   case_study/3/strategy/conf.conf   case_study/3/FOM/conf.conf",
+          "CASE_CONFIGS": "case_study/600X200_sin_1cycle_125Hz_r1_10_max_25/FOM/conf.conf",
           // Add/remove case configs above. They run sequentially with the same solver settings.
           "NP": "1",
           "HOSTS": "localhost",
@@ -303,19 +304,19 @@
         "env": {
           "BUILD_DIR": "build-mpich-release",
           //"CASE_CONFIGS": "case_study/3D/FOM/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy2_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf",
-          "CASE_CONFIGS": "case_study/3D/strategy2/3D.conf",
+          "CASE_CONFIGS": "case_study/3D/strategy2_iterative/3D.conf",
           // Add/remove case configs above. They run sequentially with the same solver settings.
           "NP": "1",
           "HOSTS": "localhost",
-          "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
-          "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
-          "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso", // single-node direct solver; alternatives: mumps // mkl_pardiso
+          "KSP_TYPE": "cg", // preonly: direct solve; cg: iterative SPD// preonly
+          "PC_TYPE": "gamg", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
+          "PC_FACTOR_MAT_SOLVER_TYPE": "", // single-node direct solver; alternatives: mumps // mkl_pardiso
           "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
           "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: IncrementalSVD only; ignored by MyStrategy2
           "STAGE2_MYSTRATEGY2_FULL_PROJECTION": "0", // MyStrategy2 only: 0 incremental projection; 1 full V'AV rebuild when projection is needed
-          "OMP_NUM_THREADS": "8", // use 1 for method comparison; try 4,8,16 for fast production runs
-          "MKL_NUM_THREADS": "8", // match OMP_NUM_THREADS unless testing MKL threading
-          "FACTOR_NUM_THREADS": "8", // used only when NP=1; script forces 1 for MPI/multinode
+          "OMP_NUM_THREADS": "1", // use 1 for method comparison; try 4,8,16 for fast production runs
+          "MKL_NUM_THREADS": "1", // match OMP_NUM_THREADS unless testing MKL threading
+          "FACTOR_NUM_THREADS": "1", // used only when NP=1; script forces 1 for MPI/multinode
           "SENS_ELEMENT_THREADS": "8", // used only when NP=1; script forces 1 for MPI/multinode
           "OMP_PROC_BIND": "spread", // spread or close
           "OMP_PLACES": "cores" // cores or threads
@@ -332,18 +333,18 @@
       "command": "python3",
       "args": [
         "scripts/watch_optimization_live.py",
-        "case_study/3D/FOM",
+        "case_study/600X200_sin_1cycle_125Hz_r1_15_max_25/strategy",
         // Case folder to watch. Change this to case_study/test1, case_study/Debug, etc.
         "--scale",
         "8",
         // Density image scale factor. Larger value makes density pixels bigger.
         "--refresh",
-        "10",
+        "1",
         // Live refresh interval in seconds.
         "--port",
         "8765",
         // Browser port, open http://localhost:8765.
-        // "--once",
+        "--once",
         // Run one time, save/update figures and HTML, then exit.
         // "--no-server",
         // Do not start the browser server.
