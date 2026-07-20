@@ -6,8 +6,6 @@
 #include <string>
 #include <vector>
 
-namespace stage2 {
-
 std::string lower_string(std::string s);
 double compute_relative_residual(Mat lhs, Vec rhs, Vec solution);
 double compute_relative_solution_error(Vec u_fom, Vec u_rom);
@@ -17,6 +15,4 @@ bool symmetric_eigen_jacobi(std::vector<double> A,
                             int n,
                             std::vector<double>& eigenvalues,
                             std::vector<double>& eigenvectors);
-
-} // namespace stage2
 

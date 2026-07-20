@@ -1,7 +1,7 @@
-#include "stage2/DynamicElasticLinear.hpp"
-#include "stage2/MatlabLikeData.hpp"
-#include "stage2/Optimization.hpp"
-#include "stage2/ROM.hpp"
+#include "DynamicElasticLinear.hpp"
+#include "MatlabLikeData.hpp"
+#include "Optimization.hpp"
+#include "ROM.hpp"
 
 #include <petscksp.h>
 
@@ -15,7 +15,7 @@ namespace {
 
 template <typename T>
 void get_int_option(const char* name, T& value) {
-    PetscInt v = static_cast<PetscInt>(value); // hãy chuyển v về đúng kiểu PetscInt
+    PetscInt v = static_cast<PetscInt>(value); // hãy chuyển v vềEđúng kiểu PetscInt
     PetscBool set = PETSC_FALSE;
     PetscOptionsGetInt(nullptr, nullptr, name, &v, &set);
     if (set) value = static_cast<T>(v); // chuyển vê kiểu T
@@ -45,24 +45,23 @@ void set_default_option_if_missing(const char* name, const char* value) {
     if (!option_is_set(name)) PetscOptionsSetValue(nullptr, name, value);
 }
 
-void write_matrix_columns(const std::string& path, const std::vector<std::vector<double>>& cols) {
-    if (cols.empty() || cols.front().empty()) return;
+void write_matrix_columns(const std::string& path, const Eigen::MatrixXd& cols) {
+    if (cols.size() == 0) return;
     std::ofstream out(path);
     if (!out) throw std::runtime_error("Cannot write " + path);
     out.precision(17);
-    const std::size_t nrow = cols.front().size();
-    for (std::size_t i = 0; i < nrow; ++i) {
-        for (std::size_t j = 0; j < cols.size(); ++j) {
+    for (Eigen::Index i = 0; i < cols.rows(); ++i) {
+        for (Eigen::Index j = 0; j < cols.cols(); ++j) {
             if (j) out << ",";
-            out << cols[j][i];
+            out << cols(i, j);
         }
         out << "\n";
     }
 }
 
 void write_info(const std::string& path,
-                const stage2::FEM& fem,
-                const stage2::Analysis& A,
+                const FEM& fem,
+                const Analysis& A,
                 int mpi_size) {
     std::ofstream out(path);
     if (!out) throw std::runtime_error("Cannot write " + path);
@@ -99,8 +98,6 @@ int main(int argc, char** argv) {
 
     int exit_code = 0;
     try {
-        using namespace stage2;
-
         Geometry geom;
         geom.Lx = 1200.0;
         geom.Ly = 400.0;

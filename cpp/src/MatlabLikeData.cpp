@@ -1,11 +1,10 @@
-#include "stage2/MatlabLikeData.hpp"
+#include "MatlabLikeData.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <numeric>
 #include <stdexcept>
 
-namespace stage2 {
 namespace {
 
 std::string lower(std::string s) {
@@ -276,13 +275,13 @@ void attach_bcs_to_analysis_by_id(Analysis& A,
     }
 }
 
-std::vector<std::vector<double>> init_design_variables(const FEM& fem,
-                                                       const std::vector<Region>&,
-                                                       const std::vector<Material>& Mat,
-                                                       double x0,
-                                                       std::vector<int>& x_label) {
+Eigen::MatrixXd init_design_variables(const FEM& fem,
+                                      const std::vector<Region>&,
+                                      const std::vector<Material>& Mat,
+                                      double x0,
+                                      std::vector<int>& x_label) {
     const int nvar = std::max(1, static_cast<int>(Mat.size()) - 1);
-    std::vector<std::vector<double>> x(static_cast<std::size_t>(fem.NElem), std::vector<double>(nvar, x0));
+    Eigen::MatrixXd x = Eigen::MatrixXd::Constant(fem.NElem, nvar, x0);
     x_label.assign(static_cast<std::size_t>(fem.NElem), 0);
     return x;
 }
@@ -311,5 +310,3 @@ double bc_value(const BoundaryCondition& BC, const Analysis& A, int istep) {
     }
     throw std::runtime_error("Unsupported BC time_type");
 }
-
-} // namespace stage2

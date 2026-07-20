@@ -2,8 +2,6 @@
 
 #include "ROM/Reduced_Basis_Agorithm/UpdateBase.hpp"
 
-namespace stage2 {
-
 class MyIncrementalQR1 final : public UpdateBase {
 public:
     double e_rb = 1e-20;
@@ -17,4 +15,3 @@ public:
     void update(const Eigen::VectorXd& solution, const ROMContext& context) override;
 };
 
-} // namespace stage2

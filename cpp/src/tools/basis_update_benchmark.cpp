@@ -61,25 +61,25 @@ int main(int argc, char** argv) {
               << " max_rank=" << max_rank
               << " online_updates=" << online_updates << "\n";
 
-    stage2::ROMContext context;
+    ROMContext context;
     context.opt_iter = 0;
 
-    stage2::MyPOD_SVD1 pod_snapshot(0.0, 1e-10, max_rank);
-    pod_snapshot.backend = stage2::MyPOD_SVD1::Backend::SnapshotEigen;
+    MyPOD_SVD1 pod_snapshot(0.0, 1e-10, max_rank);
+    pod_snapshot.backend = MyPOD_SVD1::Backend::SnapshotEigen;
     for (int j = 0; j < nsnapshot; ++j) pod_snapshot.addSnapshot(make_snapshot(ndof, j, max_rank), context);
     auto t0 = Clock::now();
     pod_snapshot.update(Eigen::VectorXd(), context);
     const double snapshot_time = elapsed(t0);
 
-    stage2::MyPOD_SVD1 pod_mkl(0.0, 1e-10, max_rank);
-    pod_mkl.backend = stage2::MyPOD_SVD1::Backend::SnapshotMKL;
+    MyPOD_SVD1 pod_mkl(0.0, 1e-10, max_rank);
+    pod_mkl.backend = MyPOD_SVD1::Backend::SnapshotMKL;
     pod_mkl.snapshots = pod_snapshot.snapshots;
     t0 = Clock::now();
     pod_mkl.update(Eigen::VectorXd(), context);
     const double snapshot_mkl_time = elapsed(t0);
 
-    stage2::MyPOD_SVD1 pod_bdc(0.0, 1e-10, max_rank);
-    pod_bdc.backend = stage2::MyPOD_SVD1::Backend::EigenBDCSVD;
+    MyPOD_SVD1 pod_bdc(0.0, 1e-10, max_rank);
+    pod_bdc.backend = MyPOD_SVD1::Backend::EigenBDCSVD;
     pod_bdc.snapshots = pod_snapshot.snapshots;
     t0 = Clock::now();
     pod_bdc.update(Eigen::VectorXd(), context);
@@ -100,21 +100,21 @@ int main(int argc, char** argv) {
         online_snapshots.push_back(make_snapshot(ndof, j, max_rank));
     }
 
-    stage2::IncrementalSVD online_fast(10000, 1e-10, 1e-12, max_rank);
-    online_fast.backend = stage2::IncrementalSVD::Backend::Eigen;
+    IncrementalSVD online_fast(10000, 1e-10, 1e-12, max_rank);
+    online_fast.backend = IncrementalSVD::Backend::Eigen;
     online_fast.store_snapshots = false;
     t0 = Clock::now();
     for (int j = 0; j < online_updates; ++j) online_fast.update(online_snapshots[static_cast<std::size_t>(j)], context);
     const double online_fast_time = elapsed(t0);
 
-    stage2::IncrementalSVD online_mkl(10000, 1e-10, 1e-12, max_rank);
-    online_mkl.backend = stage2::IncrementalSVD::Backend::MKL;
+    IncrementalSVD online_mkl(10000, 1e-10, 1e-12, max_rank);
+    online_mkl.backend = IncrementalSVD::Backend::MKL;
     online_mkl.store_snapshots = false;
     t0 = Clock::now();
     for (int j = 0; j < online_updates; ++j) online_mkl.update(online_snapshots[static_cast<std::size_t>(j)], context);
     const double online_mkl_time = elapsed(t0);
 
-    stage2::IncrementalSVD online_store(10000, 1e-10, 1e-12, max_rank);
+    IncrementalSVD online_store(10000, 1e-10, 1e-12, max_rank);
     online_store.store_snapshots = true;
     t0 = Clock::now();
     for (int j = 0; j < online_updates; ++j) online_store.update(online_snapshots[static_cast<std::size_t>(j)], context);

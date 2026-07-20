@@ -2,8 +2,6 @@
 
 #include "ROM/Utils/rom_petsc_utils.hpp"
 
-namespace stage2 {
-
 RelativeResidualEstimator::RelativeResidualEstimator(double residual_tol_in) {
     name = "RelativeResidualEstimator";
     residual_tol = residual_tol_in;
@@ -20,6 +18,4 @@ ErrorAssessment RelativeResidualEstimator::assess(Mat lhs, Vec rhs, Vec solution
     assessment.accepted = rel_res <= residual_tol;
     return assessment;
 }
-
-} // namespace stage2
 

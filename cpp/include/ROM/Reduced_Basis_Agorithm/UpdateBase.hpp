@@ -6,8 +6,6 @@
 
 #include <string>
 
-namespace stage2 {
-
 class UpdateBase {
 public:
     std::string name = "UpdateBase";
@@ -30,4 +28,3 @@ public:
     virtual void reset();
 };
 
-} // namespace stage2

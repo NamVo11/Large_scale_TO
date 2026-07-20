@@ -2,8 +2,6 @@
 
 #include "ROM/Reduced_Basis_Agorithm/UpdateBase.hpp"
 
-namespace stage2 {
-
 class MyPOD_SVD1 final : public UpdateBase {
 public:
     enum class Backend {
@@ -24,4 +22,3 @@ private:
     static Backend backendFromEnvironment();
 };
 
-} // namespace stage2

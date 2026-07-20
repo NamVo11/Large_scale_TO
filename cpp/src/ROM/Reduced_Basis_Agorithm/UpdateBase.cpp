@@ -3,8 +3,6 @@
 #include <stdexcept>
 #include <utility>
 
-namespace stage2 {
-
 UpdateBase::UpdateBase(int max_rank_in) : max_rank(max_rank_in) {}
 
 const Eigen::MatrixXd& UpdateBase::getBasis(const ROMContext&) const {
@@ -50,4 +48,3 @@ void UpdateBase::reset() {
     ++basis_version;
 }
 
-} // namespace stage2

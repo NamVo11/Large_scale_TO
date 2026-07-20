@@ -2,7 +2,7 @@
 
 #include "ROM/Reduced_Basis_Agorithm/UpdateBase.hpp"
 #include "ROM/Reduced_Basis_Agorithm/MyIncrementalQR1.hpp"
-#include "stage2/PetscEigenBridge.hpp"
+#include "helper/PetscEigenBridge.hpp"
 
 #include <petscsys.h>
 
@@ -13,7 +13,6 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace stage2 {
 namespace {
 
 double now_time() {
@@ -615,4 +614,3 @@ SolveStats MyStrategy2::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context)
     return stats;
 }
 
-} // namespace stage2

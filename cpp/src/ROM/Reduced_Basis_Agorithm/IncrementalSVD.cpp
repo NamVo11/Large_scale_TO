@@ -13,8 +13,6 @@
 #include <string>
 #include <utility>
 
-namespace stage2 {
-
 IncrementalSVD::IncrementalSVD(int r_reset_in, double eps_svd_in, double tol_in, int max_rank_in)
     : UpdateBase(max_rank_in) {
     name = "IncrementalSVD";
@@ -224,4 +222,3 @@ void IncrementalSVD::update(const Eigen::VectorXd& solution, const ROMContext& c
     reorthogonalizeIfNeeded();
 }
 
-} // namespace stage2

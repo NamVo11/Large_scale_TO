@@ -6,9 +6,8 @@
 #include <string>
 #include <vector>
 
+#include <Eigen/Dense>
 #include <petscksp.h>
-
-namespace stage2 {
 
 class ROMBase;
 
@@ -105,10 +104,10 @@ struct BoundaryCondition {
 };
 
 struct AnalysisResult {
-    std::vector<std::vector<double>> U;
-    std::vector<std::vector<double>> V;
-    std::vector<std::vector<double>> A;
-    std::vector<std::vector<double>> F_ext;
+    Eigen::MatrixXd U;
+    Eigen::MatrixXd V;
+    Eigen::MatrixXd A;
+    Eigen::MatrixXd F_ext;
     std::vector<int> SPCdofs;
     std::vector<int> free;
     std::vector<int> ksp_iterations;
@@ -167,11 +166,11 @@ struct ObjectiveTerm {
     double weight = 1.0;
     double value_initial = 0.0;
     double value = 0.0;
-    std::vector<std::vector<double>> dfdu_all;
-    std::vector<std::vector<double>> dfdv_all;
-    std::vector<std::vector<double>> dfda_all;
-    std::vector<std::vector<double>> dfdFext_all;
-    std::vector<std::vector<double>> df_dx;
+    Eigen::MatrixXd dfdu_all;
+    Eigen::MatrixXd dfdv_all;
+    Eigen::MatrixXd dfda_all;
+    Eigen::MatrixXd dfdFext_all;
+    Eigen::MatrixXd df_dx;
 };
 
 struct ObjectiveGroup {
@@ -182,11 +181,11 @@ struct ObjectiveGroup {
     std::shared_ptr<ROMBase> ROM;
     std::vector<ObjectiveTerm> terms;
     double value = 0.0;
-    std::vector<std::vector<double>> d_explicit_dfdu_all;
-    std::vector<std::vector<double>> d_explicit_dfdv_all;
-    std::vector<std::vector<double>> d_explicit_dfda_all;
-    std::vector<std::vector<double>> d_explicit_dfdFext_all;
-    std::vector<std::vector<double>> d_explicit_df_dx;
+    Eigen::MatrixXd d_explicit_dfdu_all;
+    Eigen::MatrixXd d_explicit_dfdv_all;
+    Eigen::MatrixXd d_explicit_dfda_all;
+    Eigen::MatrixXd d_explicit_dfdFext_all;
+    Eigen::MatrixXd d_explicit_df_dx;
 };
 
 struct Constraint {
@@ -199,11 +198,11 @@ struct Constraint {
     int mat_id = 0;
     double value_initial = 0.0;
     double value = 0.0;
-    std::vector<std::vector<double>> d_explicit_dfdu_all;
-    std::vector<std::vector<double>> d_explicit_dfdv_all;
-    std::vector<std::vector<double>> d_explicit_dfda_all;
-    std::vector<std::vector<double>> d_explicit_dfdFext_all;
-    std::vector<std::vector<double>> d_explicit_df_dx;
+    Eigen::MatrixXd d_explicit_dfdu_all;
+    Eigen::MatrixXd d_explicit_dfdv_all;
+    Eigen::MatrixXd d_explicit_dfda_all;
+    Eigen::MatrixXd d_explicit_dfdFext_all;
+    Eigen::MatrixXd d_explicit_df_dx;
 };
 
 struct OptimizationHistory {
@@ -222,8 +221,8 @@ struct OptimizationHistory {
 };
 
 struct Optimization {
-    std::vector<std::vector<double>> x0;
-    std::vector<std::vector<double>> x;
+    Eigen::MatrixXd x0;
+    Eigen::MatrixXd x;
     std::vector<int> x_label;
     int MaxIter = 300;
     double Tol = 0.0;
@@ -250,12 +249,10 @@ void init_interp(const Interp& interp, Analysis& A);
 void attach_bcs_to_analysis_by_id(Analysis& A,
                                   const std::vector<BoundaryCondition>& Dirich,
                                   const std::vector<BoundaryCondition>& Neum);
-std::vector<std::vector<double>> init_design_variables(const FEM& fem,
-                                                       const std::vector<Region>& regions,
-                                                       const std::vector<Material>& Mat,
-                                                       double x0,
-                                                       std::vector<int>& x_label);
+Eigen::MatrixXd init_design_variables(const FEM& fem,
+                                      const std::vector<Region>& regions,
+                                      const std::vector<Material>& Mat,
+                                      double x0,
+                                      std::vector<int>& x_label);
 
 double bc_value(const BoundaryCondition& BC, const Analysis& A, int istep);
-
-} // namespace stage2

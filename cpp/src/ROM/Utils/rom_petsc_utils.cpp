@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-namespace stage2 {
-
 std::string lower_string(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
@@ -171,6 +169,4 @@ bool symmetric_eigen_jacobi(std::vector<double> A,
     eigenvectors.swap(sorted_vectors);
     return true;
 }
-
-} // namespace stage2
 

@@ -6,8 +6,6 @@
 #include <string>
 #include <vector>
 
-namespace stage2 {
-
 class UpdateBase;
 
 struct ROMContext {
@@ -91,4 +89,3 @@ std::shared_ptr<ROMBase> make_dynamic_ROM(const std::string& method_name,
                                           int max_rank,
                                           bool online);
 
-} // namespace stage2

@@ -2,7 +2,6 @@
 
 #include <iostream>
 
-namespace stage2 {
 namespace {
 
 constexpr PetscReal kZeroRhsTol = 1e-14;
@@ -109,4 +108,3 @@ SolveStats FOM_iterative::main(Mat lhs, Vec rhs, Vec u, const ROMContext& contex
     return stats;
 }
 
-} // namespace stage2

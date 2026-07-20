@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace stage2 {
-
 ROMBase::ROMBase(std::vector<std::shared_ptr<UpdateBase>> basis_list_in)
     : basis_list(std::move(basis_list_in)) {}
 
@@ -33,4 +31,3 @@ void ROMBase::store_info(const ROMInfo& info, const ROMContext& context) {
     ROM_info[static_cast<std::size_t>(row)][static_cast<std::size_t>(col)] = info;
 }
 
-} // namespace stage2

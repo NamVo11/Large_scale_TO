@@ -2,8 +2,6 @@
 
 #include "ROM/ROM_method/ROM_Base.hpp"
 
-namespace stage2 {
-
 class FOM_direct final : public ROMBase {
 public:
     Mat factor = nullptr;
@@ -22,4 +20,3 @@ private:
     void set_factorization(Mat factor_in);
 };
 
-} // namespace stage2

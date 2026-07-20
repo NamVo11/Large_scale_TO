@@ -345,7 +345,7 @@
           //"CASE_CONFIGS": "case_study/3/strategy_1thread/conf.conf",
           //"CASE_CONFIGS": "case_study/3D/FOM/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy2_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf",
           //"CASE_CONFIGS": "case_study/3/strategy2/conf.conf   case_study/3/strategy/conf.conf   case_study/3/FOM/conf.conf",
-          "CASE_CONFIGS": "case_study/main/1thread/FOM/conf.conf   case_study/main/1thread/strategy_10_20/conf.conf    case_study/main/1thread/strategy2_10_20/conf.conf   case_study/main/1thread/strategy_15_25/conf.conf    case_study/main/1thread/strategy2_15_25/conf.conf   case_study/main/1thread/strategy_10_25/conf.conf   case_study/main/1thread/strategy2_10_25/conf.conf",
+          "CASE_CONFIGS": "case_study/main_Eigen/1thread/FOM/conf.conf   case_study/main_Eigen/1thread/strategy_10_20/conf.conf    case_study/main_Eigen/1thread/strategy2_10_20/conf.conf   case_study/main_Eigen/1thread/strategy_15_25/conf.conf    case_study/main_Eigen/1thread/strategy2_15_25/conf.conf   case_study/main_Eigen/1thread/strategy_10_25/conf.conf   case_study/main_Eigen/1thread/strategy2_10_25/conf.conf",
 
           "NP": "1",
           "HOSTS": "localhost",

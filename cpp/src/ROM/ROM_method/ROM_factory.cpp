@@ -11,8 +11,6 @@
 
 #include <stdexcept>
 
-namespace stage2 {
-
 std::shared_ptr<ROMBase> make_fom_solver(const std::string& fom_solver_type) {
     const std::string solver = lower_string(fom_solver_type);
     if (solver == "direct") return std::make_shared<FOM_direct>();
@@ -55,4 +53,3 @@ std::shared_ptr<ROMBase> make_dynamic_ROM(const std::string& method_name,
         online);
 }
 
-} // namespace stage2

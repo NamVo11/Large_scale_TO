@@ -1,8 +1,9 @@
-#include "stage2/Optimization.hpp"
+#include "Optimization.hpp"
 
-#include "stage2/DynamicElasticLinear.hpp"
-#include "stage2/FEMAssembly.hpp"
-#include "stage2/ROM.hpp"
+#include "DynamicElasticLinear.hpp"
+#include "FEMAssembly.hpp"
+#include "ROM.hpp"
+#include "helper/PetscEigenHelper.hpp"
 #include "JdumasMMASolver.hpp"
 #include "MatlabMMA.hpp"
 #include "MMASolver.hpp"
@@ -25,8 +26,6 @@
 
 #include <omp.h>
 
-namespace stage2
-{
     namespace
     {
 
@@ -37,65 +36,37 @@ namespace stage2
             return s;
         }
 
-        int nvar_of(const std::vector<std::vector<double>> &x)
+        int nvar_of(const Eigen::MatrixXd &x)
         {
-            return x.empty() ? 0 : static_cast<int>(x.front().size());
+            return static_cast<int>(x.cols());
         }
 
-        std::vector<double> flatten(const std::vector<std::vector<double>> &x)
+        std::vector<double> flatten(const Eigen::MatrixXd &x)
         {
-            const int nvar = nvar_of(x);
-            std::vector<double> out;
-            out.reserve(x.size() * static_cast<std::size_t>(nvar));
-            for (int j = 0; j < nvar; ++j)
-            {
-                for (const auto &row : x)
-                    out.push_back(row[static_cast<std::size_t>(j)]);
-            }
+            std::vector<double> out(static_cast<std::size_t>(x.size()));
+            std::copy(x.data(), x.data() + x.size(), out.begin());
             return out;
         }
 
-        std::vector<std::vector<double>> unflatten(const std::vector<double> &x, int nelem, int nvar)
+        Eigen::MatrixXd unflatten(const std::vector<double> &x, int nelem, int nvar)
         {
-            std::vector<std::vector<double>> out(static_cast<std::size_t>(nelem), std::vector<double>(static_cast<std::size_t>(nvar), 0.0));
-            for (int j = 0; j < nvar; ++j)
-            {
-                for (int e = 0; e < nelem; ++e)
-                    out[static_cast<std::size_t>(e)][static_cast<std::size_t>(j)] = x[static_cast<std::size_t>(j * nelem + e)];
-            }
-            return out;
+            return Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>>(
+                x.data(), nelem, nvar);
         }
 
-        std::vector<std::vector<double>> zeros(int nrow, int ncol)
+        Eigen::MatrixXd zeros(int nrow, int ncol)
         {
-            return std::vector<std::vector<double>>(static_cast<std::size_t>(nrow), std::vector<double>(static_cast<std::size_t>(ncol), 0.0));
+            return Eigen::MatrixXd::Zero(nrow, ncol);
         }
 
-        void add_scaled(std::vector<std::vector<double>> &a, const std::vector<std::vector<double>> &b, double scale)
+        void add_scaled(Eigen::MatrixXd &a, const Eigen::MatrixXd &b, double scale)
         {
-            if (a.empty())
-            {
-                a = b;
-                for (auto &row : a)
-                {
-                    for (double &v : row)
-                        v *= scale;
-                }
+            if (b.size() == 0) return;
+            if (a.size() == 0) {
+                a = scale * b;
                 return;
             }
-            for (std::size_t i = 0; i < a.size(); ++i)
-            {
-                for (std::size_t j = 0; j < a[i].size(); ++j)
-                    a[i][j] += scale * b[i][j];
-            }
-        }
-
-        double dot(const std::vector<double> &a, const std::vector<double> &b)
-        {
-            double s = 0.0;
-            for (std::size_t i = 0; i < a.size(); ++i)
-                s += a[i] * b[i];
-            return s;
+            a.noalias() += scale * b;
         }
 
         double sech2(double x)
@@ -119,118 +90,15 @@ namespace stage2
             return (para[1] - para[0]) * dg;
         }
 
-        std::vector<double> gather_vec_to_all_local(Vec v)
+        void set_vec_from_column_root(Vec v, const Eigen::MatrixXd &values, int k, double scale = 1.0)
         {
-            PetscMPIInt size = 1;
-            MPI_Comm_size(PetscObjectComm((PetscObject)v), &size);
-            if (size == 1)
-            {
-                PetscInt n = 0;
-                VecGetLocalSize(v, &n);
-                std::vector<double> out(static_cast<std::size_t>(n));
-                const PetscScalar *a = nullptr;
-                VecGetArrayRead(v, &a);
-                for (PetscInt i = 0; i < n; ++i)
-                    out[static_cast<std::size_t>(i)] = PetscRealPart(a[i]);
-                VecRestoreArrayRead(v, &a);
-                return out;
-            }
-
-            Vec vall = nullptr;
-            VecScatter scatter = nullptr;
-            VecScatterCreateToAll(v, &scatter, &vall);
-            VecScatterBegin(scatter, v, vall, INSERT_VALUES, SCATTER_FORWARD);
-            VecScatterEnd(scatter, v, vall, INSERT_VALUES, SCATTER_FORWARD);
-            std::vector<double> out;
-            PetscInt n = 0;
-            VecGetSize(vall, &n);
-            out.resize(static_cast<std::size_t>(n));
-            const PetscScalar *a = nullptr;
-            VecGetArrayRead(vall, &a);
-            for (PetscInt i = 0; i < n; ++i)
-                out[static_cast<std::size_t>(i)] = PetscRealPart(a[i]);
-            VecRestoreArrayRead(vall, &a);
-            VecScatterDestroy(&scatter);
-            VecDestroy(&vall);
-            return out;
-        }
-
-        void set_vec_from_column_root(Vec v, const std::vector<std::vector<double>> &values, int k, double scale = 1.0)
-        {
-            PetscMPIInt size = 1;
-            MPI_Comm_size(PetscObjectComm((PetscObject)v), &size);
-            if (size == 1)
-            {
-                if (values.empty())
-                {
-                    VecSet(v, 0.0);
-                    return;
-                }
-                PetscInt n = 0;
-                VecGetLocalSize(v, &n);
-                if (static_cast<std::size_t>(n) != values.size())
-                    throw std::runtime_error("set_vec_from_column_root: vector size mismatch");
-                PetscScalar *a = nullptr;
-                VecGetArray(v, &a);
-                for (PetscInt i = 0; i < n; ++i)
-                    a[i] = scale * values[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)];
-                VecRestoreArray(v, &a);
-                return;
-            }
-
-            PetscMPIInt rank = 0;
-            MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-            VecSet(v, 0.0);
-            if (rank == 0)
-            {
-                std::vector<PetscInt> ids(values.size());
-                std::vector<PetscScalar> vals(values.size());
-                std::iota(ids.begin(), ids.end(), 0);
-                for (std::size_t i = 0; i < values.size(); ++i)
-                    vals[i] = scale * values[i][static_cast<std::size_t>(k)];
-                VecSetValues(v, static_cast<PetscInt>(ids.size()), ids.data(), vals.data(), INSERT_VALUES);
-            }
-            VecAssemblyBegin(v);
-            VecAssemblyEnd(v);
+            set_vec_from_eigen_column(v, values, k, scale);
         }
 
         void set_vec_fixed_from_column_root(Vec v, const std::vector<int> &fixed,
-                                            const std::vector<std::vector<double>> &values, int k, double scale = 1.0)
+                                            const Eigen::MatrixXd &values, int k, double scale = 1.0)
         {
-            if (fixed.empty())
-                return;
-            PetscMPIInt size = 1;
-            MPI_Comm_size(PetscObjectComm((PetscObject)v), &size);
-            if (size == 1)
-            {
-                if (values.empty())
-                    return;
-                PetscInt n = 0;
-                VecGetLocalSize(v, &n);
-                PetscScalar *a = nullptr;
-                VecGetArray(v, &a);
-                for (int id : fixed)
-                {
-                    if (id < 0 || id >= n)
-                        throw std::runtime_error("set_vec_fixed_from_column_root: fixed dof out of range");
-                    a[id] = scale * values[static_cast<std::size_t>(id)][static_cast<std::size_t>(k)];
-                }
-                VecRestoreArray(v, &a);
-                return;
-            }
-
-            PetscMPIInt rank = 0;
-            MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-            if (rank == 0)
-            {
-                std::vector<PetscInt> ids(fixed.begin(), fixed.end());
-                std::vector<PetscScalar> vals(ids.size());
-                for (std::size_t i = 0; i < ids.size(); ++i)
-                    vals[i] = scale * values[static_cast<std::size_t>(ids[i])][static_cast<std::size_t>(k)];
-                VecSetValues(v, static_cast<PetscInt>(ids.size()), ids.data(), vals.data(), INSERT_VALUES);
-            }
-            VecAssemblyBegin(v);
-            VecAssemblyEnd(v);
+            set_vec_fixed_from_eigen_column(v, fixed, values, k, scale);
         }
 
         void zero_fixed(Vec v, const std::vector<int> &fixed)
@@ -302,7 +170,7 @@ namespace stage2
             return B;
         }
 
-        void L2_compliance_elastic(const FEM &fem, const Analysis &analysis, const std::vector<std::vector<double>> &xPhys, ObjectiveTerm &term)
+        void L2_compliance_elastic(const FEM &fem, const Analysis &analysis, const Eigen::MatrixXd &xPhys, ObjectiveTerm &term)
         {
             const int ndof = fem.ndof;
             const int nstep = analysis.Nstep;
@@ -316,27 +184,24 @@ namespace stage2
 
             for (int k = 0; k <= nstep; ++k)
             {
-                const auto &u = analysis.results.U[static_cast<std::size_t>(k)];
-                const auto &f = analysis.results.F_ext[static_cast<std::size_t>(k)];
-                const double s = dot(f, u);
+                const auto u = analysis.results.U.col(k);
+                const auto f = analysis.results.F_ext.col(k);
+                const double s = f.dot(u);
                 term.value += s * s;
-                for (int i = 0; i < ndof; ++i)
-                {
-                    term.dfdu_all[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)] = 2.0 * s * f[static_cast<std::size_t>(i)];
-                    term.dfdFext_all[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)] = 2.0 * s * u[static_cast<std::size_t>(i)];
-                }
+                term.dfdu_all.col(k).noalias() = 2.0 * s * f;
+                term.dfdFext_all.col(k).noalias() = 2.0 * s * u;
                 for (int d : analysis.results.SPCdofs)
                 {
-                    term.dfdu_all[static_cast<std::size_t>(d)][static_cast<std::size_t>(k)] = 0.0;
-                    term.dfdv_all[static_cast<std::size_t>(d)][static_cast<std::size_t>(k)] = 0.0;
-                    term.dfda_all[static_cast<std::size_t>(d)][static_cast<std::size_t>(k)] = 0.0;
+                    term.dfdu_all(d, k) = 0.0;
+                    term.dfdv_all(d, k) = 0.0;
+                    term.dfda_all(d, k) = 0.0;
                 }
                 for (int d : analysis.results.free)
-                    term.dfdFext_all[static_cast<std::size_t>(d)][static_cast<std::size_t>(k)] = 0.0;
+                    term.dfdFext_all(d, k) = 0.0;
             }
         }
 
-        void volume_fraction(const FEM &fem, const Analysis &analysis, const std::vector<std::vector<double>> &xPhys, Constraint &c)
+        void volume_fraction(const FEM &fem, const Analysis &analysis, const Eigen::MatrixXd &xPhys, Constraint &c)
         {
             const int ndof = fem.ndof;
             const int nstep = analysis.Nstep;
@@ -344,10 +209,7 @@ namespace stage2
             const int val_id = c.mat_id - 2;
             if (val_id < 0 || val_id >= nvar)
                 throw std::runtime_error("volume_fraction: invalid mat_id");
-            double mean = 0.0;
-            for (const auto &row : xPhys)
-                mean += row[static_cast<std::size_t>(val_id)];
-            mean /= static_cast<double>(fem.NElem);
+            const double mean = xPhys.col(val_id).mean();
             c.value = mean;
             c.d_explicit_dfdu_all = zeros(ndof, nstep + 1);
             c.d_explicit_dfdv_all = zeros(ndof, nstep + 1);
@@ -355,142 +217,14 @@ namespace stage2
             c.d_explicit_dfdFext_all = zeros(ndof, nstep + 1);
             c.d_explicit_df_dx = zeros(fem.NElem, nvar);
             for (int e = 0; e < fem.NElem; ++e)
-                c.d_explicit_df_dx[static_cast<std::size_t>(e)][static_cast<std::size_t>(val_id)] = 1.0 / static_cast<double>(fem.NElem);
+                c.d_explicit_df_dx(e, val_id) = 1.0 / static_cast<double>(fem.NElem);
         }
 
-        /*
-        std::vector<std::vector<double>> explicit_gradient_dynamic(const FEM &fem,
+        Eigen::MatrixXd explicit_gradient_dynamic(const FEM &fem,
                                                                    const Analysis &analysis,
-                                                                   const std::vector<std::vector<double>> &xPhys,
+                                                                   const Eigen::MatrixXd &xPhys,
                                                                    const ObjectiveGroup &object,
-                                                                   const std::vector<std::vector<double>> &lambda_all)
-        {
-            using Clock = std::chrono::steady_clock;
-            const auto timer_begin = Clock::now();
-            PetscMPIInt rank = 0;
-            PetscMPIInt size = 1;
-            MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-            MPI_Comm_size(PETSC_COMM_WORLD, &size);
-            const int nstep = analysis.Nstep;
-            const int nvar = nvar_of(xPhys);
-            const int elem_start = (fem.NElem * rank) / size;
-            const int elem_end = (fem.NElem * (rank + 1)) / size;
-
-            auto t0 = Clock::now();
-            std::vector<std::vector<double>> dE(static_cast<std::size_t>(fem.NElem),
-                                                std::vector<double>(static_cast<std::size_t>(nvar), 0.0));
-            std::vector<std::vector<double>> drho(static_cast<std::size_t>(fem.NElem),
-                                                  std::vector<double>(static_cast<std::size_t>(nvar), 0.0));
-            for (int e = elem_start; e < elem_end; ++e)
-            {
-                const Region &region = analysis.regions.front();
-                for (int v = 0; v < nvar; ++v)
-                {
-                    const double x = xPhys[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)];
-                    dE[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] =
-                        ramp_derivative(region.mat_paras.E_inf, x, region.interp.p_E_elastic);
-                    drho[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] =
-                        ramp_derivative(region.mat_paras.rho, x, region.interp.p_rho);
-                }
-            }
-            auto t1 = Clock::now();
-            const double timing_interp_derivative = std::chrono::duration<double>(t1 - t0).count();
-
-            const Region &region = analysis.regions.front();
-            const double nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
-            t0 = Clock::now();
-            const ElementMatrix em = compute_element_matrices(fem, 0, nu, fem.Thickness);
-            t1 = Clock::now();
-            const double timing_element_matrix = std::chrono::duration<double>(t1 - t0).count();
-
-            t0 = Clock::now();
-            std::vector<std::vector<double>> df_dx_local = zeros(fem.NElem, nvar);
-            t1 = Clock::now();
-            const double timing_alloc_gradient = std::chrono::duration<double>(t1 - t0).count();
-
-            t0 = Clock::now();
-            std::vector<int> dofs;
-            for (int k = 0; k <= nstep; ++k)
-            {
-                const auto &u = analysis.results.U[static_cast<std::size_t>(k)];
-                const auto &acc = analysis.results.A[static_cast<std::size_t>(k)];
-                const auto &lambda = lambda_all[static_cast<std::size_t>(k)];
-                for (int e = elem_start; e < elem_end; ++e)
-                {
-                    element_dofs(fem, e, dofs);
-                    std::vector<double> row_K(static_cast<std::size_t>(em.ndof), 0.0);
-                    std::vector<double> row_M(static_cast<std::size_t>(em.ndof), 0.0);
-                    for (int i = 0; i < em.ndof; ++i)
-                    {
-                        for (int j = 0; j < em.ndof; ++j)
-                        {
-                            const int dof_j = dofs[static_cast<std::size_t>(j)];
-                            row_K[static_cast<std::size_t>(i)] +=
-                                em.ke[static_cast<std::size_t>(i * em.ndof + j)] * u[static_cast<std::size_t>(dof_j)];
-                            if (k != 0)
-                            {
-                                row_M[static_cast<std::size_t>(i)] +=
-                                    em.me[static_cast<std::size_t>(i * em.ndof + j)] * acc[static_cast<std::size_t>(dof_j)];
-                            }
-                        }
-                    }
-                    for (int v = 0; v < nvar; ++v)
-                    {
-                        double val = 0.0;
-                        for (int i = 0; i < em.ndof; ++i)
-                        {
-                            const int dof_i = dofs[static_cast<std::size_t>(i)];
-                            const double derivative_force =
-                                row_K[static_cast<std::size_t>(i)] * dE[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] +
-                                row_M[static_cast<std::size_t>(i)] * drho[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)];
-                            val += lambda[static_cast<std::size_t>(dof_i)] * derivative_force;
-                        }
-                        df_dx_local[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] += val;
-                    }
-                }
-            }
-            t1 = Clock::now();
-            const double timing_element_loop = std::chrono::duration<double>(t1 - t0).count();
-
-            t0 = Clock::now();
-            std::vector<double> local_flat = flatten(df_dx_local);
-            std::vector<double> global_flat(local_flat.size(), 0.0);
-            t1 = Clock::now();
-            const double timing_flatten = std::chrono::duration<double>(t1 - t0).count();
-
-            t0 = Clock::now();
-            MPI_Allreduce(local_flat.data(), global_flat.data(), static_cast<int>(local_flat.size()), MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
-            t1 = Clock::now();
-            const double timing_allreduce = std::chrono::duration<double>(t1 - t0).count();
-
-            t0 = Clock::now();
-            std::vector<std::vector<double>> df_dx = unflatten(global_flat, fem.NElem, nvar);
-            add_scaled(df_dx, object.d_explicit_df_dx, 1.0);
-            t1 = Clock::now();
-            const double timing_unflatten_add = std::chrono::duration<double>(t1 - t0).count();
-            if (rank == 0)
-            {
-                const double timing_total = std::chrono::duration<double>(Clock::now() - timer_begin).count();
-                std::cout << "  explicit_gradient_dynamic[s]:"
-                          << " interp_derivative=" << timing_interp_derivative
-                          << " element_matrix=" << timing_element_matrix
-                          << " alloc_gradient=" << timing_alloc_gradient
-                          << " element_loop=" << timing_element_loop
-                          << " flatten=" << timing_flatten
-                          << " allreduce=" << timing_allreduce
-                          << " unflatten_add=" << timing_unflatten_add
-                          << " total=" << timing_total
-                          << "\n";
-            }
-            return df_dx;
-        }
-        */
-
-        std::vector<std::vector<double>> explicit_gradient_dynamic(const FEM &fem,
-                                                                   const Analysis &analysis,
-                                                                   const std::vector<std::vector<double>> &xPhys,
-                                                                   const ObjectiveGroup &object,
-                                                                   const std::vector<std::vector<double>> &lambda_all)
+                                                                   const Eigen::MatrixXd &lambda_all)
         {
             using Clock = std::chrono::steady_clock;
             const auto timer_begin = Clock::now();
@@ -518,7 +252,7 @@ namespace stage2
             {
                 for (int v = 0; v < nvar; ++v)
                 {
-                    const double x = xPhys[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)];
+                    const double x = xPhys(e, v);
                     const std::size_t id = static_cast<std::size_t>(e * nvar + v);
                     dE[id] = ramp_derivative(region.mat_paras.E_inf, x, region.interp.p_E_elastic);
                     drho[id] = ramp_derivative(region.mat_paras.rho, x, region.interp.p_rho);
@@ -570,47 +304,50 @@ namespace stage2
                     throw std::runtime_error("explicit_gradient_dynamic: element ndof > 24 is not supported by stack buffer");
 
                 const auto &dofs = fem.ElementDofs.at(static_cast<std::size_t>(e));
-                std::array<double, 24> row_K{};
-                std::array<double, 24> row_M{};
+                Eigen::Matrix<double, 24, 1> u_elem_buffer;
+                Eigen::Matrix<double, 24, 1> acc_elem_buffer;
+                Eigen::Matrix<double, 24, 1> lambda_elem_buffer;
+                Eigen::Matrix<double, 24, 1> Ku_elem_buffer;
+                Eigen::Matrix<double, 24, 1> Ma_elem_buffer;
 
                 for (int k = 0; k <= nstep; ++k)
                 {
-                    row_K.fill(0.0);
-                    row_M.fill(0.0);
-                    const auto &u = analysis.results.U[static_cast<std::size_t>(k)];
-                    const auto &acc = analysis.results.A[static_cast<std::size_t>(k)];
-                    const auto &lambda = lambda_all[static_cast<std::size_t>(k)];
+                    const auto u = analysis.results.U.col(k);
+                    const auto acc = analysis.results.A.col(k);
+                    const auto lambda = lambda_all.col(k);
 
                     for (int i = 0; i < em.ndof; ++i)
                     {
-                        const std::size_t row = static_cast<std::size_t>(i * em.ndof);
-                        for (int j = 0; j < em.ndof; ++j)
-                        {
-                            const int dof_j = static_cast<int>(dofs[static_cast<std::size_t>(j)]);
-                            row_K[static_cast<std::size_t>(i)] +=
-                                em.ke[row + static_cast<std::size_t>(j)] * u[static_cast<std::size_t>(dof_j)];
-                            if (k != 0)
-                            {
-                                row_M[static_cast<std::size_t>(i)] +=
-                                    em.me[row + static_cast<std::size_t>(j)] * acc[static_cast<std::size_t>(dof_j)];
-                            }
-                        }
+                        const int dof_i = static_cast<int>(dofs[static_cast<std::size_t>(i)]);
+                        u_elem_buffer(i) = u(dof_i);
+                        acc_elem_buffer(i) = acc(dof_i);
+                        lambda_elem_buffer(i) = lambda(dof_i);
                     }
+                    auto u_elem = u_elem_buffer.head(em.ndof);
+                    auto acc_elem = acc_elem_buffer.head(em.ndof);
+                    auto lambda_elem = lambda_elem_buffer.head(em.ndof);
+                    auto Ku_elem = Ku_elem_buffer.head(em.ndof);
+                    auto Ma_elem = Ma_elem_buffer.head(em.ndof);
+
+                    Ku_elem.noalias() = em.ke * u_elem;
+                    if (k != 0)
+                    {
+                        Ma_elem.noalias() = em.me * acc_elem;
+                    }
+                    else
+                    {
+                        Ma_elem.setZero();
+                    }
+
+                    const double lambda_dot_Ku = lambda_elem.dot(Ku_elem);
+                    const double lambda_dot_Ma = lambda_elem.dot(Ma_elem);
 
                     for (int v = 0; v < nvar; ++v)
                     {
-                        double val = 0.0;
                         const std::size_t ev = static_cast<std::size_t>(e * nvar + v);
                         const double dE_ev = dE[ev];
                         const double drho_ev = drho[ev];
-                        for (int i = 0; i < em.ndof; ++i)
-                        {
-                            const int dof_i = static_cast<int>(dofs[static_cast<std::size_t>(i)]);
-                            const double derivative_force =
-                                row_K[static_cast<std::size_t>(i)] * dE_ev +
-                                row_M[static_cast<std::size_t>(i)] * drho_ev;
-                            val += lambda[static_cast<std::size_t>(dof_i)] * derivative_force;
-                        }
+                        const double val = dE_ev * lambda_dot_Ku + drho_ev * lambda_dot_Ma;
                         df_dx_local[ev] += val;
                     }
                 }
@@ -629,7 +366,7 @@ namespace stage2
             const double timing_allreduce = std::chrono::duration<double>(t1 - t0).count();
 
             t0 = Clock::now();
-            std::vector<std::vector<double>> df_dx = unflatten(global_flat, fem.NElem, nvar);
+            Eigen::MatrixXd df_dx = unflatten(global_flat, fem.NElem, nvar);
             add_scaled(df_dx, object.d_explicit_df_dx, 1.0);
             t1 = Clock::now();
             const double timing_unflatten_add = std::chrono::duration<double>(t1 - t0).count();
@@ -652,13 +389,13 @@ namespace stage2
             return df_dx;
         }
 
-        std::vector<std::vector<double>> dynamic_elastic_base_full_impl(const FEM &fem,
-                                                                        Analysis &analysis,
-                                                                        const std::vector<std::vector<double>> &xPhys,
-                                                                        ObjectiveGroup &object,
-                                                                        const Filtering &filtering,
-                                                                        const FilteringState &filtering_state,
-                                                                        int Iter)
+        Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM &fem,
+                                                       Analysis &analysis,
+                                                       const Eigen::MatrixXd &xPhys,
+                                                       ObjectiveGroup &object,
+                                                       const Filtering &filtering,
+                                                       const FilteringState &filtering_state,
+                                                       int Iter)
         {
             (void)xPhys;
             const int nstep = analysis.Nstep;
@@ -696,7 +433,7 @@ namespace stage2
             VecDuplicate(lambda, &eta_new);
             VecDuplicate(lambda, &Mlambda);
 
-            std::vector<std::vector<double>> lambda_all(static_cast<std::size_t>(nstep + 1));
+            Eigen::MatrixXd lambda_all(fem.ndof, nstep + 1);
 
             object.ROM->set_factorized_solver(Keff, analysis.results.factorized_K_eff);
 
@@ -708,7 +445,7 @@ namespace stage2
             VecAXPY(rhs, -dLdu, eta);
             set_vec_fixed_from_column_root(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
             solve_adjoint_full(*object.ROM, Keff, rhs, lambda, analysis, Iter, k);
-            lambda_all[static_cast<std::size_t>(k)] = gather_vec_to_all_local(lambda);
+            lambda_all.col(k) = gather_vec_to_all_local(lambda);
 
             for (k = nstep - 1; k >= 0; --k)
             {
@@ -743,10 +480,10 @@ namespace stage2
                     object.ROM->set_factorized_solver(K0, analysis.results.factorized_K_initial);
                 }
                 solve_adjoint_full(*object.ROM, k == 0 ? K0 : Keff, rhs, lambda, analysis, Iter, k);
-                lambda_all[static_cast<std::size_t>(k)] = gather_vec_to_all_local(lambda);
+                lambda_all.col(k) = gather_vec_to_all_local(lambda);
             }
 
-            std::vector<std::vector<double>> dfdx_phys =
+            Eigen::MatrixXd dfdx_phys =
                 explicit_gradient_dynamic(fem, analysis, filtering_state.xPhys, object, lambda_all);
 
             MatDestroy(&K0);
@@ -917,22 +654,21 @@ namespace stage2
         }
 
         std::vector<double> matlab_like_density_display(const FEM &fem,
-                                                        const std::vector<std::vector<double>> &xPhys)
+                                                        const Eigen::MatrixXd &xPhys)
         {
-            if (fem.dim != 2 || xPhys.empty())
+            if (fem.dim != 2 || xPhys.size() == 0)
                 return {};
 
-            const int mTopo = static_cast<int>(xPhys.front().size());
+            const int mTopo = static_cast<int>(xPhys.cols());
             std::vector<double> x_display(static_cast<std::size_t>(fem.nelx * fem.nely), 0.0);
             for (int i = 0; i < fem.nelx; ++i)
             {
                 for (int j = 0; j < fem.nely; ++j)
                 {
                     const int e = i * fem.nely + j;
-                    const auto &X = xPhys[static_cast<std::size_t>(e)];
                     std::vector<double> Qs(static_cast<std::size_t>(mTopo), 0.0);
                     for (int v = 0; v < mTopo; ++v)
-                        Qs[static_cast<std::size_t>(v)] = std::max(1e-14, 1.0 - X[static_cast<std::size_t>(v)]);
+                        Qs[static_cast<std::size_t>(v)] = std::max(1e-14, 1.0 - xPhys(e, v));
 
                     double prod_all = 1.0;
                     for (double q : Qs)
@@ -941,7 +677,7 @@ namespace stage2
                     for (int v = 0; v < mTopo; ++v)
                     {
                         const double prod_except = prod_all / Qs[static_cast<std::size_t>(v)];
-                        multi_topo += X[static_cast<std::size_t>(v)] * prod_except * static_cast<double>(v + 1);
+                        multi_topo += xPhys(e, v) * prod_except * static_cast<double>(v + 1);
                     }
                     x_display[static_cast<std::size_t>(j * fem.nelx + i)] = multi_topo;
                 }
@@ -950,13 +686,13 @@ namespace stage2
         }
 
         void save_density_iteration(const FEM &fem,
-                                    const std::vector<std::vector<double>> &xPhys,
+                                    const Eigen::MatrixXd &xPhys,
                                     const OutputData &output,
                                     int Iter)
         {
             PetscMPIInt rank = 0;
             MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-            if (rank != 0 || xPhys.empty())
+            if (rank != 0 || xPhys.size() == 0)
                 return;
 
             const std::filesystem::path dir = output.densityDir.empty()
@@ -989,7 +725,7 @@ namespace stage2
                     i = rem / fem.nely;
                     j = rem % fem.nely;
                 }
-                csv << e << "," << i << "," << j << "," << k << "," << xPhys[static_cast<std::size_t>(e)].front() << "\n";
+                csv << e << "," << i << "," << j << "," << k << "," << xPhys(e, 0) << "\n";
             }
 
             if (fem.dim != 2)
@@ -1014,7 +750,7 @@ namespace stage2
 
         double objective_group_value_for_debug(const FEM &fem,
                                                const Analysis &analysis,
-                                               const std::vector<std::vector<double>> &xPhys,
+                                               const Eigen::MatrixXd &xPhys,
                                                const ObjectiveGroup &object)
         {
             PetscMPIInt rank = 0;
@@ -1101,73 +837,72 @@ namespace stage2
                 }
             }
         }
+        std::vector<Eigen::Triplet<double>> triplets;
+        for (int e = 0; e < fem.NElem; ++e)
+        {
+            const auto &ids = state.neighbors[static_cast<std::size_t>(e)];
+            const auto &ws = state.weights[static_cast<std::size_t>(e)];
+            for (std::size_t p = 0; p < ids.size(); ++p)
+                triplets.emplace_back(e, ids[p], ws[p]);
+        }
+        state.H.resize(fem.NElem, fem.NElem);
+        state.H.setFromTriplets(triplets.begin(), triplets.end());
+        state.H.makeCompressed();
+        state.Hs_eigen.resize(fem.NElem);
+        for (int e = 0; e < fem.NElem; ++e)
+            state.Hs_eigen(e) = state.Hs[static_cast<std::size_t>(e)];
+        state.neighbors.clear();
+        state.weights.clear();
     }
 
-    void filtering_calculation(const std::vector<std::vector<double>> &x,
+    void filtering_calculation(const Eigen::MatrixXd &x,
                                const std::vector<int> &x_label,
                                const Filtering &filtering,
                                FilteringState &state)
     {
-        const int nelem = static_cast<int>(x.size());
+        const int nelem = static_cast<int>(x.rows());
         const int nvar = nvar_of(x);
-        state.xTilde = zeros(nelem, nvar);
-        state.xPhys = zeros(nelem, nvar);
+        state.xTilde = state.H * x;
+        state.xTilde.array().colwise() /= state.Hs_eigen.array();
+        state.xPhys.resize(nelem, nvar);
         const double denom = std::tanh(filtering.beta * filtering.T) + std::tanh(filtering.beta * (1.0 - filtering.T));
+        state.xPhys =
+            (std::tanh(filtering.beta * filtering.T) +
+             (filtering.beta * (state.xTilde.array() - filtering.T)).tanh()).matrix() /
+            denom;
         for (int e = 0; e < nelem; ++e)
         {
-            for (std::size_t p = 0; p < state.neighbors[static_cast<std::size_t>(e)].size(); ++p)
-            {
-                const int j = state.neighbors[static_cast<std::size_t>(e)][p];
-                const double w = state.weights[static_cast<std::size_t>(e)][p];
-                for (int v = 0; v < nvar; ++v)
-                    state.xTilde[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] += w * x[static_cast<std::size_t>(j)][static_cast<std::size_t>(v)];
-            }
-            for (int v = 0; v < nvar; ++v)
-            {
-                state.xTilde[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] /= state.Hs[static_cast<std::size_t>(e)];
-                state.xPhys[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] =
-                    (std::tanh(filtering.beta * filtering.T) + std::tanh(filtering.beta * (state.xTilde[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] - filtering.T))) / denom;
-            }
             if (x_label[static_cast<std::size_t>(e)] > 0)
-                std::fill(state.xPhys[static_cast<std::size_t>(e)].begin(), state.xPhys[static_cast<std::size_t>(e)].end(), 1.0);
+                state.xPhys.row(e).setOnes();
             if (x_label[static_cast<std::size_t>(e)] < 0)
-                std::fill(state.xPhys[static_cast<std::size_t>(e)].begin(), state.xPhys[static_cast<std::size_t>(e)].end(), 0.0);
+                state.xPhys.row(e).setZero();
         }
     }
 
-    std::vector<std::vector<double>> filtering_sensitivity(const std::vector<std::vector<double>> &df_dx_phys,
-                                                           const Filtering &filtering,
-                                                           const FilteringState &state)
+    Eigen::MatrixXd filtering_sensitivity(const Eigen::MatrixXd &df_dx_phys,
+                                          const Filtering &filtering,
+                                          const FilteringState &state)
     {
-        const int nelem = static_cast<int>(df_dx_phys.size());
+        const int nelem = static_cast<int>(df_dx_phys.rows());
         const int nvar = nvar_of(df_dx_phys);
-        std::vector<std::vector<double>> tmp = zeros(nelem, nvar);
+        Eigen::MatrixXd tmp(nelem, nvar);
         const double denom = std::tanh(filtering.beta * filtering.T) + std::tanh(filtering.beta * (1.0 - filtering.T));
-        for (int e = 0; e < nelem; ++e)
+        for (int v = 0; v < nvar; ++v)
         {
-            for (int v = 0; v < nvar; ++v)
-            {
-                const double dproj = filtering.beta * sech2(filtering.beta * (state.xTilde[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] - filtering.T)) / denom;
-                tmp[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] = df_dx_phys[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] * dproj / state.Hs[static_cast<std::size_t>(e)];
-            }
+            tmp.col(v) =
+                (df_dx_phys.col(v).array() *
+                 (filtering.beta * (filtering.beta * (state.xTilde.col(v).array() - filtering.T)).unaryExpr(
+                                       [](double x) { return sech2(x); }) /
+                  denom) /
+                 state.Hs_eigen.array())
+                    .matrix();
         }
-        std::vector<std::vector<double>> out = zeros(nelem, nvar);
-        for (int e = 0; e < nelem; ++e)
-        {
-            for (std::size_t p = 0; p < state.neighbors[static_cast<std::size_t>(e)].size(); ++p)
-            {
-                const int j = state.neighbors[static_cast<std::size_t>(e)][p];
-                const double w = state.weights[static_cast<std::size_t>(e)][p];
-                for (int v = 0; v < nvar; ++v)
-                    out[static_cast<std::size_t>(j)][static_cast<std::size_t>(v)] += w * tmp[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)];
-            }
-        }
-        return out;
+        return state.H.transpose() * tmp;
     }
 
     void evaluate_objective(const FEM &fem,
                             std::vector<Analysis> &analysis_all,
-                            const std::vector<std::vector<double>> &xPhys,
+                            const Eigen::MatrixXd &xPhys,
                             std::vector<ObjectiveGroup> &objective_groups,
                             double &obj_value)
     {
@@ -1176,11 +911,11 @@ namespace stage2
         {
             Analysis &analysis = analysis_all[static_cast<std::size_t>(group.analysis_id - 1)];
             group.value = 0.0;
-            group.d_explicit_dfdu_all.clear();
-            group.d_explicit_dfdv_all.clear();
-            group.d_explicit_dfda_all.clear();
-            group.d_explicit_dfdFext_all.clear();
-            group.d_explicit_df_dx.clear();
+            group.d_explicit_dfdu_all.resize(0, 0);
+            group.d_explicit_dfdv_all.resize(0, 0);
+            group.d_explicit_dfda_all.resize(0, 0);
+            group.d_explicit_dfdFext_all.resize(0, 0);
+            group.d_explicit_df_dx.resize(0, 0);
             for (auto &term : group.terms)
             {
                 if (lower(term.function_name) != "l2_compliance_elastic")
@@ -1202,7 +937,7 @@ namespace stage2
 
     void evaluate_constraint(const FEM &fem,
                              std::vector<Analysis> &analysis_all,
-                             const std::vector<std::vector<double>> &xPhys,
+                             const Eigen::MatrixXd &xPhys,
                              std::vector<Constraint> &constraints,
                              std::vector<double> &constr_value_vec)
     {
@@ -1218,69 +953,64 @@ namespace stage2
                 c.value_initial = c.value;
             constr_value_vec[i] = c.value / c.value_initial - c.limit;
             const double alpha = 1.0 / c.value_initial;
-            for (auto &row : c.d_explicit_df_dx)
-            {
-                for (double &v : row)
-                    v *= alpha;
-            }
+            c.d_explicit_df_dx *= alpha;
         }
     }
 
-    std::vector<std::vector<double>> AVM(const FEM &fem,
-                                         Analysis &analysis,
-                                         const std::vector<std::vector<double>> &,
-                                         const std::vector<int> &x_label,
-                                         ObjectiveGroup &object,
-                                         const Filtering &filtering,
-                                         const FilteringState &filtering_state,
-                                         int Iter)
+    Eigen::MatrixXd AVM(const FEM &fem,
+                        Analysis &analysis,
+                        const Eigen::MatrixXd &,
+                        const std::vector<int> &x_label,
+                        ObjectiveGroup &object,
+                        const Filtering &filtering,
+                        const FilteringState &filtering_state,
+                        int Iter)
     {
-        std::vector<std::vector<double>> out = dynamic_elastic_base_full_impl(fem, analysis, filtering_state.xPhys, object, filtering, filtering_state, Iter);
-        for (std::size_t e = 0; e < out.size(); ++e)
+        Eigen::MatrixXd out = dynamic_elastic_base_full_impl(fem, analysis, filtering_state.xPhys, object, filtering, filtering_state, Iter);
+        for (Eigen::Index e = 0; e < out.rows(); ++e)
         {
-            if (x_label[e] != 0)
-                std::fill(out[e].begin(), out[e].end(), 0.0);
+            if (x_label[static_cast<std::size_t>(e)] != 0)
+                out.row(e).setZero();
         }
         return out;
     }
 
-    std::vector<std::vector<double>> AVM(const FEM &fem,
-                                         Analysis &analysis,
-                                         const std::vector<std::vector<double>> &,
-                                         const std::vector<int> &x_label,
-                                         Constraint &object,
-                                         const Filtering &filtering,
-                                         const FilteringState &filtering_state,
-                                         int Iter)
+    Eigen::MatrixXd AVM(const FEM &fem,
+                        Analysis &analysis,
+                        const Eigen::MatrixXd &,
+                        const std::vector<int> &x_label,
+                        Constraint &object,
+                        const Filtering &filtering,
+                        const FilteringState &filtering_state,
+                        int Iter)
     {
         (void)fem;
         (void)analysis;
         (void)Iter;
-        std::vector<std::vector<double>> dfdx_phys = object.d_explicit_df_dx;
-        std::vector<std::vector<double>> out = filtering_sensitivity(dfdx_phys, filtering, filtering_state);
-        for (std::size_t e = 0; e < out.size(); ++e)
+        Eigen::MatrixXd out = filtering_sensitivity(object.d_explicit_df_dx, filtering, filtering_state);
+        for (Eigen::Index e = 0; e < out.rows(); ++e)
         {
-            if (x_label[e] != 0)
-                std::fill(out[e].begin(), out[e].end(), 0.0);
+            if (x_label[static_cast<std::size_t>(e)] != 0)
+                out.row(e).setZero();
         }
         return out;
     }
 
-    std::vector<std::vector<double>> Debug(const FEM &fem,
-                                           Analysis &analysis,
-                                           const std::vector<std::vector<double>> &x,
-                                           const std::vector<int> &x_label,
-                                           ObjectiveGroup &object,
-                                           const Filtering &filtering,
-                                           const FilteringState &filtering_state,
-                                           const OutputData &output,
-                                           double fd_epsilon,
-                                           int max_checks,
-                                           int Iter)
+    Eigen::MatrixXd Debug(const FEM &fem,
+                          Analysis &analysis,
+                          const Eigen::MatrixXd &x,
+                          const std::vector<int> &x_label,
+                          ObjectiveGroup &object,
+                          const Filtering &filtering,
+                          const FilteringState &filtering_state,
+                          const OutputData &output,
+                          double fd_epsilon,
+                          int max_checks,
+                          int Iter)
     {
         PetscMPIInt rank = 0;
         MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-        std::vector<std::vector<double>> avm = AVM(fem, analysis, x, x_label, object, filtering, filtering_state, Iter);
+        Eigen::MatrixXd avm = AVM(fem, analysis, x, x_label, object, filtering, filtering_state, Iter);
 
         const int nelem = fem.NElem;
         const int nvar = nvar_of(x);
@@ -1314,7 +1044,7 @@ namespace stage2
         {
             const int e = candidates[static_cast<std::size_t>(idx)].first;
             const int v = candidates[static_cast<std::size_t>(idx)].second;
-            const double x0 = x[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)];
+            const double x0 = x(e, v);
             const double h_plus = std::min(fd_epsilon, 1.0 - x0);
             const double h_minus = std::min(fd_epsilon, x0);
             if (h_plus <= 0.0 && h_minus <= 0.0)
@@ -1324,18 +1054,18 @@ namespace stage2
             double obj_minus = object.value;
             if (h_plus > 0.0)
             {
-                std::vector<std::vector<double>> xp = x;
+                Eigen::MatrixXd xp = x;
                 FilteringState state_plus = filtering_state;
-                xp[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] = x0 + h_plus;
+                xp(e, v) = x0 + h_plus;
                 filtering_calculation(xp, x_label, filtering, state_plus);
                 dynamic_elastic_linear(analysis, fem, state_plus.xPhys, Iter);
                 obj_plus = objective_group_value_for_debug(fem, analysis, state_plus.xPhys, object);
             }
             if (h_minus > 0.0)
             {
-                std::vector<std::vector<double>> xm = x;
+                Eigen::MatrixXd xm = x;
                 FilteringState state_minus = filtering_state;
-                xm[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)] = x0 - h_minus;
+                xm(e, v) = x0 - h_minus;
                 filtering_calculation(xm, x_label, filtering, state_minus);
                 dynamic_elastic_linear(analysis, fem, state_minus.xPhys, Iter);
                 obj_minus = objective_group_value_for_debug(fem, analysis, state_minus.xPhys, object);
@@ -1357,7 +1087,7 @@ namespace stage2
 
             if (rank == 0)
             {
-                const double g = avm[static_cast<std::size_t>(e)][static_cast<std::size_t>(v)];
+                const double g = avm(e, v);
                 const double abs_err = std::abs(g - fd);
                 const double rel_err = abs_err / std::max(1e-14, std::abs(fd));
                 out << Iter << "," << e << "," << v << "," << x0 << ","
@@ -1395,7 +1125,7 @@ namespace stage2
         int Iter = 0;
         double Change = 1.0;
         std::vector<double> constr_value_vec;
-        std::vector<std::vector<double>> dObj_dx_mat;
+        Eigen::MatrixXd dObj_dx_mat;
         std::vector<double> dObj_dx_vec;
         std::vector<double> dConstr_dx;
         double obj_value = 0.0;
@@ -1455,9 +1185,9 @@ namespace stage2
             for (auto &group : Opt.objective_groups)
             {
                 Analysis &A = analysis_all[static_cast<std::size_t>(group.analysis_id - 1)];
-                std::vector<std::vector<double>> dg = lower(group.sens_type) == "debug"
-                                                          ? Debug(fem, A, Opt.x, Opt.x_label, group, Opt.filtering, filtering_state, Output, Opt.debug_fd_epsilon, Opt.debug_fd_max_checks, Iter)
-                                                          : AVM(fem, A, Opt.x, Opt.x_label, group, Opt.filtering, filtering_state, Iter);
+                Eigen::MatrixXd dg = lower(group.sens_type) == "debug"
+                                         ? Debug(fem, A, Opt.x, Opt.x_label, group, Opt.filtering, filtering_state, Output, Opt.debug_fd_epsilon, Opt.debug_fd_max_checks, Iter)
+                                         : AVM(fem, A, Opt.x, Opt.x_label, group, Opt.filtering, filtering_state, Iter);
                 add_scaled(dObj_dx_mat, dg, 1.0);
             }
             t1 = Clock::now();
@@ -1468,7 +1198,7 @@ namespace stage2
             for (auto &c : Opt.constraints)
             {
                 Analysis &A = analysis_all[static_cast<std::size_t>(c.analysis_id - 1)];
-                std::vector<std::vector<double>> dc = AVM(fem, A, Opt.x, Opt.x_label, c, Opt.filtering, filtering_state, Iter);
+                Eigen::MatrixXd dc = AVM(fem, A, Opt.x, Opt.x_label, c, Opt.filtering, filtering_state, Iter);
                 std::vector<double> flat = flatten(dc);
                 dConstr_dx.insert(dConstr_dx.end(), flat.begin(), flat.end());
             }
@@ -1553,6 +1283,3 @@ namespace stage2
         save_history(Opt, Output);
         save_rom_histories(analysis_all, Opt, Output);
     }
-
-} // namespace stage2
-

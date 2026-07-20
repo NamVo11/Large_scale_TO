@@ -1,10 +1,9 @@
-#include "stage2/FEMAssembly.hpp"
+#include "FEMAssembly.hpp"
 
 #include <array>
 #include <cmath>
 #include <stdexcept>
 
-namespace stage2 {
 namespace {
 
 using Mat3 = std::array<double, 9>;
@@ -30,7 +29,7 @@ Mat3 inv3(const Mat3& a) {
          (a[0] * a[4] - a[1] * a[3]) / d};
 }
 
-void add_btdb(std::vector<double>& ke,
+void add_btdb(LocalDenseMatrix& ke,
               const std::vector<double>& B,
               const std::vector<double>& D,
               int strain_dim,
@@ -44,7 +43,7 @@ void add_btdb(std::vector<double>& ke,
                 for (int b = 0; b < strain_dim; ++b) db += D[a * strain_dim + b] * B[b * ndof + j];
                 v += B[a * ndof + i] * db;
             }
-            ke[static_cast<std::size_t>(i * ndof + j)] += v * weight;
+            ke(i, j) += v * weight;
         }
     }
 }
@@ -52,8 +51,8 @@ void add_btdb(std::vector<double>& ke,
 ElementMatrix compute_q4(const FEM& fem, int elem_id, double nu, double thickness) {
     ElementMatrix out;
     out.ndof = 8;
-    out.ke.assign(64, 0.0);
-    out.me.assign(64, 0.0);
+    out.ke = LocalDenseMatrix::Zero(out.ndof, out.ndof);
+    out.me = LocalDenseMatrix::Zero(out.ndof, out.ndof);
 
     const auto& elem = fem.Element.at(static_cast<std::size_t>(elem_id));
     const double c = 1.0 / (1.0 - nu * nu);
@@ -102,8 +101,8 @@ ElementMatrix compute_q4(const FEM& fem, int elem_id, double nu, double thicknes
             for (int a = 0; a < 4; ++a) {
                 for (int b = 0; b < 4; ++b) {
                     const double v = N[a] * N[b] * std::abs(detJ) * thickness;
-                    out.me[static_cast<std::size_t>((2 * a + 0) * 8 + (2 * b + 0))] += v;
-                    out.me[static_cast<std::size_t>((2 * a + 1) * 8 + (2 * b + 1))] += v;
+                    out.me(2 * a + 0, 2 * b + 0) += v;
+                    out.me(2 * a + 1, 2 * b + 1) += v;
                 }
             }
         }
@@ -114,8 +113,8 @@ ElementMatrix compute_q4(const FEM& fem, int elem_id, double nu, double thicknes
 ElementMatrix compute_h8(const FEM& fem, int elem_id, double nu) {
     ElementMatrix out;
     out.ndof = 24;
-    out.ke.assign(24 * 24, 0.0);
-    out.me.assign(24 * 24, 0.0);
+    out.ke = LocalDenseMatrix::Zero(out.ndof, out.ndof);
+    out.me = LocalDenseMatrix::Zero(out.ndof, out.ndof);
 
     const auto& elem = fem.Element.at(static_cast<std::size_t>(elem_id));
     const double c = 1.0 / ((1.0 + nu) * (1.0 - 2.0 * nu));
@@ -184,7 +183,7 @@ ElementMatrix compute_h8(const FEM& fem, int elem_id, double nu) {
                 for (int a = 0; a < 8; ++a) {
                     for (int b = 0; b < 8; ++b) {
                         const double v = N[a] * N[b] * detJ;
-                        for (int d = 0; d < 3; ++d) out.me[static_cast<std::size_t>((3 * a + d) * 24 + (3 * b + d))] += v;
+                        for (int d = 0; d < 3; ++d) out.me(3 * a + d, 3 * b + d) += v;
                     }
                 }
             }
@@ -209,7 +208,7 @@ ElementMatrix compute_element_matrices(const FEM& fem, int elem_id, double nu, d
 
 void assemble_K_M(const FEM& fem,
                   const Analysis& analysis,
-                  const std::vector<std::vector<double>>& y_elem,
+                  const Eigen::MatrixXd& y_elem,
                   Mat K,
                   Mat M) {
     PetscMPIInt rank = 0;
@@ -229,7 +228,7 @@ void assemble_K_M(const FEM& fem,
 
         for (int elem_id : region.elem_ids) {
             if (elem_id < elem_start || elem_id >= elem_end) continue;
-            const double x = y_elem.at(static_cast<std::size_t>(elem_id)).front();
+            const double x = y_elem(elem_id, 0);
             const auto [Eeff, rhoeff] = interp_region(region, x);
             ElementMatrix local_em;
             const ElementMatrix* em_ptr = &uniform_em;
@@ -239,12 +238,8 @@ void assemble_K_M(const FEM& fem,
             }
             const ElementMatrix& em = *em_ptr;
             const auto& rows = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
-            std::vector<PetscScalar> ke(em.ke.size());
-            std::vector<PetscScalar> me(em.me.size());
-            for (std::size_t i = 0; i < em.ke.size(); ++i) {
-                ke[i] = Eeff * em.ke[i];
-                me[i] = rhoeff * em.me[i];
-            }
+            const LocalDenseMatrix ke = Eeff * em.ke;
+            const LocalDenseMatrix me = rhoeff * em.me;
             MatSetValues(K, em.ndof, rows.data(), em.ndof, rows.data(), ke.data(), ADD_VALUES);
             MatSetValues(M, em.ndof, rows.data(), em.ndof, rows.data(), me.data(), ADD_VALUES);
         }
@@ -254,5 +249,3 @@ void assemble_K_M(const FEM& fem,
     MatAssemblyEnd(K, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY);
 }
-
-} // namespace stage2

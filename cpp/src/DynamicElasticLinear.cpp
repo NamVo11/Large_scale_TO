@@ -1,7 +1,8 @@
-#include "stage2/DynamicElasticLinear.hpp"
+#include "DynamicElasticLinear.hpp"
 
-#include "stage2/FEMAssembly.hpp"
-#include "stage2/ROM.hpp"
+#include "FEMAssembly.hpp"
+#include "ROM.hpp"
+#include "helper/PetscEigenHelper.hpp"
 
 #include <petscksp.h>
 
@@ -11,40 +12,7 @@
 #include <numeric>
 #include <stdexcept>
 
-namespace stage2 {
 namespace {
-
-void gather_vec_to_root_into(Vec v, std::vector<double>& out) {
-    PetscMPIInt size = 1;
-    MPI_Comm_size(PetscObjectComm((PetscObject)v), &size);
-    if (size == 1) {
-        PetscInt n = 0;
-        VecGetLocalSize(v, &n);
-        out.resize(static_cast<std::size_t>(n));
-        const PetscScalar* a = nullptr;
-        VecGetArrayRead(v, &a);
-        for (PetscInt i = 0; i < n; ++i) out[static_cast<std::size_t>(i)] = PetscRealPart(a[i]);
-        VecRestoreArrayRead(v, &a);
-        return;
-    }
-
-    Vec vall = nullptr;
-    VecScatter scatter = nullptr;
-    VecScatterCreateToAll(v, &scatter, &vall);
-    VecScatterBegin(scatter, v, vall, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(scatter, v, vall, INSERT_VALUES, SCATTER_FORWARD);
-
-    PetscInt n = 0;
-    VecGetSize(vall, &n);
-    out.resize(static_cast<std::size_t>(n));
-    const PetscScalar* a = nullptr;
-    VecGetArrayRead(vall, &a);
-    for (PetscInt i = 0; i < n; ++i) out[static_cast<std::size_t>(i)] = PetscRealPart(a[i]);
-    VecRestoreArrayRead(vall, &a);
-
-    VecScatterDestroy(&scatter);
-    VecDestroy(&vall);
-}
 
 std::vector<PetscInt> fixed_dofs(const Analysis& analysis) {
     std::vector<PetscInt> dofs;
@@ -149,7 +117,7 @@ ROMContext make_context(const Analysis& analysis,
 
 void dynamic_elastic_linear(Analysis& analysis,
                             const FEM& fem,
-                            const std::vector<std::vector<double>>& y_elem,
+                            const Eigen::MatrixXd& y_elem,
                             int Iter) {
     if (!analysis.ROM) analysis.ROM = make_fom_solver("iterative");
     if (analysis.Nstep < 0 || analysis.dt <= 0.0) throw std::runtime_error("Invalid time data");
@@ -268,19 +236,19 @@ void dynamic_elastic_linear(Analysis& analysis,
     timing_keff_prepare += static_cast<double>(ts1 - ts0);
 
     const std::size_t nstore = static_cast<std::size_t>(analysis.Nstep + 1);
-    analysis.results.U.resize(nstore);
-    analysis.results.V.resize(nstore);
-    analysis.results.A.resize(nstore);
-    analysis.results.F_ext.resize(nstore);
+    analysis.results.U.resize(ndof, static_cast<int>(nstore));
+    analysis.results.V.resize(ndof, static_cast<int>(nstore));
+    analysis.results.A.resize(ndof, static_cast<int>(nstore));
+    analysis.results.F_ext.resize(ndof, static_cast<int>(nstore));
     analysis.results.ksp_iterations.clear();
     analysis.results.ksp_residuals.clear();
     analysis.results.SPCdofs = to_ints(SPCdofs);
     analysis.results.free = free_dofs(ndof, SPCdofs);
     PetscTime(&ts0);
-    gather_vec_to_root_into(u, analysis.results.U[0]);
-    gather_vec_to_root_into(v, analysis.results.V[0]);
-    gather_vec_to_root_into(acc, analysis.results.A[0]);
-    gather_vec_to_root_into(f_ext, analysis.results.F_ext[0]);
+    gather_vec_to_all_into_column(u, analysis.results.U, 0);
+    gather_vec_to_all_into_column(v, analysis.results.V, 0);
+    gather_vec_to_all_into_column(acc, analysis.results.A, 0);
+    gather_vec_to_all_into_column(f_ext, analysis.results.F_ext, 0);
     PetscTime(&ts1);
     timing_history_store += static_cast<double>(ts1 - ts0);
 
@@ -357,10 +325,10 @@ void dynamic_elastic_linear(Analysis& analysis,
 
         const std::size_t store_id = static_cast<std::size_t>(istep);
         PetscTime(&ts0);
-        gather_vec_to_root_into(u, analysis.results.U[store_id]);
-        gather_vec_to_root_into(v, analysis.results.V[store_id]);
-        gather_vec_to_root_into(acc, analysis.results.A[store_id]);
-        gather_vec_to_root_into(f_ext, analysis.results.F_ext[store_id]);
+        gather_vec_to_all_into_column(u, analysis.results.U, static_cast<int>(store_id));
+        gather_vec_to_all_into_column(v, analysis.results.V, static_cast<int>(store_id));
+        gather_vec_to_all_into_column(acc, analysis.results.A, static_cast<int>(store_id));
+        gather_vec_to_all_into_column(f_ext, analysis.results.F_ext, static_cast<int>(store_id));
         PetscTime(&ts1);
         timing_history_store += static_cast<double>(ts1 - ts0);
     }
@@ -408,5 +376,3 @@ void dynamic_elastic_linear(Analysis& analysis,
     MatDestroy(&M);
     if (fixed_is) ISDestroy(&fixed_is);
 }
-
-} // namespace stage2

@@ -1,12 +1,10 @@
-#include "stage2/PetscEigenBridge.hpp"
+#include "helper/PetscEigenBridge.hpp"
 
 #include <mpi.h>
 
 #include <algorithm>
 #include <stdexcept>
 #include <vector>
-
-namespace stage2 {
 
 void ensure_eigen_rom_single_rank() {
     PetscMPIInt size = 1;
@@ -93,4 +91,3 @@ double eigen_basis_error(const Eigen::MatrixXd& V, const Eigen::VectorXd& soluti
     return eigen_relative_solution_error(solution, projection);
 }
 
-} // namespace stage2

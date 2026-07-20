@@ -2,8 +2,6 @@
 
 #include "ROM/ROM_method/ROM_Base.hpp"
 
-namespace stage2 {
-
 class FOM_iterative final : public ROMBase {
 public:
     std::string method = "pcg";
@@ -25,4 +23,3 @@ private:
     void set_factorization(Mat factor_in);
 };
 
-} // namespace stage2

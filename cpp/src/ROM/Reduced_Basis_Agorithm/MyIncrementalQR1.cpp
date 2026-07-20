@@ -5,8 +5,6 @@
 #include <algorithm>
 #include <limits>
 
-namespace stage2 {
-
 MyIncrementalQR1::MyIncrementalQR1(double e_rb_in, int max_rank_in)
     : UpdateBase(max_rank_in), e_rb(e_rb_in) {
     name = "MyIncrementalQR1";
@@ -81,4 +79,3 @@ void MyIncrementalQR1::update(const Eigen::VectorXd& solution, const ROMContext&
     setBasis(std::move(V_new), std::move(s_new));
 }
 
-} // namespace stage2

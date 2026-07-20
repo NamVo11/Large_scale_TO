@@ -13,8 +13,6 @@
 #endif
 #endif
 
-namespace stage2 {
-
 namespace {
 
 constexpr PetscReal kZeroRhsTol = 1e-14;
@@ -184,4 +182,3 @@ SolveStats FOM_direct::main(Mat lhs, Vec rhs, Vec u, const ROMContext& context) 
     return stats;
 }
 
-} // namespace stage2

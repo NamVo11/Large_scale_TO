@@ -13,7 +13,6 @@
 #include <string>
 #include <stdexcept>
 
-namespace stage2 {
 namespace {
 
 int select_rank(const Eigen::VectorXd& singular_values,
@@ -266,4 +265,3 @@ void MyPOD_SVD1::update(const Eigen::VectorXd&, const ROMContext&) {
     ++basis_version;
 }
 
-} // namespace stage2

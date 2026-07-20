@@ -9,8 +9,6 @@
 
 #include <memory>
 
-namespace stage2 {
-
 class MyStrategy : public ROMBase {
 public:
     double residual_tol = 1e-3;
@@ -77,6 +75,4 @@ private:
                                Mat lhs,
                                ROMInfo& info);
 };
-
-} // namespace stage2
 
