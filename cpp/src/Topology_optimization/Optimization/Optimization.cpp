@@ -1036,7 +1036,7 @@ namespace stage2
         }
 
     } // namespace
-
+/* in Filtering.cpp 
     void filtering_initilization(const FEM &fem, Filtering &filtering, FilteringState &state)
     {
         const int r = std::max(0, static_cast<int>(std::ceil(filtering.rmin)) - 1);
@@ -1165,6 +1165,9 @@ namespace stage2
         return out;
     }
 
+*/
+
+    /*in objective.cpp
     void evaluate_objective(const FEM &fem,
                             std::vector<Analysis> &analysis_all,
                             const std::vector<std::vector<double>> &xPhys,
@@ -1199,8 +1202,10 @@ namespace stage2
             obj_value += group.value;
         }
     }
-
-    void evaluate_constraint(const FEM &fem,
+*/
+    
+/* in constraint.cpp
+void evaluate_constraint(const FEM &fem,
                              std::vector<Analysis> &analysis_all,
                              const std::vector<std::vector<double>> &xPhys,
                              std::vector<Constraint> &constraints,
@@ -1225,7 +1230,10 @@ namespace stage2
             }
         }
     }
+    */
 
+
+/* in AVM.cpp
     std::vector<std::vector<double>> AVM(const FEM &fem,
                                          Analysis &analysis,
                                          const std::vector<std::vector<double>> &,
@@ -1265,7 +1273,8 @@ namespace stage2
         }
         return out;
     }
-
+        */
+/* in debug.cpp
     std::vector<std::vector<double>> Debug(const FEM &fem,
                                            Analysis &analysis,
                                            const std::vector<std::vector<double>> &x,
@@ -1370,7 +1379,7 @@ namespace stage2
         dynamic_elastic_linear(analysis, fem, filtering_state.xPhys, Iter);
         return avm;
     }
-
+*/
     void optimization11(const FEM &fem,
                         std::vector<Analysis> &analysis_all,
                         Optimization &Opt,
@@ -1553,6 +1562,10 @@ namespace stage2
         save_history(Opt, Output);
         save_rom_histories(analysis_all, Opt, Output);
     }
+
+
+
+
 
 } // namespace stage2
 

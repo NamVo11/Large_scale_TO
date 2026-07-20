@@ -55,6 +55,8 @@ double RAMP(const std::vector<double>& para, double x, double p) {
     return para[0] + (para[1] - para[0]) * g;
 }
 
+
+/* in FEM.cpp
 FEM Mesh(const Geometry& geom, FEM fem) {
     const std::string type = lower(fem.type);
     fem.Node.clear();
@@ -152,7 +154,9 @@ void PrecomputeFEM(FEM& fem) {
         }
     }
 }
+*/
 
+/* in Region.cpp
 void assign_elements_to_regions(std::vector<Region>& regions, const FEM& fem) {
     std::vector<int> assigned(static_cast<std::size_t>(fem.NElem), 0);
     for (auto& region : regions) {
@@ -193,7 +197,8 @@ void assign_elements_to_regions(std::vector<Region>& regions, const FEM& fem) {
         throw std::runtime_error("Some elements are not assigned to any region");
     }
 }
-
+*/
+/* in BoundaryCondition.cpp
 void assign_nodes_and_dofs_to_bcs(std::vector<BoundaryCondition>& BCs, const FEM& fem) {
     for (auto& bc : BCs) {
         ensure_bc_ranges(bc, fem.dim);
@@ -221,7 +226,8 @@ void assign_nodes_and_dofs_to_bcs(std::vector<BoundaryCondition>& BCs, const FEM
         bc.nDof = static_cast<int>(bc.dof_ids.size());
     }
 }
-
+*/
+/* in Analysis.cpp
 void init_mat(const std::vector<Material>& Mat, Analysis& A) {
     if (lower(A.mat_type) != "elastic") throw std::runtime_error("Only elastic init_mat is implemented in stage2");
     for (auto& region : A.regions) {
@@ -258,7 +264,8 @@ void init_interp(const Interp& interp, Analysis& A) {
         }
     }
 }
-
+*/
+/* in Analysis.cpp
 void attach_bcs_to_analysis_by_id(Analysis& A,
                                   const std::vector<BoundaryCondition>& Dirich,
                                   const std::vector<BoundaryCondition>& Neum) {
@@ -275,7 +282,8 @@ void attach_bcs_to_analysis_by_id(Analysis& A,
         A.Neum.push_back(std::move(bc));
     }
 }
-
+*/
+/* in Optimization.cpp
 std::vector<std::vector<double>> init_design_variables(const FEM& fem,
                                                        const std::vector<Region>&,
                                                        const std::vector<Material>& Mat,
@@ -286,6 +294,7 @@ std::vector<std::vector<double>> init_design_variables(const FEM& fem,
     x_label.assign(static_cast<std::size_t>(fem.NElem), 0);
     return x;
 }
+*/
 
 double bc_value(const BoundaryCondition& BC, const Analysis& A, int istep) {
     constexpr double pi = 3.141592653589793238462643383279502884;

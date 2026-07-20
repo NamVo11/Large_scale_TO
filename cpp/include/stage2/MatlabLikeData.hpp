@@ -11,7 +11,7 @@
 namespace stage2 {
 
 class ROMBase;
-
+/* in FEM.hpp
 struct Geometry {
     double Lx = 1200.0;
     double Ly = 400.0;
@@ -41,7 +41,9 @@ struct FEM {
     int nely = 0;
     int nelz = 0;
 };
+*/
 
+/* in Material.hpp
 struct Material {
     int id = 0;
     std::string type = "elastic";
@@ -50,6 +52,7 @@ struct Material {
     double nu = 0.3;
     double rho = 0.0;
 };
+
 
 struct MatParas {
     int nMat = 0;
@@ -60,6 +63,7 @@ struct MatParas {
     std::vector<double> rho;
 };
 
+*/
 using InterpFunction = std::function<double(const std::vector<double>& para, double x)>;
 
 struct Interp {
@@ -69,6 +73,7 @@ struct Interp {
     InterpFunction mass_density_interp;
 };
 
+/* in Region.hpp
 struct Region {
     int id = 0;
     std::vector<int> mat_ids;
@@ -83,7 +88,8 @@ struct Region {
     MatParas mat_paras;
     Interp interp;
 };
-
+*/
+/* in BoundaryCondition.hpp
 struct BoundaryCondition {
     int id = 0;
     std::string kind;
@@ -103,7 +109,7 @@ struct BoundaryCondition {
     int nDof = 0;
     std::function<double(int)> fun_value;
 };
-
+*/
 struct AnalysisResult {
     std::vector<std::vector<double>> U;
     std::vector<std::vector<double>> V;
@@ -121,7 +127,7 @@ struct AnalysisResult {
     double assembly_time = 0.0;
     double solve_time = 0.0;
 };
-
+/* in Analysis.hpp
 struct Analysis {
     int id = 1;
     std::string mat_type = "elastic";
@@ -140,7 +146,8 @@ struct Analysis {
     std::vector<BoundaryCondition> Neum;
     AnalysisResult results;
 };
-
+*/
+/* in Output.hpp
 struct OutputData {
     double saved_Iter = 500.0;
     std::string outDir_vtk;
@@ -148,7 +155,7 @@ struct OutputData {
     std::string outDir_mat_FOM;
     std::string densityDir;
 };
-
+*/
 struct Filtering {
     double rmin = 3.0;
     double beta = 1.0;
@@ -161,7 +168,7 @@ struct Algorithm {
     std::string type = "MMA";
     double move = 0.1;
 };
-
+/* in Objective.hpp
 struct ObjectiveTerm {
     std::string function_name;
     double weight = 1.0;
@@ -188,7 +195,8 @@ struct ObjectiveGroup {
     std::vector<std::vector<double>> d_explicit_dfdFext_all;
     std::vector<std::vector<double>> d_explicit_df_dx;
 };
-
+*/
+/* in Constraint.hpp
 struct Constraint {
     int analysis_id = 1;
     std::string function_name;
@@ -205,7 +213,8 @@ struct Constraint {
     std::vector<std::vector<double>> d_explicit_dfdFext_all;
     std::vector<std::vector<double>> d_explicit_df_dx;
 };
-
+*/
+/* in Optimization.hpp
 struct OptimizationHistory {
     std::vector<int> Iter;
     std::vector<double> objective;
@@ -238,18 +247,22 @@ struct Optimization {
     std::vector<Constraint> constraints;
     OptimizationHistory history;
 };
+*/
+
 
 double RAMP(const std::vector<double>& para, double x, double p);
 
-FEM Mesh(const Geometry& geom, FEM fem);
-void PrecomputeFEM(FEM& fem);
-void assign_elements_to_regions(std::vector<Region>& regions, const FEM& fem);
-void assign_nodes_and_dofs_to_bcs(std::vector<BoundaryCondition>& BCs, const FEM& fem);
-void init_mat(const std::vector<Material>& Mat, Analysis& A);
-void init_interp(const Interp& interp, Analysis& A);
-void attach_bcs_to_analysis_by_id(Analysis& A,
+// FEM Mesh(const Geometry& geom, FEM fem);  // in FEM.hpp
+// void PrecomputeFEM(FEM& fem);  // in FEM.hpp
+// void assign_elements_to_regions(std::vector<Region>& regions, const FEM& fem); in Region.hpp
+//void assign_nodes_and_dofs_to_bcs(std::vector<BoundaryCondition>& BCs, const FEM& fem); 
+//void init_mat(const std::vector<Material>& Mat, Analysis& A);
+//void init_interp(const Interp& interp, Analysis& A);
+//void attach_bcs_to_analysis_by_id(Analysis& A,
                                   const std::vector<BoundaryCondition>& Dirich,
                                   const std::vector<BoundaryCondition>& Neum);
+
+                                  
 std::vector<std::vector<double>> init_design_variables(const FEM& fem,
                                                        const std::vector<Region>& regions,
                                                        const std::vector<Material>& Mat,
