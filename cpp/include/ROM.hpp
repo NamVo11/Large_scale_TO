@@ -1,9 +1,9 @@
 #pragma once
 
-// Compatibility include: stage2 code keeps using "stage2/ROM.hpp", while the
-// ROM implementation is organized like the MATLAB src/ROM tree.
-#include "ROM/ROM_method/ROM_Base.hpp"
-#include "ROM/ROM_method/FOM_direct.hpp"
-#include "ROM/ROM_method/FOM_iterative.hpp"
-#include "ROM/ROM_method/MyStrategy.hpp"
-
+// Compatibility include for PETSc ROM classes.
+// PETSc ROM classes live in namespace petsc_backend.
+// New code should include Petsc_backend/ROM/... or ROM/Common/... directly.
+#include "Petsc_backend/ROM/ROM_method/ROM_Base.hpp"
+#include "Petsc_backend/ROM/ROM_method/FOM_direct.hpp"
+#include "Petsc_backend/ROM/ROM_method/FOM_iterative.hpp"
+#include "Petsc_backend/ROM/ROM_method/MyStrategy.hpp"

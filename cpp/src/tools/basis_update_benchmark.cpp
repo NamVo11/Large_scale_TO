@@ -1,5 +1,5 @@
-#include "ROM/Reduced_Basis_Agorithm/IncrementalSVD.hpp"
-#include "ROM/Reduced_Basis_Agorithm/MyPOD_SVD1.hpp"
+#include "ROM/Common/Reduced_Basis_Agorithm/IncrementalSVD.hpp"
+#include "ROM/Common/Reduced_Basis_Agorithm/MyPOD_SVD1.hpp"
 
 #include <Eigen/Dense>
 

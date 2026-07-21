@@ -1,6 +1,8 @@
-#include "DynamicElasticLinear.hpp"
+#include "Eigen_backend/DynamicElasticLinear.hpp"
+#include "Eigen_backend/Optimization.hpp"
 #include "MatlabLikeData.hpp"
-#include "Optimization.hpp"
+#include "Petsc_backend/DynamicElasticLinear.hpp"
+#include "Petsc_backend/Optimization.hpp"
 #include "ROM.hpp"
 
 #include <petscksp.h>
@@ -112,6 +114,7 @@ int main(int argc, char** argv) {
         double x_initial = 0.5;
         double force_amp = 3333.0;
         std::string solve_mode = "ROM"; // ROM or FOM
+        std::string linear_backend = "petsc"; // petsc or eigen. eigen is NP=1 forward-only for now.
         std::string method_name = "MyStrategy"; // MyStrategy or MyStrategy2
         std::string fom_solver_type = "direct"; // direct or iterative/pcg
         std::string pod_backend = "snapshot_mkl"; // snapshot_mkl, snapshot_eigen, or bdcsvd
@@ -171,6 +174,7 @@ int main(int argc, char** argv) {
         get_int_option("-max_rank", rom_max_rank);
         get_int_option("-online", rom_online);
         get_string_option("-fem_type", fem_type);
+        get_string_option("-linear_backend", linear_backend);
         get_string_option("-solve_mode", solve_mode);
         get_string_option("-method_name", method_name);
         get_string_option("-fom_solver_type", fom_solver_type);
@@ -181,8 +185,13 @@ int main(int argc, char** argv) {
         get_string_option("-density_out", density_dir);
         if (size != 1)
         {
-            factor_num_threads = 1;
-            sens_element_threads = 1;
+            if (linear_backend == "eigen" || linear_backend == "Eigen" || linear_backend == "EIGEN") {
+                if (rank == 0) {
+                    std::cerr << "[warning] LINEAR_BACKEND=eigen requires mpi_size=1; "
+                              << "falling back to LINEAR_BACKEND=petsc for this run.\n";
+                }
+                linear_backend = "petsc";
+            }
         }
         setenv("FACTOR_NUM_THREADS", std::to_string(std::max(1, factor_num_threads)).c_str(), 1);
         setenv("SENS_ELEMENT_THREADS", std::to_string(std::max(1, sens_element_threads)).c_str(), 1);
@@ -270,10 +279,17 @@ int main(int argc, char** argv) {
         };
 
         if (solve_mode == "ROM" || solve_mode == "rom") {
-            A1.ROM = make_dynamic_ROM(method_name, fom_solver_type, rom_tol, rom_rank1, rom_max_rank, rom_online != 0);
+            A1.ROM = petsc_backend::make_dynamic_ROM(method_name, fom_solver_type, rom_tol, rom_rank1, rom_max_rank, rom_online != 0);
         } else {
-            A1.ROM = make_fom_solver(fom_solver_type);
+            A1.ROM = petsc_backend::make_fom_solver(fom_solver_type);
         }
+        A1.rom_use_mor = solve_mode == "ROM" || solve_mode == "rom";
+        A1.rom_method_name = method_name;
+        A1.fom_solver_type = fom_solver_type;
+        A1.rom_tol = rom_tol;
+        A1.rom_rank1 = rom_rank1;
+        A1.rom_max_rank = rom_max_rank;
+        A1.rom_online = rom_online != 0;
         A1.solver_name = "dynamic_elastic_linear";
         A1.regions = regions;
         init_mat(Mat, A1);
@@ -302,8 +318,15 @@ int main(int argc, char** argv) {
         ObjGroup.sens_function = "dynamic_elastic_base";
         ObjGroup.type = solve_mode == "ROM" || solve_mode == "rom" ? "separate_BC" : "full";
         ObjGroup.ROM = solve_mode == "ROM" || solve_mode == "rom"
-            ? make_dynamic_ROM(method_name, fom_solver_type, rom_tol, rom_rank1, rom_max_rank, rom_online != 0)
-            : make_fom_solver(fom_solver_type);
+            ? petsc_backend::make_dynamic_ROM(method_name, fom_solver_type, rom_tol, rom_rank1, rom_max_rank, rom_online != 0)
+            : petsc_backend::make_fom_solver(fom_solver_type);
+        ObjGroup.rom_use_mor = solve_mode == "ROM" || solve_mode == "rom";
+        ObjGroup.rom_method_name = method_name;
+        ObjGroup.fom_solver_type = fom_solver_type;
+        ObjGroup.rom_tol = rom_tol;
+        ObjGroup.rom_rank1 = rom_rank1;
+        ObjGroup.rom_max_rank = rom_max_rank;
+        ObjGroup.rom_online = rom_online != 0;
         ObjectiveTerm Term;
         Term.function_name = "L2_compliance_elastic";
         Term.weight = 1.0;
@@ -329,16 +352,25 @@ int main(int argc, char** argv) {
                       << " fem_uniform=" << (fem.uniform_element_matrices ? 1 : 0)
                       << " factor_threads=" << factor_num_threads
                       << " sens_element_threads=" << sens_element_threads
+                      << " linear_backend=" << linear_backend
                       << " mpi_size=" << size << "\n";
         }
 
         std::vector<Analysis> Analysis;
         Analysis.push_back(A1);
         if (run_optimization != 0) {
-            optimization11(fem, Analysis, Opt, Output);
+            if (linear_backend == "eigen" || linear_backend == "Eigen" || linear_backend == "EIGEN") {
+                eigen_backend::optimization11(fem, Analysis, Opt, Output);
+            } else {
+                petsc_backend::optimization11(fem, Analysis, Opt, Output);
+            }
             A1 = Analysis.front();
         } else {
-            dynamic_elastic_linear(A1, fem, Opt.x, 0);
+            if (linear_backend == "eigen" || linear_backend == "Eigen" || linear_backend == "EIGEN") {
+                eigen_backend::dynamic_elastic_linear(A1, fem, Opt.x, 0);
+            } else {
+                petsc_backend::dynamic_elastic_linear(A1, fem, Opt.x, 0);
+            }
         }
 
         if (rank == 0) {

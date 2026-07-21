@@ -7,9 +7,14 @@
 #include <vector>
 
 #include <Eigen/Dense>
+#include <Eigen/Sparse>
 #include <petscksp.h>
 
+namespace petsc_backend { class ROMBase; }
+namespace eigen_backend {
 class ROMBase;
+class FactorizedSolver;
+}
 
 struct Geometry {
     double Lx = 1200.0;
@@ -117,6 +122,11 @@ struct AnalysisResult {
     Mat K_eff = nullptr;
     KSP factorized_K_initial = nullptr;
     KSP factorized_K_eff = nullptr;
+    Eigen::SparseMatrix<double> K_inf_eigen;
+    Eigen::SparseMatrix<double> M_eigen;
+    Eigen::SparseMatrix<double> K_eff_eigen;
+    std::shared_ptr<eigen_backend::FactorizedSolver> factorized_K_initial_eigen;
+    std::shared_ptr<eigen_backend::FactorizedSolver> factorized_K_eff_eigen;
     double assembly_time = 0.0;
     double solve_time = 0.0;
 };
@@ -132,7 +142,15 @@ struct Analysis {
     int Nstep = 300;
     double dt = Tmax / static_cast<double>(Nstep);
 
-    std::shared_ptr<ROMBase> ROM;
+    std::shared_ptr<petsc_backend::ROMBase> ROM;
+    std::shared_ptr<eigen_backend::ROMBase> backend_ROM;
+    bool rom_use_mor = false;
+    std::string rom_method_name = "MyStrategy";
+    std::string fom_solver_type = "direct";
+    double rom_tol = 0.02;
+    int rom_rank1 = 10;
+    int rom_max_rank = 20;
+    bool rom_online = true;
     std::string solver_name = "dynamic_elastic_linear";
     std::vector<Region> regions;
     std::vector<BoundaryCondition> Dirich;
@@ -178,7 +196,15 @@ struct ObjectiveGroup {
     std::string sens_type;
     std::string sens_function;
     std::string type;
-    std::shared_ptr<ROMBase> ROM;
+    std::shared_ptr<petsc_backend::ROMBase> ROM;
+    std::shared_ptr<eigen_backend::ROMBase> backend_ROM;
+    bool rom_use_mor = false;
+    std::string rom_method_name = "MyStrategy";
+    std::string fom_solver_type = "direct";
+    double rom_tol = 0.02;
+    int rom_rank1 = 10;
+    int rom_max_rank = 20;
+    bool rom_online = true;
     std::vector<ObjectiveTerm> terms;
     double value = 0.0;
     Eigen::MatrixXd d_explicit_dfdu_all;

@@ -14,22 +14,32 @@ pkg_check_modules(PETSC REQUIRED IMPORTED_TARGET ${PETSC_PKG})
 add_executable(stage2_dynamic_forward
   cpp/src/main_stage2.cpp
   cpp/src/MatlabLikeData.cpp
+  cpp/src/OptimizationCommon.cpp
   cpp/src/FEMAssembly.cpp
   cpp/src/helper/PetscEigenBridge.cpp
   cpp/src/helper/PetscEigenHelper.cpp
-  cpp/src/DynamicElasticLinear.cpp
-  cpp/src/Optimization.cpp
-  cpp/src/ROM/Utils/rom_petsc_utils.cpp
-  cpp/src/ROM/Error_Estimator/RelativeResidualEstimator.cpp
-  cpp/src/ROM/Reduced_Basis_Agorithm/UpdateBase.cpp
-  cpp/src/ROM/Reduced_Basis_Agorithm/MyPOD_SVD1.cpp
-  cpp/src/ROM/Reduced_Basis_Agorithm/IncrementalSVD.cpp
-  cpp/src/ROM/Reduced_Basis_Agorithm/MyIncrementalQR1.cpp
-  cpp/src/ROM/ROM_method/ROM_Base.cpp
-  cpp/src/ROM/ROM_method/FOM_direct.cpp
-  cpp/src/ROM/ROM_method/FOM_iterative.cpp
-  cpp/src/ROM/ROM_method/MyStrategy.cpp
-  cpp/src/ROM/ROM_method/ROM_factory.cpp
+  cpp/src/Petsc_backend/DynamicElasticLinear.cpp
+  cpp/src/Petsc_backend/Optimization.cpp
+  cpp/src/Eigen_backend/ROM/ROM_method/ROM_Base.cpp
+  cpp/src/Eigen_backend/ROM/ROM_method/FOM_direct.cpp
+  cpp/src/Eigen_backend/ROM/ROM_method/FOM_iterative.cpp
+  cpp/src/Eigen_backend/ROM/ROM_method/MyStrategy.cpp
+  cpp/src/Eigen_backend/ROM/ROM_method/ROM_factory.cpp
+  cpp/src/Eigen_backend/ROM/Utils/rom_eigen_utils.cpp
+  cpp/src/Eigen_backend/ROM/Error_Estimator/RelativeResidualEstimator.cpp
+  cpp/src/Eigen_backend/DynamicElasticLinear.cpp
+  cpp/src/Eigen_backend/Optimization.cpp
+  cpp/src/Petsc_backend/ROM/Utils/rom_petsc_utils.cpp
+  cpp/src/Petsc_backend/ROM/Error_Estimator/RelativeResidualEstimator.cpp
+  cpp/src/ROM/Common/Reduced_Basis_Agorithm/UpdateBase.cpp
+  cpp/src/ROM/Common/Reduced_Basis_Agorithm/MyPOD_SVD1.cpp
+  cpp/src/ROM/Common/Reduced_Basis_Agorithm/IncrementalSVD.cpp
+  cpp/src/ROM/Common/Reduced_Basis_Agorithm/MyIncrementalQR1.cpp
+  cpp/src/Petsc_backend/ROM/ROM_method/ROM_Base.cpp
+  cpp/src/Petsc_backend/ROM/ROM_method/FOM_direct.cpp
+  cpp/src/Petsc_backend/ROM/ROM_method/FOM_iterative.cpp
+  cpp/src/Petsc_backend/ROM/ROM_method/MyStrategy.cpp
+  cpp/src/Petsc_backend/ROM/ROM_method/ROM_factory.cpp
   cpp/third_party/mma/MMASolver.cpp
   cpp/third_party/mma_matlab_port/MatlabMMA.cpp
   cpp/third_party/mma_jdumas/JdumasMMASolver.cpp
@@ -37,10 +47,10 @@ add_executable(stage2_dynamic_forward
 
 add_executable(basis_update_benchmark
   cpp/src/tools/basis_update_benchmark.cpp
-  cpp/src/ROM/Reduced_Basis_Agorithm/UpdateBase.cpp
-  cpp/src/ROM/Reduced_Basis_Agorithm/MyPOD_SVD1.cpp
-  cpp/src/ROM/Reduced_Basis_Agorithm/IncrementalSVD.cpp
-  cpp/src/ROM/Reduced_Basis_Agorithm/MyIncrementalQR1.cpp
+  cpp/src/ROM/Common/Reduced_Basis_Agorithm/UpdateBase.cpp
+  cpp/src/ROM/Common/Reduced_Basis_Agorithm/MyPOD_SVD1.cpp
+  cpp/src/ROM/Common/Reduced_Basis_Agorithm/IncrementalSVD.cpp
+  cpp/src/ROM/Common/Reduced_Basis_Agorithm/MyIncrementalQR1.cpp
 )
 
 target_include_directories(stage2_dynamic_forward PRIVATE cpp/include)
@@ -66,6 +76,7 @@ target_compile_definitions(basis_update_benchmark PRIVATE
 )
 
 set(STAGE2_MKLROOT "$ENV{MKLROOT}" CACHE PATH "Intel oneAPI MKL root")
+option(STAGE2_EIGEN_USE_LAPACKE "Use Eigen LAPACKE/PardisoLDLT path; affects only LINEAR_BACKEND=eigen" ON)
 option(STAGE2_EIGEN_USE_MKL_BLAS "Use Intel MKL BLAS/LAPACK backend for Eigen dense operations" OFF)
 if(NOT STAGE2_MKLROOT AND EXISTS "/opt/intel/oneapi/mkl/2025.0/include/mkl_lapacke.h")
   set(STAGE2_MKLROOT "/opt/intel/oneapi/mkl/2025.0")
@@ -78,11 +89,13 @@ if(STAGE2_MKLROOT AND EXISTS "${STAGE2_MKLROOT}/include/mkl_lapacke.h")
   target_link_directories(basis_update_benchmark PRIVATE "${STAGE2_MKLROOT}/lib" "${STAGE2_MKLROOT}/lib/intel64")
   target_link_libraries(stage2_dynamic_forward PRIVATE "${STAGE2_MKLROOT}/lib/libmkl_rt.so" dl pthread m)
   target_link_libraries(basis_update_benchmark PRIVATE "${STAGE2_MKLROOT}/lib/libmkl_rt.so" dl pthread m)
-  target_compile_definitions(stage2_dynamic_forward PRIVATE EIGEN_USE_LAPACKE)
-  target_compile_definitions(basis_update_benchmark PRIVATE EIGEN_USE_LAPACKE)
+  if(STAGE2_EIGEN_USE_LAPACKE)
+    target_compile_definitions(stage2_dynamic_forward PRIVATE EIGEN_USE_LAPACKE)
+    target_compile_definitions(basis_update_benchmark PRIVATE EIGEN_USE_LAPACKE)
+  endif()
   if(STAGE2_EIGEN_USE_MKL_BLAS)
-    target_compile_definitions(stage2_dynamic_forward PRIVATE EIGEN_USE_BLAS EIGEN_USE_LAPACKE)
-    target_compile_definitions(basis_update_benchmark PRIVATE EIGEN_USE_BLAS EIGEN_USE_LAPACKE)
+    target_compile_definitions(stage2_dynamic_forward PRIVATE EIGEN_USE_BLAS)
+    target_compile_definitions(basis_update_benchmark PRIVATE EIGEN_USE_BLAS)
   endif()
 endif()
 
@@ -92,7 +105,7 @@ else()
   target_compile_options(stage2_dynamic_forward PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(basis_update_benchmark PRIVATE -Wall -Wextra -Wpedantic)
   set_source_files_properties(
-    cpp/src/ROM/Reduced_Basis_Agorithm/MyPOD_SVD1.cpp
+    cpp/src/ROM/Common/Reduced_Basis_Agorithm/MyPOD_SVD1.cpp
     PROPERTIES COMPILE_OPTIONS -Wno-deprecated-declarations
   )
 endif()

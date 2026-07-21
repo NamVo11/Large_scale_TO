@@ -79,6 +79,7 @@ PC_TYPE="${PC_TYPE:?PC_TYPE is not set}"
 PC_FACTOR_MAT_SOLVER_TYPE="${PC_FACTOR_MAT_SOLVER_TYPE:-}"
 POD_BACKEND="${POD_BACKEND:-snapshot_mkl}"
 ONLINE_BACKEND="${ONLINE_BACKEND:-incremental_mkl}"
+LINEAR_BACKEND="${LINEAR_BACKEND:-petsc}"
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:?OMP_NUM_THREADS is not set}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:?MKL_NUM_THREADS is not set}"
@@ -129,10 +130,6 @@ DENSITY_OUT="${DENSITY_OUT:-$CASE_DIR/density}"
 FEM_UNIFORM="${FEM_UNIFORM:-1}"
 FACTOR_NUM_THREADS="${FACTOR_NUM_THREADS:-${MKL_NUM_THREADS:-1}}"
 SENS_ELEMENT_THREADS="${SENS_ELEMENT_THREADS:-1}"
-if [[ "$NP" != "1" ]]; then
-    FACTOR_NUM_THREADS="1"
-    SENS_ELEMENT_THREADS="1"
-fi
 export FACTOR_NUM_THREADS
 export SENS_ELEMENT_THREADS
 
@@ -165,6 +162,8 @@ mkdir -p "$OUT" "$DENSITY_OUT"
 
 APP_ARGS=(
     -run_optimization 1
+
+    -linear_backend "$LINEAR_BACKEND"
 
     -solve_mode "$SOLVE_MODE"
     -method_name "$METHOD_NAME"
@@ -234,6 +233,7 @@ echo "  output                    = $OUT"
 echo "  density                   = $DENSITY_OUT"
 echo
 echo "  solve_mode                = $SOLVE_MODE"
+echo "  linear_backend            = $LINEAR_BACKEND"
 echo "  method_name               = $METHOD_NAME"
 echo "  fom_solver_type           = $FOM_SOLVER_TYPE"
 echo "  pod_backend               = $POD_BACKEND"
