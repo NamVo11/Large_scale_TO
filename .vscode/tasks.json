@@ -430,7 +430,7 @@
       "command": "python3",
       "args": [
         "scripts/watch_optimization_live.py",
-        "case_study/main_Eigen/1thread/strategy2_10_25",
+        "case_study/main_Eigen_all/1thread/strategy2_15_25",
         // Case folder to watch. Change this to case_study/test1, case_study/Debug, etc.
         "--scale",
         "8",
@@ -491,17 +491,14 @@
           //"PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
           //"MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
 
-          //"CASE_CONFIGS": "case_study/3/strategy_1thread/conf.conf",
-          //"CASE_CONFIGS": "case_study/3D/FOM/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy2_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf",
-          //"CASE_CONFIGS": "case_study/3/strategy2/conf.conf   case_study/3/strategy/conf.conf   case_study/3/FOM/conf.conf",
-          "CASE_CONFIGS": "case_study/main_Eigen/ssssss/conf.conf",
+          "CASE_CONFIGS": "case_study/main_Eigen_all/1thread/FOM/conf.conf  case_study/main_Eigen_all/1thread/strategy_10_20/conf.conf    case_study/main_Eigen_all/1thread/strategy2_10_20/conf.conf   case_study/main_Eigen_all/1thread/strategy_15_25/conf.conf    case_study/main_Eigen_all/1thread/strategy2_15_25/conf.conf   case_study/main_Eigen_all/1thread/strategy_10_25/conf.conf   case_study/main_Eigen_all/1thread/strategy2_10_25/conf.conf",
 
           "NP": "1",
           "HOSTS": "localhost",
           "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
           "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
           "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso", // single-node direct solver; alternatives: mumps // mkl_pardiso
-          "LINEAR_BACKEND": "petsc", // petsc: PETSc FOM/fallback; eigen: Eigen FOM/fallback. EIGEN_USE_LAPACKE affects only eigen.
+          "LINEAR_BACKEND": "Eigen", // petsc: PETSc FOM/fallback; eigen: Eigen FOM/fallback. EIGEN_USE_LAPACKE affects only eigen.
           "STAGE2_EIGEN_CHECK_FOM_RESIDUAL": "0", // Eigen backend FOM direct only: 0 skip extra A*u-rhs check like PETSc; 1 print residual-check timing
           "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
           "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: IncrementalSVD only; ignored by MyStrategy2
