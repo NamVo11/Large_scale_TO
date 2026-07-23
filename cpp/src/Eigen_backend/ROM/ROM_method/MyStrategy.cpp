@@ -12,6 +12,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <utility>
+#include <iostream>
 
 namespace eigen_backend {
 namespace {
@@ -119,6 +120,7 @@ void MyStrategy::rebuild_reduced_cache(const Eigen::SparseMatrix<double>& A,
     AV_cache_.noalias() = A * V;
     A_r_cache.noalias() = V.transpose() * AV_cache_;
     factorized_A_r.compute(A_r_cache);
+
     info.timing_projection += now_time() - t0;
     A_r_lhs_cache_ = &A;
     A_r_rank_cache_ = static_cast<int>(V.cols());

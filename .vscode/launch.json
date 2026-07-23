@@ -15,46 +15,11 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "/home/votrongnam/PROJECT/Large_scale_TO/build-mpich-debug-gcc13/stage2_dynamic_forward",
-            // GCC11 option:
+            // GCC11 option: use the matching debug executable.
             // "program": "/home/votrongnam/PROJECT/Large_scale_TO/build-mpich-debug-gcc11/stage2_dynamic_forward",
             "args": [
-                "-run_optimization",
-                "1",
-                "-linear_backend",
-                "petsc",
-                // LINEAR_BACKEND for debug: petsc = PETSc FOM/fallback; eigen = Eigen FOM/fallback.
-                // EIGEN_USE_LAPACKE is a CMake/build option only; it affects only linear_backend=eigen.
-                "-density_plot_interval",
-                "1",
-                "-stage2_out",
-                "case_study/Debug/result",
-                "-density_out",
-                "case_study/Debug/density",
-                "-fom_solver_type",
-                "direct",
-                "-pod_backend",
-                "snapshot_mkl",
-                // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
-                "-online_backend",
-                "incremental_mkl",
-                // incremental_mkl: MKL IncrementalSVD; incremental_eigen: Eigen IncrementalSVD
-                "-ksp_type",
-                "preonly",
-                // preonly: direct solve; cg: iterative SPD
-                "-pc_type",
-                "cholesky",
-                // cholesky: SPD direct; lu: general direct; gamg: iterative
-                "-pc_factor_mat_solver_type",
-                "mkl_pardiso",
-                // mkl_pardiso: single-node direct; mumps: MPI/multinode direct
-                "-factor_num_threads",
-                "1",
-                // factor_num_threads: MKL/Pardiso threads only during factorization; forced to 1 when MPI size > 1
-                "-sens_element_threads",
-                "4",
-                // sens_element_threads: OpenMP threads for explicit_gradient_dynamic element loop; forced to 1 when MPI size > 1
-                "-out_dir",
-                "case_study/Debug/result"
+                "-options_file",
+                "case_study/Debug/conf.text"
             ],
             "stopAtEntry": false,
             "cwd": "/home/votrongnam/PROJECT/Large_scale_TO",
@@ -100,14 +65,6 @@
                 {
                     "value": "1",
                     "name": "MKL_NUM_THREADS"
-                },
-                {
-                    "value": "1",
-                    "name": "FACTOR_NUM_THREADS"
-                },
-                {
-                    "value": "4",
-                    "name": "SENS_ELEMENT_THREADS"
                 },
                 {
                     "value": "0",
