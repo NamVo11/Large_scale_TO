@@ -317,10 +317,10 @@
           "CASE_CONFIGS": "case_study/main_Eigen_all/tryMPI/conf.conf",
 
           "NP": "8",
-          "HOSTS": "localhost,192.168.11.21",
-          "KSP_TYPE": "cg", // preonly: direct solve; cg: iterative SPD// preonly
-          "PC_TYPE": "gamg", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
-          "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso", // single-node direct solver; alternatives: mumps // mkl_pardiso
+          "HOSTS": "localhost",//"localhost,192.168.11.21"
+          "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
+          "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
+          "PC_FACTOR_MAT_SOLVER_TYPE": "", // single-node direct solver; alternatives: mumps // mkl_pardiso
           "LINEAR_BACKEND": "PETSc", // petsc: PETSc FOM/fallback; eigen: Eigen FOM/fallback. EIGEN_USE_LAPACKE affects only eigen.
           "STAGE2_EIGEN_CHECK_FOM_RESIDUAL": "0", // Eigen backend FOM direct only: 0 skip extra A*u-rhs check like PETSc; 1 print residual-check timing
           "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
