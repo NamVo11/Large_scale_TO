@@ -65,21 +65,21 @@ int main(int argc, char** argv) {
     context.opt_iter = 0;
 
     MyPOD_SVD1 pod_snapshot(0.0, 1e-10, max_rank);
-    pod_snapshot.backend = MyPOD_SVD1::Backend::SnapshotEigen;
+    pod_snapshot.pod_solver = MyAlgebra::create_pod_solver("snapshot_eigen");
     for (int j = 0; j < nsnapshot; ++j) pod_snapshot.addSnapshot(make_snapshot(ndof, j, max_rank), context);
     auto t0 = Clock::now();
     pod_snapshot.update(Eigen::VectorXd(), context);
     const double snapshot_time = elapsed(t0);
 
     MyPOD_SVD1 pod_mkl(0.0, 1e-10, max_rank);
-    pod_mkl.backend = MyPOD_SVD1::Backend::SnapshotMKL;
+    pod_mkl.pod_solver = MyAlgebra::create_pod_solver("snapshot_mkl");
     pod_mkl.snapshots = pod_snapshot.snapshots;
     t0 = Clock::now();
     pod_mkl.update(Eigen::VectorXd(), context);
     const double snapshot_mkl_time = elapsed(t0);
 
     MyPOD_SVD1 pod_bdc(0.0, 1e-10, max_rank);
-    pod_bdc.backend = MyPOD_SVD1::Backend::EigenBDCSVD;
+    pod_bdc.pod_solver = MyAlgebra::create_pod_solver("bdcsvd");
     pod_bdc.snapshots = pod_snapshot.snapshots;
     t0 = Clock::now();
     pod_bdc.update(Eigen::VectorXd(), context);
@@ -101,14 +101,14 @@ int main(int argc, char** argv) {
     }
 
     IncrementalSVD online_fast(10000, 1e-10, 1e-12, max_rank);
-    online_fast.backend = IncrementalSVD::Backend::Eigen;
+    online_fast.ISVD_solver = MyAlgebra::create_isvd_solver("incremental_eigen", max_rank, 1e-10, 1e-12, online_fast.orth_tol);
     online_fast.store_snapshots = false;
     t0 = Clock::now();
     for (int j = 0; j < online_updates; ++j) online_fast.update(online_snapshots[static_cast<std::size_t>(j)], context);
     const double online_fast_time = elapsed(t0);
 
     IncrementalSVD online_mkl(10000, 1e-10, 1e-12, max_rank);
-    online_mkl.backend = IncrementalSVD::Backend::MKL;
+    online_mkl.ISVD_solver = MyAlgebra::create_isvd_solver("incremental_mkl", max_rank, 1e-10, 1e-12, online_mkl.orth_tol);
     online_mkl.store_snapshots = false;
     t0 = Clock::now();
     for (int j = 0; j < online_updates; ++j) online_mkl.update(online_snapshots[static_cast<std::size_t>(j)], context);

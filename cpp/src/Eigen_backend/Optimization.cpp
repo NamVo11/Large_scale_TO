@@ -188,6 +188,7 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
     const double timing_alloc_gradient = elapsed(t0, t1);
 
     t0 = Clock::now();
+
     if (rank == 0) {
         int actual_threads = 1;
         #pragma omp parallel num_threads(sens_element_threads) if(sens_element_threads > 1)
@@ -195,11 +196,13 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
             #pragma omp single
             actual_threads = omp_get_num_threads();
         }
+        /*
         std::cout << "  thread_debug explicit_gradient_dynamic: requested_threads="
                   << sens_element_threads
                   << " actual_threads=" << actual_threads
                   << " omp_get_max_threads=" << omp_get_max_threads()
                   << "\n";
+        */
     }
 
     #pragma omp parallel for schedule(static) num_threads(sens_element_threads) if(sens_element_threads > 1)
@@ -263,6 +266,7 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
 
     if (rank == 0) {
         const double timing_total = elapsed(timer_begin, Clock::now());
+        /*
         std::cout << "  explicit_gradient_dynamic[s]:"
                   << " threads=" << sens_element_threads
                   << " interp_derivative=" << timing_interp_derivative
@@ -274,7 +278,9 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                   << " unflatten_add=" << timing_unflatten_add
                   << " total=" << timing_total
                   << "\n";
+        */
     }
+
     return df_dx;
 }
 
@@ -794,7 +800,7 @@ void optimization11(const FEM& fem,
 
         if (Iter >= Opt.MaxIter) {
             Opt.history.iteration_time.back() = elapsed(iter_t0, Clock::now());
-            if (rank == 0) std::cout << " mma=0 iter_total=" << Opt.history.iteration_time.back() << "\n";
+            //if (rank == 0) std::cout << " mma=0 iter_total=" << Opt.history.iteration_time.back() << "\n";
             save_history(Opt, Output);
             save_rom_histories(analysis_all, Opt, Output);
             break;
@@ -823,7 +829,7 @@ void optimization11(const FEM& fem,
         mma_time = elapsed(t0, t1);
         Opt.history.mma_time.back() = mma_time;
         Opt.history.iteration_time.back() = elapsed(iter_t0, Clock::now());
-        if (rank == 0) std::cout << " mma=" << mma_time << " iter_total=" << Opt.history.iteration_time.back() << "\n";
+        //if (rank == 0) std::cout << " mma=" << mma_time << " iter_total=" << Opt.history.iteration_time.back() << "\n";
 
         if (Opt.filtering.beta < Opt.filtering.beta_max && (loopbeta >= Opt.filtering.beta_loop || Change <= Opt.Tol)) {
             Opt.filtering.beta = std::min(Opt.filtering.beta + 2.0, Opt.filtering.beta_max);

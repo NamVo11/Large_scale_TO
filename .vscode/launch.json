@@ -14,7 +14,7 @@
             "name": "Debug: single node single rank",
             "type": "cppdbg",
             "request": "launch",
-            "program": "/home/votrongnam/PROJECT/Large_scale_TO/build-mpich-debug-gcc13/stage2_dynamic_forward",
+            "program": "${workspaceFolder}/build-mpich-debug-gcc13/stage2_dynamic_forward",
             // GCC11 option: use the matching debug executable.
             // "program": "/home/votrongnam/PROJECT/Large_scale_TO/build-mpich-debug-gcc11/stage2_dynamic_forward",
             "args": [
@@ -22,7 +22,7 @@
                 "case_study/Debug/conf.text"
             ],
             "stopAtEntry": false,
-            "cwd": "/home/votrongnam/PROJECT/Large_scale_TO",
+            "cwd": "${workspaceFolder}",
             "environment": [
                 {
                     "value": "40000:41000",

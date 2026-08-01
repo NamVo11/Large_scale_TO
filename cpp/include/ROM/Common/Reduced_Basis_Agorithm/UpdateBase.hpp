@@ -14,7 +14,7 @@ public:
     Eigen::MatrixXd snapshots;
     Eigen::VectorXd s;
     Eigen::MatrixXd W;
-    int basis_version = 0;
+    bool update_flag = false;
 
     explicit UpdateBase(int max_rank_in = 50);
     virtual ~UpdateBase() = default;

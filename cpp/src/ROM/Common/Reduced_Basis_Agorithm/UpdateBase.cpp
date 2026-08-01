@@ -12,13 +12,13 @@ const Eigen::MatrixXd& UpdateBase::getBasis(const ROMContext&) const {
 void UpdateBase::setBasis(const Eigen::MatrixXd& V_in, const Eigen::VectorXd& s_in) {
     V = V_in;
     s = s_in;
-    ++basis_version;
+    update_flag = true;
 }
 
 void UpdateBase::setBasis(Eigen::MatrixXd&& V_in, Eigen::VectorXd&& s_in) {
     V = std::move(V_in);
     s = std::move(s_in);
-    ++basis_version;
+    update_flag = true;
 }
 
 void UpdateBase::addSnapshot(const Eigen::VectorXd& solution, const ROMContext&) {
@@ -45,6 +45,5 @@ void UpdateBase::reset() {
     snapshots.resize(0, 0);
     s.resize(0);
     W.resize(0, 0);
-    ++basis_version;
+    update_flag = true;
 }
-

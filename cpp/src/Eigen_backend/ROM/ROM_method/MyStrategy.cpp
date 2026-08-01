@@ -29,6 +29,26 @@ int env_int_or_default(const char* name, int fallback) {
     return std::atoi(value);
 }
 
+double env_double_or_default(const char* name, double fallback) {
+    const char* value = std::getenv(name);
+    if (!value || !*value) return fallback;
+    return std::atof(value);
+}
+
+void check_reduced_matrix_symmetry(const Eigen::MatrixXd& A_r, const char* label) {
+    if (A_r.rows() == 0 || A_r.rows() != A_r.cols()) return;
+    const double denom = std::max(1e-30, A_r.norm());
+    const double rel_asym = (A_r - A_r.transpose()).norm() / denom;
+    const double tol = env_double_or_default("STAGE2_AR_SYMMETRY_TOL", 1e-10);
+    if (rel_asym > tol) {
+        std::cerr << "[warning] " << label
+                  << ": A_r_cache is not symmetric"
+                  << " rank=" << A_r.rows()
+                  << " rel_asym=" << std::setprecision(17) << rel_asym
+                  << " tol=" << tol << "\n";
+    }
+}
+
 void append_basis_debug(const char* phase,
                         const ROMContext& context,
                         int basis_id,
@@ -119,6 +139,7 @@ void MyStrategy::rebuild_reduced_cache(const Eigen::SparseMatrix<double>& A,
     const double t0 = now_time();
     AV_cache_.noalias() = A * V;
     A_r_cache.noalias() = V.transpose() * AV_cache_;
+    check_reduced_matrix_symmetry(A_r_cache, "eigen_backend::MyStrategy::rebuild_reduced_cache");
     factorized_A_r.compute(A_r_cache);
 
     info.timing_projection += now_time() - t0;
@@ -213,7 +234,7 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
             info.timing_online_basis_update += dt;
             info.timing_basis_update += dt;
         }
-        fom_flag = 1;
+        fom_flag = online ? (basis_list[1]->update_flag ? 1 : 0) : 0;
     } else {
         u = u_rom;
         solution_e = std::move(u_rom);
@@ -295,6 +316,7 @@ void MyStrategy2::rebuild_reduced_cache(const Eigen::SparseMatrix<double>& A,
     const double t0 = now_time();
     AV_cache2_.noalias() = A * V;
     A_r_cache.noalias() = V.transpose() * AV_cache2_;
+    check_reduced_matrix_symmetry(A_r_cache, "eigen_backend::MyStrategy2::rebuild_reduced_cache");
     factorized_A_r.compute(A_r_cache);
     info.timing_projection += now_time() - t0;
     A_r_lhs_cache2_ = &A;
@@ -467,7 +489,7 @@ SolveStats MyStrategy2::main(const Eigen::SparseMatrix<double>& lhs,
             info.timing_online_basis_update += dt;
             info.timing_basis_update += dt;
         }
-        fom_flag = 1;
+        fom_flag = online ? (basis_list[1]->update_flag ? 1 : 0) : 0;
     } else {
         u = u_rom;
         solution_e = std::move(u_rom);

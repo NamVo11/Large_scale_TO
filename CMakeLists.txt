@@ -16,6 +16,7 @@ add_executable(stage2_dynamic_forward
   cpp/src/MatlabLikeData.cpp
   cpp/src/OptimizationCommon.cpp
   cpp/src/FEMAssembly.cpp
+  cpp/src/helper/MyAlgebra.cpp
   cpp/src/helper/PetscEigenBridge.cpp
   cpp/src/helper/PetscEigenHelper.cpp
   cpp/src/Petsc_backend/DynamicElasticLinear.cpp
@@ -47,14 +48,15 @@ add_executable(stage2_dynamic_forward
 
 add_executable(basis_update_benchmark
   cpp/src/tools/basis_update_benchmark.cpp
+  cpp/src/helper/MyAlgebra.cpp
   cpp/src/ROM/Common/Reduced_Basis_Agorithm/UpdateBase.cpp
   cpp/src/ROM/Common/Reduced_Basis_Agorithm/MyPOD_SVD1.cpp
   cpp/src/ROM/Common/Reduced_Basis_Agorithm/IncrementalSVD.cpp
   cpp/src/ROM/Common/Reduced_Basis_Agorithm/MyIncrementalQR1.cpp
 )
 
-target_include_directories(stage2_dynamic_forward PRIVATE cpp/include)
-target_include_directories(basis_update_benchmark PRIVATE cpp/include)
+target_include_directories(stage2_dynamic_forward PRIVATE cpp/include cpp/src)
+target_include_directories(basis_update_benchmark PRIVATE cpp/include cpp/src)
 target_include_directories(stage2_dynamic_forward SYSTEM PRIVATE
   cpp/third_party/eigen
   cpp/third_party/mma
