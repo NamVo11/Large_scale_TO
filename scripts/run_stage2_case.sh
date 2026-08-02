@@ -71,29 +71,6 @@ fi
 
 CASE_CONFIG="${CASE_CONFIG:?CASE_CONFIG is not set}"
 
-NP="${NP:?NP is not set}"
-HOSTS="${HOSTS:?HOSTS is not set}"
-
-KSP_TYPE="${KSP_TYPE:?KSP_TYPE is not set}"
-PC_TYPE="${PC_TYPE:?PC_TYPE is not set}"
-PC_FACTOR_MAT_SOLVER_TYPE="${PC_FACTOR_MAT_SOLVER_TYPE:-}"
-POD_BACKEND="${POD_BACKEND:-snapshot_mkl}"
-ONLINE_BACKEND="${ONLINE_BACKEND:-incremental_mkl}"
-LINEAR_BACKEND="${LINEAR_BACKEND:-petsc}"
-
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:?OMP_NUM_THREADS is not set}"
-export MKL_NUM_THREADS="${MKL_NUM_THREADS:?MKL_NUM_THREADS is not set}"
-export OMP_PROC_BIND="${OMP_PROC_BIND:-spread}"
-export OMP_PLACES="${OMP_PLACES:-cores}"
-
-BUILD_DIR="${BUILD_DIR:?BUILD_DIR is not set}"
-
-if [[ "$BUILD_DIR" != /* ]]; then
-    BUILD_DIR="$ROOT/$BUILD_DIR"
-fi
-
-BINARY="${BINARY:-$BUILD_DIR/stage2_dynamic_forward}"
-
 # ============================================================
 # Load case configuration
 # ============================================================
@@ -125,11 +102,96 @@ CASE_DIR="$(dirname "$CASE_CONFIG")"
 
 LABEL="$(basename "$CASE_DIR")"
 
-OUT="${OUT:-$CASE_DIR/result}"
-DENSITY_OUT="${DENSITY_OUT:-$CASE_DIR/density}"
+BUILD_DIR="${BUILD_DIR:-build-mpich-release-gcc13}"
+if [[ "$BUILD_DIR" != /* ]]; then
+    BUILD_DIR="$ROOT/$BUILD_DIR"
+fi
+BINARY="${BINARY:-$BUILD_DIR/stage2_dynamic_forward}"
+
+NP="${NP:?NP is not set}"
+HOSTS="${HOSTS:?HOSTS is not set}"
+
+KSP_TYPE="${KSP_TYPE:?KSP_TYPE is not set}"
+PC_TYPE="${PC_TYPE:?PC_TYPE is not set}"
+PC_FACTOR_MAT_SOLVER_TYPE="${PC_FACTOR_MAT_SOLVER_TYPE:-}"
+POD_BACKEND="${POD_BACKEND:-snapshot_mkl}"
+ONLINE_BACKEND="${ONLINE_BACKEND:-incremental_mkl}"
+LINEAR_BACKEND="${LINEAR_BACKEND:-petsc}"
+SOLVE_MODE="${SOLVE_MODE:?SOLVE_MODE is not set}"
+METHOD_NAME="${METHOD_NAME:-MyStrategy}"
+RANK1="${RANK1:-10}"
+MAX_RANK="${MAX_RANK:-25}"
+
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:?OMP_NUM_THREADS is not set}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:?MKL_NUM_THREADS is not set}"
+export OMP_PROC_BIND="${OMP_PROC_BIND:-spread}"
+export OMP_PLACES="${OMP_PLACES:-cores}"
+
+RUN_NAME="${RUN_NAME:-}"
+if [[ -z "$RUN_NAME" ]]; then
+    if [[ "${SOLVE_MODE,,}" == "fom" ]]; then
+        RUN_NAME="FOM"
+    else
+        RUN_NAME="${METHOD_NAME}_rank1_${RANK1}_max_rank_${MAX_RANK}"
+    fi
+fi
+RUN_DIR="${RUN_DIR:-$CASE_DIR/$RUN_NAME}"
+OUT="${OUT:-$RUN_DIR/result}"
+DENSITY_OUT="${DENSITY_OUT:-$RUN_DIR/density}"
 FEM_UNIFORM="${FEM_UNIFORM:-1}"
+FEM_TYPE="${FEM_TYPE:-${fem_type:-plane_stress}}"
+MESH_SOURCE="${MESH_SOURCE:-structured}"
+FEM_FILE="${FEM_FILE:-}"
+REGION_SOURCE="${REGION_SOURCE:-range}"
+BC_SOURCE="${BC_SOURCE:-range}"
+DESIGN_HMSET="${DESIGN_HMSET:-design_val}"
+NONDESIGN_HMSET="${NONDESIGN_HMSET:-nondesign}"
+SPC_HMSET="${SPC_HMSET:-SPC}"
+LOAD_HMSET="${LOAD_HMSET:-load}"
+SAVE_VTK_RESPONSE_INTERVAL="${SAVE_VTK_RESPONSE_INTERVAL:-1}"
+SAVE_VTK_OPT_INTERVAL="${SAVE_VTK_OPT_INTERVAL:-1}"
+SAVE_DENSITY="${SAVE_DENSITY:-1}"
+DENSITY_INTERVAL="${DENSITY_INTERVAL:-1}"
+RUN_OPTIMIZATION="${RUN_OPTIMIZATION:-1}"
+FILTER_RMIN="${FILTER_RMIN:-3.0}"
+FILTER_BETA="${FILTER_BETA:-1.0}"
+FILTER_BETA_LOOP="${FILTER_BETA_LOOP:-50}"
+FILTER_BETA_MAX="${FILTER_BETA_MAX:-8.0}"
+FILTER_T="${FILTER_T:-0.5}"
+VOID_E="${VOID_E:-1e-3}"
+VOID_RHO="${VOID_RHO:-1e-12}"
+SOLID_E="${SOLID_E:-210000}"
+SOLID_RHO="${SOLID_RHO:-6e-9}"
+NU="${NU:-0.3}"
+THICKNESS="${THICKNESS:-1.0}"
+P_E_ELASTIC="${P_E_ELASTIC:-8.0}"
+DIRICH_FLAG_X="${DIRICH_FLAG_X:-1}"
+DIRICH_FLAG_Y="${DIRICH_FLAG_Y:-1}"
+DIRICH_FLAG_Z="${DIRICH_FLAG_Z:-1}"
+NEUM_FLAG_X="${NEUM_FLAG_X:-0}"
+NEUM_FLAG_Y="${NEUM_FLAG_Y:-1}"
+NEUM_FLAG_Z="${NEUM_FLAG_Z:-0}"
+DIRICH_X_MIN="${DIRICH_X_MIN:-0}"
+DIRICH_X_MAX="${DIRICH_X_MAX:-2}"
+DIRICH_Y_MIN="${DIRICH_Y_MIN:-0}"
+DIRICH_Y_MAX="${DIRICH_Y_MAX:-$LY}"
+DIRICH_Z_MIN="${DIRICH_Z_MIN:--1000}"
+DIRICH_Z_MAX="${DIRICH_Z_MAX:-1000}"
+DIRICH_AMP="${DIRICH_AMP:-0}"
+DIRICH_TIME_TYPE="${DIRICH_TIME_TYPE:-constant}"
+LOAD_X_MIN_OFFSET="${LOAD_X_MIN_OFFSET:-5}"
+LOAD_X_MIN="${LOAD_X_MIN:-}"
+LOAD_X_MAX="${LOAD_X_MAX:-}"
+LOAD_Y_MIN="${LOAD_Y_MIN:-190}"
+LOAD_Y_MAX="${LOAD_Y_MAX:-210}"
+LOAD_Z_MIN="${LOAD_Z_MIN:--1000}"
+LOAD_Z_MAX="${LOAD_Z_MAX:-1000}"
+LOAD_TIME_TYPE="${LOAD_TIME_TYPE:-sin}"
+LOAD_NCYCLE="${LOAD_NCYCLE:-1}"
 FACTOR_NUM_THREADS="${FACTOR_NUM_THREADS:-${MKL_NUM_THREADS:-1}}"
 SENS_ELEMENT_THREADS="${SENS_ELEMENT_THREADS:-1}"
+DEBUG_FD_EPSILON="${DEBUG_FD_EPSILON:-1e-6}"
+DEBUG_FD_MAX_CHECKS="${DEBUG_FD_MAX_CHECKS:-20}"
 export FACTOR_NUM_THREADS
 export SENS_ELEMENT_THREADS
 
@@ -161,7 +223,7 @@ mkdir -p "$OUT" "$DENSITY_OUT"
 # ============================================================
 
 APP_ARGS=(
-    -run_optimization 1
+    -run_optimization "$RUN_OPTIMIZATION"
 
     -linear_backend "$LINEAR_BACKEND"
 
@@ -186,8 +248,16 @@ APP_ARGS=(
     -nely "$NELY"
     -nelz "$NELZ"
 
-    -fem_type "$fem_type"
+    -fem_type "$FEM_TYPE"
     -fem_uniform "$FEM_UNIFORM"
+    -mesh_source "$MESH_SOURCE"
+    -fem_file "$FEM_FILE"
+    -region_source "$REGION_SOURCE"
+    -bc_source "$BC_SOURCE"
+    -design_hmset "$DESIGN_HMSET"
+    -nondesign_hmset "$NONDESIGN_HMSET"
+    -spc_hmset "$SPC_HMSET"
+    -load_hmset "$LOAD_HMSET"
     -factor_num_threads "$FACTOR_NUM_THREADS"
     -sens_element_threads "$SENS_ELEMENT_THREADS"
 
@@ -196,21 +266,68 @@ APP_ARGS=(
     -max_iter "$MAX_ITER"
     -move "$MOVE"
     -volume_limit "$VOLUME_LIMIT"
+    -debug_fd_epsilon "$DEBUG_FD_EPSILON"
+    -debug_fd_max_checks "$DEBUG_FD_MAX_CHECKS"
+
+    -filter_rmin "$FILTER_RMIN"
+    -filter_beta "$FILTER_BETA"
+    -filter_beta_loop "$FILTER_BETA_LOOP"
+    -filter_beta_max "$FILTER_BETA_MAX"
+    -filter_T "$FILTER_T"
 
     -sens_type "$SENS_TYPE"
     -x0 "$X0"
     -force_amp "$FORCE_AMP"
     -p_rho "$P_RHO"
+    -p_E_elastic "$P_E_ELASTIC"
+
+    -void_E "$VOID_E"
+    -void_rho "$VOID_RHO"
+    -solid_E "$SOLID_E"
+    -solid_rho "$SOLID_RHO"
+    -nu "$NU"
+    -thickness "$THICKNESS"
+
+    -dirich_flag_x "$DIRICH_FLAG_X"
+    -dirich_flag_y "$DIRICH_FLAG_Y"
+    -dirich_flag_z "$DIRICH_FLAG_Z"
+    -neum_flag_x "$NEUM_FLAG_X"
+    -neum_flag_y "$NEUM_FLAG_Y"
+    -neum_flag_z "$NEUM_FLAG_Z"
+    -dirich_x_min "$DIRICH_X_MIN"
+    -dirich_x_max "$DIRICH_X_MAX"
+    -dirich_y_min "$DIRICH_Y_MIN"
+    -dirich_y_max "$DIRICH_Y_MAX"
+    -dirich_z_min "$DIRICH_Z_MIN"
+    -dirich_z_max "$DIRICH_Z_MAX"
+    -dirich_amp "$DIRICH_AMP"
+    -dirich_time_type "$DIRICH_TIME_TYPE"
+    -load_x_min_offset "$LOAD_X_MIN_OFFSET"
+    -load_y_min "$LOAD_Y_MIN"
+    -load_y_max "$LOAD_Y_MAX"
+    -load_z_min "$LOAD_Z_MIN"
+    -load_z_max "$LOAD_Z_MAX"
+    -load_time_type "$LOAD_TIME_TYPE"
+    -load_nCycle "$LOAD_NCYCLE"
 
     -stage2_out "$OUT"
     -density_out "$DENSITY_OUT"
 
     -save_density_each_iter "$SAVE_DENSITY"
     -density_plot_interval "$DENSITY_INTERVAL"
+    -save_vtk_response_interval "$SAVE_VTK_RESPONSE_INTERVAL"
+    -save_vtk_opt_interval "$SAVE_VTK_OPT_INTERVAL"
 
     -ksp_type "$KSP_TYPE"
     -pc_type "$PC_TYPE"
 )
+
+if [[ -n "$LOAD_X_MIN" ]]; then
+    APP_ARGS+=(-load_x_min "$LOAD_X_MIN")
+fi
+if [[ -n "$LOAD_X_MAX" ]]; then
+    APP_ARGS+=(-load_x_max "$LOAD_X_MAX")
+fi
 
 if [[ -n "$PC_FACTOR_MAT_SOLVER_TYPE" ]]; then
     APP_ARGS+=(
@@ -241,6 +358,11 @@ echo "  online_backend            = $ONLINE_BACKEND"
 echo
 echo "  geometry                  = ${LX} x ${LY} x ${LZ}"
 echo "  mesh                      = ${NELX} x ${NELY} x ${NELZ}"
+echo "  mesh_source               = $MESH_SOURCE"
+echo "  fem_file                  = ${FEM_FILE:-<not set>}"
+echo "  region_source             = $REGION_SOURCE"
+echo "  bc_source                 = $BC_SOURCE"
+echo "  spc/load hmset            = $SPC_HMSET / $LOAD_HMSET"
 echo "  fem_uniform               = $FEM_UNIFORM"
 echo "  tmax                      = $TMAX"
 echo "  nstep                     = $NSTEP"

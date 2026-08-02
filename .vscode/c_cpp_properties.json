@@ -12,11 +12,11 @@
       // GCC11 option:
       // "compileCommands": "${workspaceFolder}/build-mpich-release-gcc11/compile_commands.json",
       "includePath": [
-        "${workspaceFolder}/cpp/include",
-        "${workspaceFolder}/cpp/third_party/eigen",
-        "${workspaceFolder}/cpp/third_party/mma",
-        "${workspaceFolder}/cpp/third_party/mma_matlab_port",
-        "${workspaceFolder}/cpp/third_party/mma_jdumas",
+        "${workspaceFolder}/src",
+        "${workspaceFolder}/src/third_party/eigen",
+        "${workspaceFolder}/src/third_party/mma",
+        "${workspaceFolder}/src/third_party/mma_matlab_port",
+        "${workspaceFolder}/src/third_party/mma_jdumas",
         "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13/include",
         // GCC11 option:
         // "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11/include",

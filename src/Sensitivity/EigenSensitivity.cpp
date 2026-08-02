@@ -1,0 +1,348 @@
+#include "Analysis/Analysis.hpp"
+#include "MatlabLikeData.hpp"
+
+#include "Optimization/Filtering.hpp"
+#include "ROM/ROM_method/ROM_Base.hpp"
+#include "Sensitivity/Sensitivity.hpp"
+#include "MatlabMMA.hpp"
+
+#include <petscsys.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cctype>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <limits>
+#include <stdexcept>
+#include <vector>
+
+#include <omp.h>
+
+namespace {
+
+int nvar_of(const Eigen::MatrixXd& x) {
+    return static_cast<int>(x.cols());
+}
+
+void add_scaled(Eigen::MatrixXd& a, const Eigen::MatrixXd& b, double scale) {
+    if (b.size() == 0) return;
+    if (a.size() == 0) {
+        a = scale * b;
+        return;
+    }
+    a.noalias() += scale * b;
+}
+
+double ramp_derivative(const std::vector<double>& para, double x, double p) {
+    const double denom = 1.0 + p * (1.0 - x);
+    const double dg = (1.0 + p) / (denom * denom);
+    return (para[1] - para[0]) * dg;
+}
+
+void set_from_column(Eigen::VectorXd& v, const Eigen::MatrixXd& values, int k, double scale = 1.0) {
+    v.setZero();
+    if (values.size() == 0) return;
+    if (k < 0 || k >= values.cols() || values.rows() != v.size()) {
+        throw std::runtime_error("eigen_backend set_from_column: size mismatch");
+    }
+    v.noalias() = scale * values.col(k);
+}
+
+void set_fixed_from_column(Eigen::VectorXd& v,
+                           const std::vector<int>& fixed,
+                           const Eigen::MatrixXd& values,
+                           int k,
+                           double scale = 1.0) {
+    if (values.size() == 0) return;
+    if (k < 0 || k >= values.cols() || values.rows() != v.size()) {
+        throw std::runtime_error("eigen_backend set_fixed_from_column: size mismatch");
+    }
+    for (int id : fixed) v(id) = scale * values(id, k);
+}
+
+void zero_fixed(Eigen::VectorXd& v, const std::vector<int>& fixed) {
+    for (int id : fixed) v(id) = 0.0;
+}
+
+ROMContext make_adjoint_context(const Analysis& analysis, int Iter, int time_step) {
+    ROMContext ctx;
+    ctx.analysis_id = analysis.id;
+    ctx.opt_iter = Iter;
+    ctx.solve_step = time_step + 1;
+    ctx.time_step = time_step;
+    ctx.time = time_step * analysis.dt;
+    ctx.role = "adjoint";
+    ctx.system_type = "newmark_adjoint_effective";
+    ctx.is_end_of_analysis = time_step == 0;
+    return ctx;
+}
+
+Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
+                                          const Analysis& analysis,
+                                          const Eigen::MatrixXd& xPhys,
+                                          const ObjectiveGroup& object,
+                                          const Eigen::MatrixXd& lambda_all) {
+    using Clock = std::chrono::steady_clock;
+    const auto timer_begin = Clock::now();
+    auto elapsed = [](Clock::time_point a, Clock::time_point b) {
+        return std::chrono::duration<double>(b - a).count();
+    };
+
+    PetscMPIInt rank = 0;
+    PetscMPIInt size = 1;
+    MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+    MPI_Comm_size(PETSC_COMM_WORLD, &size);
+
+    const int nstep = analysis.Nstep;
+    const int nvar = nvar_of(xPhys);
+    const Region& region = analysis.regions.front();
+    const double nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
+
+    int sens_element_threads = 1;
+    if (const char* env = std::getenv("SENS_ELEMENT_THREADS")) sens_element_threads = std::max(1, std::atoi(env));
+    if (size != 1) sens_element_threads = 1;
+
+    auto t0 = Clock::now();
+    std::vector<double> dE(static_cast<std::size_t>(fem.NElem * nvar), 0.0);
+    std::vector<double> drho(static_cast<std::size_t>(fem.NElem * nvar), 0.0);
+    for (int e = 0; e < fem.NElem; ++e) {
+        for (int v = 0; v < nvar; ++v) {
+            const double x = xPhys(e, v);
+            const std::size_t id = static_cast<std::size_t>(e * nvar + v);
+            dE[id] = ramp_derivative(region.mat_paras.E_inf, x, region.interp.p_E_elastic);
+            drho[id] = ramp_derivative(region.mat_paras.rho, x, region.interp.p_rho);
+        }
+    }
+    auto t1 = Clock::now();
+    const double timing_interp_derivative = elapsed(t0, t1);
+
+    t0 = Clock::now();
+    ElementMatrix uniform_em;
+    if (fem.uniform_element_matrices) {
+        uniform_em = fem.compute_element_matrices(analysis.regions.front().elem_ids.front(), nu, fem.Thickness);
+    }
+    t1 = Clock::now();
+    const double timing_element_matrix = elapsed(t0, t1);
+
+    t0 = Clock::now();
+    Eigen::MatrixXd df_dx = Eigen::MatrixXd::Zero(fem.NElem, nvar);
+    t1 = Clock::now();
+    const double timing_alloc_gradient = elapsed(t0, t1);
+
+    t0 = Clock::now();
+
+    if (rank == 0) {
+        int actual_threads = 1;
+        #pragma omp parallel num_threads(sens_element_threads) if(sens_element_threads > 1)
+        {
+            #pragma omp single
+            actual_threads = omp_get_num_threads();
+        }
+        
+        std::cout << "  thread_debug explicit_gradient_dynamic: requested_threads="
+                  << sens_element_threads
+                  << " actual_threads=" << actual_threads
+                  << " omp_get_max_threads=" << omp_get_max_threads()
+                  << "\n";
+        
+    }
+
+    #pragma omp parallel for schedule(static) num_threads(sens_element_threads) if(sens_element_threads > 1)
+    for (int e = 0; e < fem.NElem; ++e) {
+        ElementMatrix local_em;
+        const ElementMatrix* em_ptr = &uniform_em;
+        if (!fem.uniform_element_matrices) {
+            local_em = fem.compute_element_matrices(e, nu, fem.Thickness);
+            em_ptr = &local_em;
+        }
+        const ElementMatrix& em = *em_ptr;
+        if (em.ndof > 24) throw std::runtime_error("explicit_gradient_dynamic: element ndof > 24 is not supported by stack buffer");
+        const auto& dofs = fem.ElementDofs.at(static_cast<std::size_t>(e));
+        Eigen::Matrix<double, 24, 1> u_elem_buffer;
+        Eigen::Matrix<double, 24, 1> acc_elem_buffer;
+        Eigen::Matrix<double, 24, 1> lambda_elem_buffer;
+        Eigen::Matrix<double, 24, 1> Ku_elem_buffer;
+        Eigen::Matrix<double, 24, 1> Ma_elem_buffer;
+
+        for (int k = 0; k <= nstep; ++k) {
+            const auto u = analysis.results.U.col(k);
+            const auto acc = analysis.results.A.col(k);
+            const auto lambda = lambda_all.col(k);
+            for (int i = 0; i < em.ndof; ++i) {
+                const int dof_i = static_cast<int>(dofs[static_cast<std::size_t>(i)]);
+                u_elem_buffer(i) = u(dof_i);
+                acc_elem_buffer(i) = acc(dof_i);
+                lambda_elem_buffer(i) = lambda(dof_i);
+            }
+            auto u_elem = u_elem_buffer.head(em.ndof);
+            auto acc_elem = acc_elem_buffer.head(em.ndof);
+            auto lambda_elem = lambda_elem_buffer.head(em.ndof);
+            auto Ku_elem = Ku_elem_buffer.head(em.ndof);
+            auto Ma_elem = Ma_elem_buffer.head(em.ndof);
+            Ku_elem.noalias() = em.ke * u_elem;
+            if (k != 0) Ma_elem.noalias() = em.me * acc_elem;
+            else Ma_elem.setZero();
+            const double lambda_dot_Ku = lambda_elem.dot(Ku_elem);
+            const double lambda_dot_Ma = lambda_elem.dot(Ma_elem);
+            for (int v = 0; v < nvar; ++v) {
+                const std::size_t ev = static_cast<std::size_t>(e * nvar + v);
+                df_dx(e, v) += dE[ev] * lambda_dot_Ku + drho[ev] * lambda_dot_Ma;
+            }
+        }
+    }
+    t1 = Clock::now();
+    const double timing_element_loop = elapsed(t0, t1);
+
+    t0 = Clock::now();
+    const double timing_flatten = 0.0;
+    t1 = Clock::now();
+
+    t0 = Clock::now();
+    const double timing_allreduce = 0.0;
+    t1 = Clock::now();
+
+    t0 = Clock::now();
+    add_scaled(df_dx, object.d_explicit_df_dx, 1.0);
+    t1 = Clock::now();
+    const double timing_unflatten_add = elapsed(t0, t1);
+
+    if (rank == 0) {
+        const double timing_total = elapsed(timer_begin, Clock::now());
+        
+        std::cout << "  explicit_gradient_dynamic[s]:"
+                  << " threads=" << sens_element_threads
+                  << " interp_derivative=" << timing_interp_derivative
+                  << " element_matrix=" << timing_element_matrix
+                  << " alloc_gradient=" << timing_alloc_gradient
+                  << " element_loop=" << timing_element_loop
+                  << " flatten=" << timing_flatten
+                  << " allreduce=" << timing_allreduce
+                  << " unflatten_add=" << timing_unflatten_add
+                  << " total=" << timing_total
+                  << "\n";
+        
+    }
+
+    return df_dx;
+}
+
+Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
+                                               Analysis& analysis,
+                                               ObjectiveGroup& object,
+                                               const Filtering& filtering,
+                                               const FilteringState& filtering_state,
+                                               int Iter) {
+    const int nstep = analysis.Nstep;
+    const double beta = 0.25;
+    const double gamma = 0.5;
+    const double dt = analysis.dt;
+    const double a0c = 1.0 / (beta * dt * dt);
+    const double dHdu = a0c;
+    const double dLdu = gamma / (beta * dt);
+    const double dHda_new = -(0.5 / beta - 1.0);
+    const double dHdv_new = -1.0 / (beta * dt);
+    const double dHdu_new = -a0c;
+    const double dLda_new = (1.0 - 0.5 * gamma / beta) * dt;
+    const double dLdv_new = 1.0 - gamma / beta;
+    const double dLdu_new = -gamma / (beta * dt);
+
+    const auto& K0 = analysis.results.K_inf_eigen;
+    const auto& Keff = analysis.results.K_eff_eigen;
+    const auto& M = analysis.results.M_eigen;
+    if (K0.rows() == 0 || Keff.rows() == 0 || M.rows() == 0) {
+        throw std::runtime_error("eigen_backend sensitivity requires Eigen forward matrices");
+    }
+
+    if (!object.ROM) throw std::runtime_error("EigenSensitivity requires ObjectiveGroup::ROM initialized");
+    std::shared_ptr<ROMBase>& rom = object.ROM;
+
+    const int ndof = fem.ndof;
+    Eigen::VectorXd lambda = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd lambda_new = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd mu = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd mu_new = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd eta = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd eta_new = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd rhs = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd Mlambda = Eigen::VectorXd::Zero(ndof);
+    Eigen::MatrixXd lambda_all(ndof, nstep + 1);
+
+    int k = nstep;
+    set_from_column(mu, object.d_explicit_dfda_all, k);
+    set_from_column(eta, object.d_explicit_dfdv_all, k);
+    set_from_column(rhs, object.d_explicit_dfdu_all, k, -1.0);
+    rhs.noalias() += -dHdu * mu - dLdu * eta;
+    set_fixed_from_column(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
+    if (analysis.results.factorized_K_eff_eigen) {
+        rom->set_factorized_solver(Keff, analysis.results.factorized_K_eff_eigen);
+    }
+    rom->main(Keff, rhs, lambda, make_adjoint_context(analysis, Iter, k));
+    lambda_all.col(k) = lambda;
+
+    for (k = nstep - 1; k >= 0; --k) {
+        lambda_new = lambda;
+        mu_new = mu;
+        eta_new = eta;
+        Mlambda.noalias() = M * lambda_new;
+
+        set_from_column(mu, object.d_explicit_dfda_all, k);
+        mu.noalias() += -(0.5 / beta - 1.0) * Mlambda + dHda_new * mu_new + dLda_new * eta_new;
+        set_from_column(eta, object.d_explicit_dfdv_all, k);
+        eta.noalias() += -(1.0 / (beta * dt)) * Mlambda + dHdv_new * mu_new + dLdv_new * eta_new;
+        zero_fixed(mu, analysis.results.SPCdofs);
+        zero_fixed(eta, analysis.results.SPCdofs);
+
+        set_from_column(rhs, object.d_explicit_dfdu_all, k, -1.0);
+        rhs.noalias() += a0c * Mlambda - dHdu_new * mu_new - dLdu_new * eta_new;
+        if (k != 0) rhs.noalias() += -dHdu * mu - dLdu * eta;
+        set_fixed_from_column(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
+        if (k == 0) {
+            if (analysis.results.factorized_K_initial_eigen) {
+                rom->set_factorized_solver(K0, analysis.results.factorized_K_initial_eigen);
+            }
+            rom->main(K0, rhs, lambda, make_adjoint_context(analysis, Iter, k));
+        } else {
+            if (analysis.results.factorized_K_eff_eigen) {
+                rom->set_factorized_solver(Keff, analysis.results.factorized_K_eff_eigen);
+            }
+            rom->main(Keff, rhs, lambda, make_adjoint_context(analysis, Iter, k));
+        }
+        lambda_all.col(k) = lambda;
+    }
+
+    Eigen::MatrixXd dfdx_phys = explicit_gradient_dynamic(fem, analysis, filtering_state.xPhys, object, lambda_all);
+    return filtering_sensitivity(dfdx_phys, filtering, filtering_state);
+}
+
+Eigen::MatrixXd AVM(const FEM& fem,
+                    Analysis& analysis,
+                    const Eigen::MatrixXd&,
+                    const std::vector<int>& x_label,
+                    ObjectiveGroup& object,
+                    const Filtering& filtering,
+                    const FilteringState& filtering_state,
+                    int Iter) {
+    Eigen::MatrixXd out = dynamic_elastic_base_full_impl(fem, analysis, object, filtering, filtering_state, Iter);
+    for (Eigen::Index e = 0; e < out.rows(); ++e) {
+        if (x_label[static_cast<std::size_t>(e)] != 0) out.row(e).setZero();
+    }
+    return out;
+}
+
+} // namespace
+
+Eigen::MatrixXd EigenSensitivity::objective_sensitivity(const FEM& fem,
+                                                        Analysis& analysis,
+                                                        const Eigen::MatrixXd& x,
+                                                        const std::vector<int>& x_label,
+                                                        ObjectiveGroup& object,
+                                                        const Filtering& filtering,
+                                                        const FilteringState& filtering_state,
+                                                        int Iter) {
+    return AVM(fem, analysis, x, x_label, object, filtering, filtering_state, Iter);
+}

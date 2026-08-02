@@ -32,11 +32,11 @@
   "C_Cpp.default.cppStandard": "c++17",
   "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
   "C_Cpp.default.includePath": [
-    "${workspaceFolder}/cpp/include",
-    "${workspaceFolder}/cpp/third_party/eigen",
-    "${workspaceFolder}/cpp/third_party/mma",
-    "${workspaceFolder}/cpp/third_party/mma_matlab_port",
-    "${workspaceFolder}/cpp/third_party/mma_jdumas",
+    "${workspaceFolder}/src",
+    "${workspaceFolder}/src/third_party/eigen",
+    "${workspaceFolder}/src/third_party/mma",
+    "${workspaceFolder}/src/third_party/mma_matlab_port",
+    "${workspaceFolder}/src/third_party/mma_jdumas",
     "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13/include",
     // GCC11 option:
     // "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11/include",

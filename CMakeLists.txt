@@ -12,59 +12,60 @@ set(PETSC_PKG "PETSc" CACHE STRING "PETSc pkg-config package, e.g. petsc-dmo on 
 pkg_check_modules(PETSC REQUIRED IMPORTED_TARGET ${PETSC_PKG})
 
 add_executable(stage2_dynamic_forward
-  cpp/src/main_stage2.cpp
-  cpp/src/MatlabLikeData.cpp
-  cpp/src/OptimizationCommon.cpp
-  cpp/src/FEMAssembly.cpp
-  cpp/src/helper/MyAlgebra.cpp
-  cpp/src/helper/PetscEigenBridge.cpp
-  cpp/src/helper/PetscEigenHelper.cpp
-  cpp/src/Petsc_backend/DynamicElasticLinear.cpp
-  cpp/src/Petsc_backend/Optimization.cpp
-  cpp/src/Eigen_backend/ROM/ROM_method/ROM_Base.cpp
-  cpp/src/Eigen_backend/ROM/ROM_method/FOM_direct.cpp
-  cpp/src/Eigen_backend/ROM/ROM_method/FOM_iterative.cpp
-  cpp/src/Eigen_backend/ROM/ROM_method/MyStrategy.cpp
-  cpp/src/Eigen_backend/ROM/ROM_method/ROM_factory.cpp
-  cpp/src/Eigen_backend/ROM/Utils/rom_eigen_utils.cpp
-  cpp/src/Eigen_backend/ROM/Error_Estimator/RelativeResidualEstimator.cpp
-  cpp/src/Eigen_backend/DynamicElasticLinear.cpp
-  cpp/src/Eigen_backend/Optimization.cpp
-  cpp/src/Petsc_backend/ROM/Utils/rom_petsc_utils.cpp
-  cpp/src/Petsc_backend/ROM/Error_Estimator/RelativeResidualEstimator.cpp
-  cpp/src/ROM/Common/Reduced_Basis_Agorithm/UpdateBase.cpp
-  cpp/src/ROM/Common/Reduced_Basis_Agorithm/MyPOD_SVD1.cpp
-  cpp/src/ROM/Common/Reduced_Basis_Agorithm/IncrementalSVD.cpp
-  cpp/src/ROM/Common/Reduced_Basis_Agorithm/MyIncrementalQR1.cpp
-  cpp/src/Petsc_backend/ROM/ROM_method/ROM_Base.cpp
-  cpp/src/Petsc_backend/ROM/ROM_method/FOM_direct.cpp
-  cpp/src/Petsc_backend/ROM/ROM_method/FOM_iterative.cpp
-  cpp/src/Petsc_backend/ROM/ROM_method/MyStrategy.cpp
-  cpp/src/Petsc_backend/ROM/ROM_method/ROM_factory.cpp
-  cpp/third_party/mma/MMASolver.cpp
-  cpp/third_party/mma_matlab_port/MatlabMMA.cpp
-  cpp/third_party/mma_jdumas/JdumasMMASolver.cpp
+  src/main_stage2.cpp
+  src/MatlabLikeData.cpp
+  src/Analysis/Analysis.cpp
+  src/FEM/FEM.cpp
+  src/FEM/Element/ElementBase.cpp
+  src/Input/Initialization.cpp
+  src/Optimization/Filtering.cpp
+  src/Optimization/Optimization.cpp
+  src/Output/OutputData.cpp
+  src/Sensitivity/Sensitivity.cpp
+  src/helper/MyAlgebra.cpp
+  src/helper/PetscEigenBridge.cpp
+  src/helper/PetscEigenHelper.cpp
+  src/Analysis/PetscDynamicLinearElastic.cpp
+  src/Analysis/EigenDynamicLinearElastic.cpp
+  src/Sensitivity/PetscSensitivity.cpp
+  src/Sensitivity/EigenSensitivity.cpp
+  src/ROM/ROM_method/ROM_Base.cpp
+  src/ROM/ROM_method/FOM_direct.cpp
+  src/ROM/ROM_method/FOM_iterative.cpp
+  src/ROM/ROM_method/PetscFOM_direct.cpp
+  src/ROM/ROM_method/PetscFOM_iterative.cpp
+  src/ROM/ROM_method/MyStrategy.cpp
+  src/ROM/ROM_method/ROM_factory.cpp
+  src/ROM/Utils/rom_eigen_utils.cpp
+  src/ROM/Error_Estimator/RelativeResidualEstimator.cpp
+  src/ROM/Reduced_Basis_Algorithm/UpdateBase.cpp
+  src/ROM/Reduced_Basis_Algorithm/MyPOD_SVD1.cpp
+  src/ROM/Reduced_Basis_Algorithm/IncrementalSVD.cpp
+  src/ROM/Reduced_Basis_Algorithm/MyIncrementalQR1.cpp
+  src/third_party/mma/MMASolver.cpp
+  src/third_party/mma_matlab_port/MatlabMMA.cpp
+  src/third_party/mma_jdumas/JdumasMMASolver.cpp
 )
 
 add_executable(basis_update_benchmark
-  cpp/src/tools/basis_update_benchmark.cpp
-  cpp/src/helper/MyAlgebra.cpp
-  cpp/src/ROM/Common/Reduced_Basis_Agorithm/UpdateBase.cpp
-  cpp/src/ROM/Common/Reduced_Basis_Agorithm/MyPOD_SVD1.cpp
-  cpp/src/ROM/Common/Reduced_Basis_Agorithm/IncrementalSVD.cpp
-  cpp/src/ROM/Common/Reduced_Basis_Agorithm/MyIncrementalQR1.cpp
+  src/tools/basis_update_benchmark.cpp
+  src/helper/MyAlgebra.cpp
+  src/ROM/Reduced_Basis_Algorithm/UpdateBase.cpp
+  src/ROM/Reduced_Basis_Algorithm/MyPOD_SVD1.cpp
+  src/ROM/Reduced_Basis_Algorithm/IncrementalSVD.cpp
+  src/ROM/Reduced_Basis_Algorithm/MyIncrementalQR1.cpp
 )
 
-target_include_directories(stage2_dynamic_forward PRIVATE cpp/include cpp/src)
-target_include_directories(basis_update_benchmark PRIVATE cpp/include cpp/src)
+target_include_directories(stage2_dynamic_forward PRIVATE src)
+target_include_directories(basis_update_benchmark PRIVATE src)
 target_include_directories(stage2_dynamic_forward SYSTEM PRIVATE
-  cpp/third_party/eigen
-  cpp/third_party/mma
-  cpp/third_party/mma_matlab_port
-  cpp/third_party/mma_jdumas
+  src/third_party/eigen
+  src/third_party/mma
+  src/third_party/mma_matlab_port
+  src/third_party/mma_jdumas
 )
 target_include_directories(basis_update_benchmark SYSTEM PRIVATE
-  cpp/third_party/eigen
+  src/third_party/eigen
 )
 target_link_libraries(stage2_dynamic_forward PRIVATE PkgConfig::PETSC MPI::MPI_CXX OpenMP::OpenMP_CXX)
 target_link_libraries(basis_update_benchmark PRIVATE PkgConfig::PETSC MPI::MPI_CXX OpenMP::OpenMP_CXX)
@@ -107,7 +108,7 @@ else()
   target_compile_options(stage2_dynamic_forward PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(basis_update_benchmark PRIVATE -Wall -Wextra -Wpedantic)
   set_source_files_properties(
-    cpp/src/ROM/Common/Reduced_Basis_Agorithm/MyPOD_SVD1.cpp
+    src/ROM/Reduced_Basis_Algorithm/MyPOD_SVD1.cpp
     PROPERTIES COMPILE_OPTIONS -Wno-deprecated-declarations
   )
 endif()

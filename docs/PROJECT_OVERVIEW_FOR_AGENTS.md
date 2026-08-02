@@ -1,6 +1,6 @@
 # Large_scale_TO - Project Overview For Agents
 
-File nay dung de handoff cho agent moi. Khi bat dau lam viec trong repo nay, doc file nay truoc, sau do doc them docs/PORTING_RULES.md va cac file lien quan trong scripts, .vscode, cpp/src, cpp/include neu nhiem vu yeu cau.
+File nay dung de handoff cho agent moi. Khi bat dau lam viec trong repo nay, doc file nay truoc, sau do doc them docs/PORTING_RULES.md va cac file lien quan trong scripts, .vscode, src neu nhiem vu yeu cau.
 
 ## 1. Muc tieu du an
 
@@ -38,13 +38,13 @@ Cac rule chinh cung nam trong docs/PORTING_RULES.md.
 
 ## 3. Cau truc thu muc chinh
 
-    cpp/include/stage2/        Struct/data/function flow giong MATLAB cho dynamic forward + optimization
-    cpp/src/stage2/            Source Stage 2, entry hien tai la main_stage2.cpp
-    cpp/include/ROM/           ROM classes theo cau truc gan MATLAB src/ROM
-    cpp/src/ROM/               ROM implementation
-    cpp/third_party/mma/       MMA C++ cu
-    cpp/third_party/mma_matlab_port/  MMA port gan MATLAB mmasub/subsolv
-    cpp/third_party/mma_jdumas/       MMA tu jdumas/mma wrapper/adaptation
+    src/stage2/        Struct/data/function flow giong MATLAB cho dynamic forward + optimization
+    src/stage2/            Source Stage 2, entry hien tai la main_stage2.cpp
+    src/ROM/           ROM classes theo cau truc gan MATLAB src/ROM
+    src/ROM/               ROM implementation
+    src/third_party/mma/       MMA C++ cu
+    src/third_party/mma_matlab_port/  MMA port gan MATLAB mmasub/subsolv
+    src/third_party/mma_jdumas/       MMA tu jdumas/mma wrapper/adaptation
     scripts/                   Build/run/sync/watch/plot scripts
     .vscode/                   Tasks/launch/settings cho VS Code WSL
     results/                   Output chay C++
@@ -204,14 +204,14 @@ ROM dang duoc chuan hoa lai de giong MATLAB src/ROM hon.
 
 Cau truc C++ hien co:
 
-    cpp/include/ROM/Error_Estimator/
-    cpp/include/ROM/Reduced_Basis_Agorithm/
-    cpp/include/ROM/ROM_method/
-    cpp/include/ROM/Utils/
-    cpp/src/ROM/Error_Estimator/
-    cpp/src/ROM/Reduced_Basis_Agorithm/
-    cpp/src/ROM/ROM_method/
-    cpp/src/ROM/Utils/
+    src/ROM/Error_Estimator/
+    src/ROM/Reduced_Basis_Agorithm/
+    src/ROM/ROM_method/
+    src/ROM/Utils/
+    src/ROM/Error_Estimator/
+    src/ROM/Reduced_Basis_Agorithm/
+    src/ROM/ROM_method/
+    src/ROM/Utils/
 
 Classes/methods quan trong hien co:
 
@@ -235,9 +235,9 @@ Yeu cau user da nhan manh:
 
 Hien co nhieu MMA variants:
 
-    cpp/third_party/mma/              MMA C++ cu
-    cpp/third_party/mma_matlab_port/  Port gan MATLAB mmasub/subsolv
-    cpp/third_party/mma_jdumas/       Solver dua tren jdumas/mma
+    src/third_party/mma/              MMA C++ cu
+    src/third_party/mma_matlab_port/  Port gan MATLAB mmasub/subsolv
+    src/third_party/mma_jdumas/       Solver dua tren jdumas/mma
 
 Khi debug sai khac MATLAB, uu tien dung ban mma_matlab_port de giam sai khac voi MATLAB.
 
@@ -289,7 +289,7 @@ Khong tu y xoa build/results lon neu user chua yeu cau. Neu can cleanup, hoi ro.
 4. Kiem tra git status --short.
 5. Neu lien quan VS Code/task, doc .vscode/tasks.json, .vscode/task_111.json, .vscode/launch.json.
 6. Neu lien quan run, doc scripts/run_stage2_case.sh, scripts/run_stage2_multinode.sh, scripts/mpiexec_mpich_ch3_cxx.sh.
-7. Neu lien quan FOM/optimization, doc cpp/src/stage2/main_stage2.cpp, Optimization.cpp, DynamicElasticLinear.cpp, MatlabLikeData.cpp.
-8. Neu lien quan ROM, doc cpp/include/ROM/ va cpp/src/ROM/, sau do doi chieu MATLAB src/ROM.
+7. Neu lien quan FOM/optimization, doc src/stage2/main_stage2.cpp, Optimization.cpp, DynamicElasticLinear.cpp, MatlabLikeData.cpp.
+8. Neu lien quan ROM, doc src/ROM/ va src/ROM/, sau do doi chieu MATLAB src/ROM.
 9. Chay test nho truoc khi ket luan.
 10. Khi bao ket qua cho user, noi ro path/file/task/output label da dung.

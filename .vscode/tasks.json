@@ -445,7 +445,7 @@
         "--port",
         "8765",
         // Browser port, open http://localhost:8765.
-        //"--once",
+        "--once",
         // Run one time, save/update figures and HTML, then exit.
         // "--no-server",
         // Do not start the browser server.
@@ -497,14 +497,14 @@
 
           //"CASE_CONFIGS": "case_study/main_Eigen_all/1thread/FOM/conf.conf  case_study/main_Eigen_all/1thread/strategy_10_20/conf.conf    case_study/main_Eigen_all/1thread/strategy2_10_20/conf.conf   case_study/main_Eigen_all/1thread/strategy_15_25/conf.conf    case_study/main_Eigen_all/1thread/strategy2_15_25/conf.conf   case_study/main_Eigen_all/1thread/strategy_10_25/conf.conf   case_study/main_Eigen_all/1thread/strategy2_10_25/conf.conf",
 
-          "CASE_CONFIGS": "case_study/try_pod_bench/conf.conf",
+          "CASE_CONFIGS": "case_study/2D_new/conf.conf",
 
           "NP": "1",
           "HOSTS": "localhost",
           "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
           "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
           "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso", // single-node direct solver; alternatives: mumps // mkl_pardiso
-          "LINEAR_BACKEND": "Eigen", // petsc: PETSc FOM/fallback; eigen: Eigen FOM/fallback. EIGEN_USE_LAPACKE affects only eigen.
+          "LINEAR_BACKEND": "petsc", // petsc: PETSc FOM/fallback; eigen: Eigen FOM/fallback. EIGEN_USE_LAPACKE affects only eigen.
           "STAGE2_EIGEN_CHECK_FOM_RESIDUAL": "0", // Eigen backend FOM direct only: 0 skip extra A*u-rhs check like PETSc; 1 print residual-check timing
           "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
           "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: IncrementalSVD only; ignored by MyStrategy2
