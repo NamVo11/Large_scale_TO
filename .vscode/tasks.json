@@ -434,7 +434,7 @@
       "command": "python3",
       "args": [
         "scripts/watch_optimization_live.py",
-        "case_study/try_pod_bench",
+        "case_study/2D_new/ROM",
         // Case folder to watch. Change this to case_study/test1, case_study/Debug, etc.
         "--scale",
         "8",
@@ -445,7 +445,7 @@
         "--port",
         "8765",
         // Browser port, open http://localhost:8765.
-        "--once",
+        //"--once",
         // Run one time, save/update figures and HTML, then exit.
         // "--no-server",
         // Do not start the browser server.
