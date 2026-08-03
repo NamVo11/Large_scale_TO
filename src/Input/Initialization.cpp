@@ -9,83 +9,71 @@
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <stdexcept>
 
 namespace {
 
-template <typename T>
-void get_int_option(const char* name, T& value) {
-    PetscInt v = static_cast<PetscInt>(value);
-    PetscBool set = PETSC_FALSE;
-    PetscOptionsGetInt(nullptr, nullptr, name, &v, &set);
-    if (set) value = static_cast<T>(v);
+std::string json_string(const json& j, const char* key, const std::string& fallback = "") {
+    return j.contains(key) && !j.at(key).is_null() ? j.at(key).get<std::string>() : fallback;
 }
 
-void get_real_option(const char* name, double& value) {
-    PetscReal v = value;
-    PetscBool set = PETSC_FALSE;
-    PetscOptionsGetReal(nullptr, nullptr, name, &v, &set);
-    if (set) value = static_cast<double>(v);
+double json_double(const json& j, const char* key, double fallback = 0.0) {
+    return j.contains(key) && !j.at(key).is_null() ? j.at(key).get<double>() : fallback;
 }
 
-void get_string_option(const char* name, std::string& value) {
-    char buf[PETSC_MAX_PATH_LEN] = {0};
-    PetscBool set = PETSC_FALSE;
-    PetscOptionsGetString(nullptr, nullptr, name, buf, sizeof(buf), &set);
-    if (set) value = buf;
+int json_int(const json& j, const char* key, int fallback = 0) {
+    return j.contains(key) && !j.at(key).is_null() ? j.at(key).get<int>() : fallback;
 }
 
-bool option_is_set(const char* name) {
-    PetscBool set = PETSC_FALSE;
-    PetscOptionsHasName(nullptr, nullptr, name, &set);
-    return set == PETSC_TRUE;
+bool json_bool(const json& j, const char* key, bool fallback = false) {
+    return j.contains(key) && !j.at(key).is_null() ? j.at(key).get<bool>() : fallback;
 }
 
-void set_default_option_if_missing(const char* name, const char* value) {
-    if (!option_is_set(name)) PetscOptionsSetValue(nullptr, name, value);
+json analysis_by_id(const json& analysis_all_json, int analysis_id) {
+    for (const auto& analysis_json : analysis_all_json) {
+        if (json_int(analysis_json, "id", 0) == analysis_id) return analysis_json;
+    }
+    throw std::runtime_error("Analysis id not found in JSON: " + std::to_string(analysis_id));
 }
 
-bool is_rom_mode(const InputConfig& input) {
-    const std::string mode = lower_ascii(input.solve_mode);
-    return mode == "rom";
+std::shared_ptr<ROMBase> InitializeROM(const json& rom_json, const json& run_json) {
+    const std::string linear_backend = json_string(run_json, "linear_backend", "petsc");
+    const std::string solve_mode = lower_ascii(json_string(rom_json, "solve_mode", "FOM"));
+    const std::string fom_solver_type = json_string(rom_json, "fom_solver_type", "direct");
+    const std::string pod_backend = json_string(rom_json, "pod_backend", "snapshot_mkl");
+    const std::string online_backend = json_string(rom_json, "online_backend", "incremental_mkl");
+    if (!pod_backend.empty()) setenv("STAGE2_POD_BACKEND", pod_backend.c_str(), 1);
+    if (!online_backend.empty()) setenv("STAGE2_ONLINE_BACKEND", online_backend.c_str(), 1);
+
+    if (solve_mode != "rom") return make_fom_solver(fom_solver_type, linear_backend);
+    return make_dynamic_ROM(json_string(rom_json, "method_name", "MyStrategy"),
+                            fom_solver_type,
+                            json_double(rom_json, "rom_tol", 0.02),
+                            json_int(rom_json, "rank1", 10),
+                            json_int(rom_json, "max_rank", 20),
+                            json_bool(rom_json, "online", true),
+                            linear_backend);
 }
 
-std::shared_ptr<ROMBase> InitializeROM(const InputConfig& input) {
-    if (!is_rom_mode(input)) return make_fom_solver(input.fom_solver_type, input.linear_backend);
-    return make_dynamic_ROM(input.method_name,
-                            input.fom_solver_type,
-                            input.rom_tol,
-                            input.rom_rank1,
-                            input.rom_max_rank,
-                            input.rom_online != 0,
-                            input.linear_backend);
+std::filesystem::path run_dir_from_json(const json& output_json,
+                                        const json& run_json,
+                                        const std::string& input_json_path) {
+    if (output_json.contains("run_dir")) return output_json.at("run_dir").get<std::string>();
+    const std::filesystem::path cfg_path = std::filesystem::path(input_json_path);
+    const std::filesystem::path case_dir = cfg_path.has_parent_path() ? cfg_path.parent_path() : std::filesystem::path(".");
+    return case_dir / json_string(run_json, "run_name", "FOM");
 }
 
-BoundaryCondition make_base_dirichlet(const InputConfig& input) {
-    BoundaryCondition bc;
-    bc.id = 1;
-    bc.kind = "fixed_disp";
-    bc.flag = input.dirich_flag;
-    bc.x_range = {{{input.dirich_x_min, input.dirich_x_max}}};
-    bc.y_range = {{{input.dirich_y_min, input.dirich_y_max}}};
-    bc.z_range = {{{input.dirich_z_min, input.dirich_z_max}}};
-    bc.amp = input.dirich_amp;
-    bc.time_type = input.dirich_time_type;
-    return bc;
-}
-
-BoundaryCondition make_base_neumann(const InputConfig& input) {
-    BoundaryCondition bc;
-    bc.id = 1;
-    bc.kind = "nodal_force";
-    bc.flag = input.neum_flag;
-    bc.x_range = {{{input.load_x_min, input.load_x_max}}};
-    bc.y_range = {{{input.load_y_min, input.load_y_max}}};
-    bc.z_range = {{{input.load_z_min, input.load_z_max}}};
-    bc.amp = input.force_amp;
-    bc.time_type = input.load_time_type;
-    bc.nCycle = input.load_nCycle;
-    return bc;
+Interp make_interp(const json& interp_json) {
+    Interp interp = interp_json.is_null() ? Interp{} : interp_json.get<Interp>();
+    interp.elastic_interp = [p = interp.p_E_elastic](const std::vector<double>& para, double x) {
+        return RAMP(para, x, p);
+    };
+    interp.mass_density_interp = [p = interp.p_rho](const std::vector<double>& para, double x) {
+        return RAMP(para, x, p);
+    };
+    return interp;
 }
 
 } // namespace
@@ -97,222 +85,241 @@ std::string lower_ascii(std::string s) {
     return s;
 }
 
-InputConfig InitializeInputConfig() {
-    InputConfig input;
-    input.geom.Lx = 1200.0;
-    input.geom.Ly = 400.0;
-    input.geom.Lz = 400.0;
-    input.geom.nelx = 600;
-    input.geom.nely = 200;
-    input.geom.nelz = 1;
-
-    set_default_option_if_missing("-ksp_type", "preonly");
-    set_default_option_if_missing("-pc_type", "cholesky");
-    set_default_option_if_missing("-pc_factor_mat_solver_type", "mkl_pardiso");
-
-    get_int_option("-nelx", input.geom.nelx);
-    get_int_option("-nely", input.geom.nely);
-    get_int_option("-nelz", input.geom.nelz);
-    get_real_option("-Lx", input.geom.Lx);
-    get_real_option("-Ly", input.geom.Ly);
-    get_real_option("-Lz", input.geom.Lz);
-    get_int_option("-nstep", input.nstep);
-    get_real_option("-tmax", input.tmax);
-    get_real_option("-x0", input.x_initial);
-    get_real_option("-force_amp", input.force_amp);
-    get_real_option("-p_rho", input.p_rho);
-    get_int_option("-run_optimization", input.run_optimization);
-    get_int_option("-max_iter", input.max_iter);
-    get_real_option("-volume_limit", input.volume_limit);
-    get_real_option("-move", input.move);
-    get_real_option("-debug_fd_epsilon", input.debug_fd_epsilon);
-    get_int_option("-debug_fd_max_checks", input.debug_fd_max_checks);
-    get_int_option("-save_density_each_iter", input.save_density_each_iter);
-    get_int_option("-save_density_interval", input.save_density_interval);
-    get_int_option("-density_plot_interval", input.save_density_interval);
-    get_int_option("-save_vtk_response_interval", input.save_vtk_response_interval);
-    get_int_option("-save_vtk_opt_interval", input.save_vtk_opt_interval);
-    get_int_option("-fem_uniform", input.fem_uniform);
-    get_int_option("-factor_num_threads", input.factor_num_threads);
-    get_int_option("-sens_element_threads", input.sens_element_threads);
-    get_real_option("-rom_tol", input.rom_tol);
-    get_int_option("-rank1", input.rom_rank1);
-    get_int_option("-max_rank", input.rom_max_rank);
-    get_int_option("-online", input.rom_online);
-    get_real_option("-filter_rmin", input.filter_rmin);
-    get_real_option("-filter_beta", input.filter_beta);
-    get_int_option("-filter_beta_loop", input.filter_beta_loop);
-    get_real_option("-filter_beta_max", input.filter_beta_max);
-    get_real_option("-filter_T", input.filter_T);
-    get_real_option("-void_E", input.void_E);
-    get_real_option("-void_rho", input.void_rho);
-    get_real_option("-solid_E", input.solid_E);
-    get_real_option("-solid_rho", input.solid_rho);
-    get_real_option("-nu", input.nu);
-    get_real_option("-thickness", input.thickness);
-    get_real_option("-p_E_elastic", input.interp_p_E_elastic);
-    get_int_option("-dirich_flag_x", input.dirich_flag[0]);
-    get_int_option("-dirich_flag_y", input.dirich_flag[1]);
-    get_int_option("-dirich_flag_z", input.dirich_flag[2]);
-    get_int_option("-neum_flag_x", input.neum_flag[0]);
-    get_int_option("-neum_flag_y", input.neum_flag[1]);
-    get_int_option("-neum_flag_z", input.neum_flag[2]);
-    get_real_option("-dirich_x_min", input.dirich_x_min);
-    get_real_option("-dirich_x_max", input.dirich_x_max);
-    get_real_option("-dirich_y_min", input.dirich_y_min);
-    get_real_option("-dirich_y_max", input.dirich_y_max);
-    get_real_option("-dirich_z_min", input.dirich_z_min);
-    get_real_option("-dirich_z_max", input.dirich_z_max);
-    get_real_option("-dirich_amp", input.dirich_amp);
-    get_real_option("-load_x_min_offset", input.load_x_min_offset);
-    input.load_x_min = input.geom.Lx - input.load_x_min_offset;
-    input.load_x_max = input.geom.Lx;
-    get_real_option("-load_x_min", input.load_x_min);
-    get_real_option("-load_x_max", input.load_x_max);
-    get_real_option("-load_y_min", input.load_y_min);
-    get_real_option("-load_y_max", input.load_y_max);
-    get_real_option("-load_z_min", input.load_z_min);
-    get_real_option("-load_z_max", input.load_z_max);
-    get_real_option("-load_nCycle", input.load_nCycle);
-
-    get_string_option("-fem_type", input.fem_type);
-    get_string_option("-linear_backend", input.linear_backend);
-    get_string_option("-solve_mode", input.solve_mode);
-    get_string_option("-method_name", input.method_name);
-    get_string_option("-fom_solver_type", input.fom_solver_type);
-    get_string_option("-pod_backend", input.pod_backend);
-    get_string_option("-online_backend", input.online_backend);
-    get_string_option("-sens_type", input.sens_type);
-    get_string_option("-stage2_out", input.out_dir);
-    get_string_option("-density_out", input.density_dir);
-    get_string_option("-mesh_source", input.mesh_source);
-    get_string_option("-fem_file", input.fem_file);
-    get_string_option("-region_source", input.region_source);
-    get_string_option("-bc_source", input.bc_source);
-    get_string_option("-design_hmset", input.design_hmset_name);
-    get_string_option("-nondesign_hmset", input.nondesign_hmset_name);
-    get_string_option("-spc_hmset", input.spc_hmset_name);
-    get_string_option("-load_hmset", input.load_hmset_name);
-    get_string_option("-dirich_time_type", input.dirich_time_type);
-    get_string_option("-load_time_type", input.load_time_type);
-
-    setenv("FACTOR_NUM_THREADS", std::to_string(std::max(1, input.factor_num_threads)).c_str(), 1);
-    setenv("SENS_ELEMENT_THREADS", std::to_string(std::max(1, input.sens_element_threads)).c_str(), 1);
-    if (!input.pod_backend.empty()) setenv("STAGE2_POD_BACKEND", input.pod_backend.c_str(), 1);
-    if (!input.online_backend.empty()) setenv("STAGE2_ONLINE_BACKEND", input.online_backend.c_str(), 1);
-
-    return input;
+json read_json_file(const std::string& path) {
+    std::ifstream in(path);
+    if (!in) throw std::runtime_error("Cannot open input JSON: " + path);
+    json cfg;
+    in >> cfg;
+    return cfg;
 }
 
-std::unique_ptr<FEM> InitializeFEM(const InputConfig& input) {
-    const std::string mesh_source_key = lower_ascii(input.mesh_source);
-    if (mesh_source_key == "hypermesh" || mesh_source_key == "unstructured" || !input.fem_file.empty()) {
-        if (input.fem_file.empty()) throw std::runtime_error("-fem_file is required for unstructured/hypermesh mesh_source");
-        return std::make_unique<UnstructuredMesh>(input.fem_file,
-                                                  input.fem_type,
-                                                  input.nu,
-                                                  input.thickness,
-                                                  input.fem_uniform != 0);
+void from_json(const json& j, Geometry& g) {
+    g.Lx = json_double(j, "Lx", g.Lx);
+    g.Ly = json_double(j, "Ly", g.Ly);
+    g.Lz = json_double(j, "Lz", g.Lz);
+    g.nelx = json_int(j, "nelx", g.nelx);
+    g.nely = json_int(j, "nely", g.nely);
+    g.nelz = json_int(j, "nelz", g.nelz);
+}
+
+void from_json(const json& j, Material& m) {
+    m.id = json_int(j, "id", m.id);
+    m.type = json_string(j, "type", m.type);
+    m.E_inf = json_double(j, "E_inf", m.E_inf);
+    m.E = json_double(j, "E", m.E);
+    m.nu = json_double(j, "nu", m.nu);
+    m.rho = json_double(j, "rho", m.rho);
+}
+
+void from_json(const json& j, Interp& interp) {
+    interp.p_E_elastic = json_double(j, "p_E_elastic", interp.p_E_elastic);
+    interp.p_rho = json_double(j, "p_rho", interp.p_rho);
+}
+
+void from_json(const json& j, Region& r) {
+    r.id = json_int(j, "id", r.id);
+    r.name = json_string(j, "name", r.name);
+    r.source = json_string(j, "source", r.source);
+    r.status = json_string(j, "status", r.status);
+    r.range_type = json_string(j, "range_type", r.range_type);
+    r.hmset_name = json_string(j, "hmset_name", r.hmset_name);
+    if (j.contains("mat_ids")) j.at("mat_ids").get_to(r.mat_ids);
+    if (j.contains("x_range")) j.at("x_range").get_to(r.x_range);
+    if (j.contains("y_range")) j.at("y_range").get_to(r.y_range);
+    if (j.contains("z_range")) j.at("z_range").get_to(r.z_range);
+}
+
+void from_json(const json& j, BoundaryCondition& bc) {
+    bc.id = json_int(j, "id", bc.id);
+    bc.name = json_string(j, "name", bc.name);
+    bc.source = json_string(j, "source", bc.source);
+    bc.kind = json_string(j, "kind", bc.kind);
+    bc.hmset_name = json_string(j, "hmset_name", bc.hmset_name);
+    if (j.contains("flag")) j.at("flag").get_to(bc.flag);
+    if (j.contains("x_range")) j.at("x_range").get_to(bc.x_range);
+    if (j.contains("y_range")) j.at("y_range").get_to(bc.y_range);
+    if (j.contains("z_range")) j.at("z_range").get_to(bc.z_range);
+    bc.amp = json_double(j, "amp", bc.amp);
+    bc.time_type = json_string(j, "time_type", bc.time_type);
+    bc.nCycle = json_double(j, "nCycle", bc.nCycle);
+    bc.power = json_double(j, "power", bc.power);
+    bc.phase = json_double(j, "phase", bc.phase);
+}
+
+void from_json(const json& j, Filtering& f) {
+    f.rmin = json_double(j, "rmin", f.rmin);
+    f.beta = json_double(j, "beta", f.beta);
+    f.beta_loop = json_int(j, "beta_loop", f.beta_loop);
+    f.beta_max = json_double(j, "beta_max", f.beta_max);
+    f.T = json_double(j, "T", f.T);
+}
+
+void from_json(const json& j, Algorithm& a) {
+    a.type = json_string(j, "type", a.type);
+    a.move = json_double(j, "move", a.move);
+}
+
+void from_json(const json& j, ObjectiveTerm& t) {
+    t.function_name = json_string(j, "function_name", t.function_name);
+    t.weight = json_double(j, "weight", t.weight);
+    t.value_initial = json_double(j, "value_initial", t.value_initial);
+}
+
+void from_json(const json& j, ObjectiveGroup& g) {
+    g.analysis_id = json_int(j, "analysis_id", g.analysis_id);
+    g.sens_type = json_string(j, "sens_type", g.sens_type);
+    g.sens_function = json_string(j, "sens_function", g.sens_function);
+    g.type = json_string(j, "type", g.type);
+    if (j.contains("terms")) j.at("terms").get_to(g.terms);
+}
+
+void from_json(const json& j, Constraint& c) {
+    c.analysis_id = json_int(j, "analysis_id", c.analysis_id);
+    c.function_name = json_string(j, "function_name", c.function_name);
+    c.limit = json_double(j, "limit", c.limit);
+    c.sens_type = json_string(j, "sens_type", c.sens_type);
+    c.sens_function = json_string(j, "sens_function", c.sens_function);
+    c.type = json_string(j, "type", c.type);
+    c.mat_id = json_int(j, "mat_id", c.mat_id);
+    c.value_initial = json_double(j, "value_initial", c.value_initial);
+}
+
+void apply_solver_options_from_json(const json& solver_json) {
+    PetscOptionsSetValue(nullptr, "-ksp_type", json_string(solver_json, "ksp_type", "preonly").c_str()); // get ksp_type from json, default to preonly
+    PetscOptionsSetValue(nullptr, "-pc_type", json_string(solver_json, "pc_type", "cholesky").c_str()); //  get pc_type from json, default to cholesky
+    const std::string factor_solver = json_string(solver_json, "pc_factor_mat_solver_type", ""); // get pc_factor_mat_solver_type from json, default to empty string
+    if (!factor_solver.empty()) PetscOptionsSetValue(nullptr, "-pc_factor_mat_solver_type", factor_solver.c_str());
+    if (solver_json.contains("ksp_rtol")) {
+        PetscOptionsSetValue(nullptr, "-ksp_rtol", std::to_string(json_double(solver_json, "ksp_rtol", 1e-8)).c_str());
     }
-    return std::make_unique<StructuredMesh>(input.geom,
-                                            input.fem_type,
-                                            input.nu,
-                                            input.thickness,
-                                            input.fem_uniform != 0);
+    if (solver_json.contains("ksp_max_it")) {
+        PetscOptionsSetValue(nullptr, "-ksp_max_it", std::to_string(json_int(solver_json, "ksp_max_it", 10000)).c_str());
+    }
 }
 
-OutputData InitializeOutput(const InputConfig& input) {
+void apply_runtime_environment_from_json(const json& run_json) {
+    const json threads = run_json.value("threads", json::object()); 
+    const int omp_threads = std::max(1, json_int(threads, "omp_num_threads", 1)); // get omp_num_threads from json, default to 1
+    const int mkl_threads = std::max(1, json_int(threads, "mkl_num_threads", 1)); // get mkl_num_threads from json, default to 1
+    const int factor_threads = std::max(1, json_int(threads, "factor_num_threads", 1)); // get factor_num_threads from json, default to 1
+    const int sens_threads = std::max(1, json_int(threads, "sens_element_threads", 1)); // get sens_element_threads from json, default to 1
+    setenv("OMP_NUM_THREADS", std::to_string(omp_threads).c_str(), 1); // set OMP_NUM_THREADS environment variable
+    setenv("MKL_NUM_THREADS", std::to_string(mkl_threads).c_str(), 1); // set MKL_NUM_THREADS environment variable
+    setenv("FACTOR_NUM_THREADS", std::to_string(factor_threads).c_str(), 1); // set FACTOR_NUM_THREADS environment variable
+    setenv("SENS_ELEMENT_THREADS", std::to_string(sens_threads).c_str(), 1); // set SENS_ELEMENT_THREADS environment variable
+}
+
+std::unique_ptr<FEM> InitializeFEM(const json& fem_json, const Geometry& geom) {
+    const std::string mesh_source = lower_ascii(json_string(fem_json, "mesh_source", "structured"));
+    const std::string fem_type = json_string(fem_json, "type", "plane_stress");
+    const double nu = json_double(fem_json, "nu", 0.3);
+    const double thickness = json_double(fem_json, "Thickness", 1.0);
+    const bool uniform = json_bool(fem_json, "uniform_element_matrices", mesh_source == "structured");
+
+    if (mesh_source == "hypermesh" || mesh_source == "unstructured") {
+        const std::string fem_file = json_string(fem_json, "fem_file", "");
+        if (fem_file.empty()) throw std::runtime_error("FEM.fem_file is required for unstructured/hypermesh mesh");
+        return std::make_unique<UnstructuredMesh>(fem_file, fem_type, nu, thickness, uniform);
+    }
+    if (mesh_source == "structured") {
+        return std::make_unique<StructuredMesh>(geom, fem_type, nu, thickness, uniform);
+    }
+    throw std::runtime_error("Unknown FEM.mesh_source: " + mesh_source);
+}
+
+OutputData InitializeOutput(const json& output_json,
+                            const json& run_json,
+                            const std::string& input_json_path) {
     OutputData output;
-    output.outDir_mat = input.out_dir;
-    output.outDir_mat_FOM = input.out_dir;
-    const std::filesystem::path case_dir = std::filesystem::path(input.out_dir).parent_path();
-    output.outDir_vtk = (case_dir / "vtk").string();
-    output.densityDir = input.density_dir.empty() ? input.out_dir + "/density" : input.density_dir;
-    output.figureDir = (case_dir / "figure").string();
-    output.save_density_each_iter = input.save_density_each_iter;
-    output.save_density_interval = std::max(1, input.save_density_interval);
-    output.save_vtk_response_interval = std::max(1, input.save_vtk_response_interval);
-    output.save_vtk_opt_interval = std::max(1, input.save_vtk_opt_interval);
+    const std::filesystem::path run_dir = run_dir_from_json(output_json, run_json, input_json_path);
+    output.outDir_mat = output_json.value("outDir_mat", (run_dir / "result").string());
+    output.outDir_mat_FOM = output.outDir_mat;
+    const std::filesystem::path case_dir = std::filesystem::path(output.outDir_mat).parent_path();
+    output.outDir_vtk = output_json.value("outDir_vtk", (case_dir / "vtk").string());
+    output.densityDir = output_json.value("densityDir", (case_dir / "density").string());
+    output.figureDir = output_json.value("figureDir", (case_dir / "figure").string());
+    output.saved_Iter = json_double(output_json, "saved_Iter", output.saved_Iter);
+    output.save_density_each_iter = json_bool(output_json, "save_density_each_iter", true) ? 1 : 0;
+    output.save_density_interval = std::max(1, json_int(output_json, "save_density_interval", 1));
+    output.save_vtk_response_interval = std::max(1, json_int(output_json, "save_vtk_response_interval", 1));
+    output.save_vtk_opt_interval = std::max(1, json_int(output_json, "save_vtk_opt_interval", 1));
+    output.enable_live_density = json_bool(output_json, "enable_live_density", true);
     return output;
 }
 
-std::vector<Material> InitializeMaterial(const InputConfig& input) {
-    return {
-        Material{1, "elastic", input.void_E, 0.0, input.nu, input.void_rho},
-        Material{2, "elastic", input.solid_E, 0.0, input.nu, input.solid_rho},
-    };
-}
+std::vector<Region> InitializeRegions(const json& regions_json, const FEM& fem) {
+    std::vector<Region> regions = regions_json.get<std::vector<Region>>();
+    if (regions.empty()) throw std::runtime_error("JSON Regions is empty");
 
-std::vector<Region> InitializeRegions(const FEM& fem, const InputConfig& input) {
-    Region base;
-    base.id = 1;
-    base.mat_ids = {1, 2};
-    base.status = "design_val";
-    base.range_type = "all";
+    bool all_range = true;
+    bool all_hmset = true;
+    for (const auto& region : regions) {
+        const std::string source = lower_ascii(region.source.empty() ? region.range_type : region.source);
+        all_range = all_range && source == "range";
+        all_hmset = all_hmset && source == "hmset";
+    }
+    if (all_range) {
+        RangeRegion::assign_elements_to_regions(regions, fem);
+        return regions;
+    }
+    if (all_hmset) {
+        HMSetRegion::assign_elements_to_regions(regions, fem);
+        return regions;
+    }
 
-    std::vector<Region> regions;
-    if (lower_ascii(input.region_source) == "hmset") {
-        regions.push_back(HMSetRegion(fem, input.design_hmset_name, base));
-    } else {
-        regions.push_back(RangeRegion(fem, base));
+    regions.clear();
+    for (const auto& item : regions_json) {
+        Region base = item.get<Region>();
+        const std::string source = lower_ascii(base.source.empty() ? base.range_type : base.source);
+        if (source == "hmset") regions.push_back(HMSetRegion(fem, base.hmset_name, base));
+        else if (source == "range") regions.push_back(RangeRegion(fem, base));
+        else throw std::runtime_error("Unknown Region.source: " + source);
     }
     return regions;
 }
 
-std::vector<BoundaryCondition> InitializeDirichlet(const FEM& fem, const InputConfig& input) {
-    BoundaryCondition base = make_base_dirichlet(input);
-    std::vector<BoundaryCondition> dirich;
-    if (lower_ascii(input.bc_source) == "hmset") {
-        dirich.push_back(HMSetBoundaryCondition(fem, input.spc_hmset_name, base));
-    } else {
-        dirich.push_back(RangeBoundaryCondition(fem, base));
+std::vector<BoundaryCondition> InitializeBoundaryConditions(const json& bcs_json, const FEM& fem) {
+    std::vector<BoundaryCondition> bcs;
+    for (const auto& item : bcs_json) {
+        BoundaryCondition base = item.get<BoundaryCondition>();
+        const std::string source = lower_ascii(base.source);
+        if (source == "hmset") bcs.push_back(HMSetBoundaryCondition(fem, base.hmset_name, base));
+        else if (source == "range") bcs.push_back(RangeBoundaryCondition(fem, base));
+        else throw std::runtime_error("Unknown BoundaryCondition.source: " + source);
     }
-    return dirich;
+    return bcs;
 }
 
-std::vector<BoundaryCondition> InitializeNeumann(const FEM& fem, const InputConfig& input) {
-    BoundaryCondition base = make_base_neumann(input);
-    std::vector<BoundaryCondition> neum;
-    if (lower_ascii(input.bc_source) == "hmset") {
-        neum.push_back(HMSetBoundaryCondition(fem, input.load_hmset_name, base));
-    } else {
-        neum.push_back(RangeBoundaryCondition(fem, base));
-    }
-    return neum;
-}
-
-std::unique_ptr<DynamicLinearElastic> InitializeAnalysis(const InputConfig& input,
+std::unique_ptr<DynamicLinearElastic> InitializeAnalysis(const json& analysis_json,
+                                                        const json& run_json,
+                                                        const json& interp_json,
                                                         const std::vector<Material>& materials,
                                                         const std::vector<Region>& regions,
                                                         const std::vector<BoundaryCondition>& dirich,
                                                         const std::vector<BoundaryCondition>& neum) {
+    const std::string linear_backend = lower_ascii(json_string(run_json, "linear_backend", "petsc"));
     std::unique_ptr<DynamicLinearElastic> analysis_owner;
-    if (lower_ascii(input.linear_backend) == "eigen") {
+    if (linear_backend == "eigen") {
         analysis_owner = std::make_unique<EigenDynamicLinearElastic>();
     } else {
         analysis_owner = std::make_unique<PetscDynamicLinearElastic>();
     }
-    DynamicLinearElastic& analysis = *analysis_owner;
-    analysis.id = 1;
-    analysis.mat_type = "elastic";
-    analysis.Dirich_id = {1};
-    analysis.Neum_id = {1};
-    analysis.Tmax = input.tmax;
-    analysis.Nstep = input.nstep;
-    analysis.dt = analysis.Tmax / static_cast<double>(analysis.Nstep);
 
-    analysis.ROM = InitializeROM(input);
+    DynamicLinearElastic& analysis = *analysis_owner;
+    analysis.id = json_int(analysis_json, "id", analysis.id);
+    analysis.mat_type = json_string(analysis_json, "mat_type", analysis.mat_type);
+    if (analysis_json.contains("Dirich_id")) analysis_json.at("Dirich_id").get_to(analysis.Dirich_id);
+    if (analysis_json.contains("Neum_id")) analysis_json.at("Neum_id").get_to(analysis.Neum_id);
+    analysis.type = json_string(analysis_json, "type", analysis.type);
+    analysis.method = json_string(analysis_json, "method", analysis.method);
+    analysis.Tmax = json_double(analysis_json, "Tmax", analysis.Tmax);
+    analysis.Nstep = json_int(analysis_json, "Nstep", analysis.Nstep);
+    analysis.dt = analysis.Tmax / static_cast<double>(analysis.Nstep);
+    analysis.solver_name = json_string(analysis_json, "solver_name", analysis.solver_name);
+    analysis.ROM = InitializeROM(analysis_json.value("ROM", json::object()), run_json);
     analysis.regions = regions;
 
-    Interp interp;
-    interp.p_E_elastic = input.interp_p_E_elastic;
-    interp.p_rho = input.p_rho;
-    interp.elastic_interp = [p = interp.p_E_elastic](const std::vector<double>& para, double x) {
-        return RAMP(para, x, p);
-    };
-    interp.mass_density_interp = [p = interp.p_rho](const std::vector<double>& para, double x) {
-        return RAMP(para, x, p);
-    };
+    const Interp interp = make_interp(interp_json);
 
     init_mat(materials, analysis);
     init_interp(interp, analysis);
@@ -320,50 +327,32 @@ std::unique_ptr<DynamicLinearElastic> InitializeAnalysis(const InputConfig& inpu
     return analysis_owner;
 }
 
-Optimization InitializeOptimization(const FEM& fem,
+Optimization InitializeOptimization(const json& optimization_json,
+                                    const json& analysis_all_json,
+                                    const json& output_json,
+                                    const json& run_json,
+                                    const std::string& input_json_path,
+                                    const FEM& fem,
                                     const DynamicLinearElastic& analysis,
-                                    const std::vector<Material>& materials,
-                                    const InputConfig& input) {
+                                    const std::vector<Material>& materials) {
     Optimization opt;
-    opt.x = init_design_variables(fem, analysis.regions, materials, input.x_initial, opt.x_label);
-    opt.MaxIter = input.max_iter;
-    opt.Tol = 0.0;
-    opt.filtering.rmin = input.filter_rmin;
-    opt.filtering.beta = input.filter_beta;
-    opt.filtering.beta_loop = input.filter_beta_loop;
-    opt.filtering.beta_max = input.filter_beta_max;
-    opt.filtering.T = input.filter_T;
-    opt.algorithm.type = "MMA";
-    opt.algorithm.move = input.move;
-    opt.debug_fd_epsilon = input.debug_fd_epsilon;
-    opt.debug_fd_max_checks = input.debug_fd_max_checks;
-    opt.save_density_each_iter = input.save_density_each_iter != 0;
-    opt.save_density_interval = std::max(1, input.save_density_interval);
-    opt.Output = InitializeOutput(input);
+    opt.x = init_design_variables(fem, analysis.regions, materials, json_double(optimization_json, "x0", 0.5), opt.x_label);
+    opt.MaxIter = json_int(optimization_json, "MaxIter", opt.MaxIter);
+    opt.Tol = json_double(optimization_json, "Tol", opt.Tol);
+    opt.plot_during_optimization = json_bool(optimization_json, "plot_during_optimization", opt.plot_during_optimization);
+    opt.debug_fd_epsilon = json_double(optimization_json, "debug_fd_epsilon", opt.debug_fd_epsilon);
+    opt.debug_fd_max_checks = json_int(optimization_json, "debug_fd_max_checks", opt.debug_fd_max_checks);
+    opt.save_density_each_iter = json_bool(optimization_json, "save_density_each_iter", opt.save_density_each_iter);
+    opt.save_density_interval = std::max(1, json_int(optimization_json, "save_density_interval", opt.save_density_interval));
+    if (optimization_json.contains("Filtering")) optimization_json.at("Filtering").get_to(opt.filtering);
+    if (optimization_json.contains("Algorithm")) optimization_json.at("Algorithm").get_to(opt.algorithm);
+    if (optimization_json.contains("ObjectiveGroups")) optimization_json.at("ObjectiveGroups").get_to(opt.objective_groups);
+    if (optimization_json.contains("Constraints")) optimization_json.at("Constraints").get_to(opt.constraints);
+    opt.Output = InitializeOutput(output_json, run_json, input_json_path);
 
-    ObjectiveGroup obj_group;
-    obj_group.analysis_id = analysis.id;
-    obj_group.sens_type = input.sens_type;
-    obj_group.sens_function = "dynamic_elastic_base";
-    obj_group.type = is_rom_mode(input) ? "separate_BC" : "full";
-    obj_group.ROM = InitializeROM(input);
-
-    ObjectiveTerm term;
-    term.function_name = "L2_compliance_elastic";
-    term.weight = 1.0;
-    obj_group.terms.push_back(term);
-    opt.objective_groups.push_back(obj_group);
-
-    Constraint constr;
-    constr.analysis_id = analysis.id;
-    constr.function_name = "volume_fraction";
-    constr.limit = input.volume_limit;
-    constr.sens_type = "AVM";
-    constr.sens_function = "volume_sens_base";
-    constr.type = "full";
-    constr.mat_id = 2;
-    constr.value_initial = 1.0;
-    opt.constraints.push_back(constr);
-
+    for (auto& group : opt.objective_groups) {
+        json target_analysis = analysis_all_json.empty() ? json::object() : analysis_by_id(analysis_all_json, group.analysis_id);
+        group.ROM = InitializeROM(target_analysis.value("ROM", json::object()), run_json);
+    }
     return opt;
 }

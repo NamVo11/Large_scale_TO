@@ -205,13 +205,13 @@ void EigenDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
 
         acc = a0c * (u - u_pred);
         v = v_pred + gamma * analysis.dt * acc;
-/*
+
         if (rank == 0) {
             std::cout << "step " << istep << ": solve_res = "
                       << step.residual_norm << ", ksp_it = " << step.ksp_iterations
                       << ", ksp_res = " << step.residual_norm << "\n";
         }
-*/
+
         analysis.results.U.col(istep) = u;
         analysis.results.V.col(istep) = v;
         analysis.results.A.col(istep) = acc;

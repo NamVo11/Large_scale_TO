@@ -110,8 +110,11 @@ void apply_dirichlet_to_matrix(Eigen::SparseMatrix<double>& A, const std::vector
 PODResult MyEigenBDCSVD::compute(const Eigen::MatrixXd& X, int max_rank) const {
     check_input(X, max_rank, "MyEigenBDCSVD");
     const int r = bounded_rank(X, max_rank);
-    Eigen::BDCSVD<Eigen::MatrixXd> svd(X.rows(), X.cols(), Eigen::ComputeThinU | Eigen::ComputeThinV);
-    svd.compute(X);
+
+    using BDCSVDThin = Eigen::BDCSVD<Eigen::MatrixXd, Eigen::ComputeThinU | Eigen::ComputeThinV>;
+
+    BDCSVDThin svd(X);
+
     PODResult result;
     result.s_all = svd.singularValues();
     result.V = svd.matrixU().leftCols(r);

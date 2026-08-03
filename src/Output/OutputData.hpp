@@ -29,7 +29,10 @@ struct OutputData {
 
     void prepare_case_folders() const;
     void save_density_iteration(const FEM& fem, const Eigen::MatrixXd& xPhys, int Iter) const;
-    void export_response_vtk(const FEM& fem, const Analysis& analysis, int Iter) const;
+    void export_response_vtk(const FEM& fem,
+                             const Analysis& analysis,
+                             const Eigen::MatrixXd& xPhys,
+                             int Iter) const;
     void export_opt_vtk(const FEM& fem,
                         const Eigen::MatrixXd& xPhys,
                         const Eigen::MatrixXd& df_dx_mat,

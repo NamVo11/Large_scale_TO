@@ -117,13 +117,9 @@ void evaluate_constraint_ptr(const FEM& fem,
         if (static_cast<int>(fem.volume.size()) != fem.NElem) {
             throw std::runtime_error("volume_fraction: fem volume is not initialized");
         }
-        double total_volume = 0.0;
-        double material_volume = 0.0;
-        for (int e = 0; e < fem.NElem; ++e) {
-            const double v = fem.volume[static_cast<std::size_t>(e)];
-            total_volume += v;
-            material_volume += xPhys(e, val_id) * v;
-        }
+        const Eigen::Map<const Eigen::VectorXd> volume_vec(fem.volume.data(), fem.NElem);
+        const double total_volume = volume_vec.sum();
+        const double material_volume = volume_vec.dot(xPhys.col(val_id));
         if (!(total_volume > 0.0)) throw std::runtime_error("volume_fraction: non-positive total volume");
         c.value = material_volume / total_volume;
         c.d_explicit_dfdu_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
@@ -131,9 +127,7 @@ void evaluate_constraint_ptr(const FEM& fem,
         c.d_explicit_dfda_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
         c.d_explicit_dfdFext_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
         c.d_explicit_df_dx = Eigen::MatrixXd::Zero(fem.NElem, nvar);
-        for (int e = 0; e < fem.NElem; ++e) {
-            c.d_explicit_df_dx(e, val_id) = fem.volume[static_cast<std::size_t>(e)] / total_volume;
-        }
+        c.d_explicit_df_dx.col(val_id) = volume_vec / total_volume;
         if (c.value_initial == 0.0) c.value_initial = c.value;
         constr_value_vec[i] = c.value / c.value_initial - c.limit;
         c.d_explicit_df_dx *= 1.0 / c.value_initial;
@@ -209,7 +203,7 @@ void OptimizationBase::run(const FEM& fem) {
         for (auto& A : analysis_all) {
             if (Iter % Output.save_vtk_response_interval == 0) {
                 const auto out_t0 = Clock::now();
-                Output.export_response_vtk(fem, *A, Iter);
+                Output.export_response_vtk(fem, *A, filtering_state.xPhys, Iter);
                 output_time += elapsed(out_t0, Clock::now());
             }
         }

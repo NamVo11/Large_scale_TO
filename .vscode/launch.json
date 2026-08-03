@@ -17,13 +17,13 @@
             "program": "${workspaceFolder}/build-mpich-debug-gcc13/stage2_dynamic_forward",
             // GCC11 option: use the matching debug executable.
             // "program": "/home/votrongnam/PROJECT/Large_scale_TO/build-mpich-debug-gcc11/stage2_dynamic_forward",
-            "args": [
-                "-options_file",
-                "case_study/Debug/conf.text"
+            "args": [ // command-line arguments
+                "-input_json",
+                "case_study/3D_structured/FOM/input.json"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [
+            "environment": [ // environment variables
                 {
                     "value": "40000:41000",
                     "name": "MPIEXEC_PORT_RANGE"

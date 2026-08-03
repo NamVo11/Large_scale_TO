@@ -224,6 +224,7 @@ void OutputData::save_density_iteration(const FEM& fem,
 
 void OutputData::export_response_vtk(const FEM& fem,
                                      const Analysis& analysis,
+                                     const Eigen::MatrixXd& xPhys,
                                      int Iter) const {
     (void)Iter;
     PetscMPIInt rank = 0;
@@ -263,6 +264,38 @@ void OutputData::export_response_vtk(const FEM& fem,
         write_vector_field("velocity", analysis.results.V);
         write_vector_field("acceleration", analysis.results.A);
         write_vector_field("Reaction_force", analysis.results.F_ext);
+
+        if (xPhys.rows() == fem.NElem && xPhys.cols() > 0) {
+            out << "CELL_DATA " << fem.NElem << "\n";
+            if (xPhys.cols() == 1) {
+                out << "SCALARS density double 1\nLOOKUP_TABLE default\n";
+                for (int e = 0; e < fem.NElem; ++e) out << xPhys(e, 0) << "\n";
+                out << "SCALARS Multi_Topo double 1\nLOOKUP_TABLE default\n";
+                for (int e = 0; e < fem.NElem; ++e) out << xPhys(e, 0) << "\n";
+            } else {
+                for (int v = 0; v < xPhys.cols(); ++v) {
+                    out << "SCALARS Topo_ID_" << (v + 1) << " double 1\nLOOKUP_TABLE default\n";
+                    for (int e = 0; e < fem.NElem; ++e) out << xPhys(e, v) << "\n";
+                }
+
+                Eigen::VectorXd multi_topo = Eigen::VectorXd::Zero(xPhys.rows());
+                for (int e = 0; e < xPhys.rows(); ++e) {
+                    double prod_all = 1.0;
+                    std::vector<double> q(static_cast<std::size_t>(xPhys.cols()));
+                    for (int v = 0; v < xPhys.cols(); ++v) {
+                        q[static_cast<std::size_t>(v)] = std::max(1e-14, 1.0 - xPhys(e, v));
+                        prod_all *= q[static_cast<std::size_t>(v)];
+                    }
+                    for (int v = 0; v < xPhys.cols(); ++v) {
+                        multi_topo(e) += xPhys(e, v) *
+                            (prod_all / q[static_cast<std::size_t>(v)]) *
+                            static_cast<double>(v + 1);
+                    }
+                }
+                out << "SCALARS Multi_Topo double 1\nLOOKUP_TABLE default\n";
+                for (int e = 0; e < fem.NElem; ++e) out << multi_topo(e) << "\n";
+            }
+        }
     }
 }
 

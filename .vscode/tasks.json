@@ -147,10 +147,8 @@
           "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
           // GCC11 option:
           // "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
-          "CASE_CONFIG": "case_study/test1/600x200_sin_1cycle_125Hz.conf",
+          "INPUT_JSONS": "case_study/2D_new/input.json",
           "METHOD_NAME": "MyStrategy", // MyStrategy: IncrementalSVD; MyStrategy2: MyIncrementalQR1 QR online basis
-          "NP": "8",
-          "HOSTS": "localhost,192.168.11.21",
           "KSP_TYPE": "cg", // cg: iterative SPD; preonly: use direct factorization once per set_factorization
           "PC_TYPE": "gamg", // gamg: iterative AMG; lu/cholesky: direct; cholesky only for SPD matrices
           "PC_FACTOR_MAT_SOLVER_TYPE": "", // empty for iterative; direct options: mkl_pardiso(single-node), mumps(MPI/multinode)
@@ -188,10 +186,8 @@
           "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
           // GCC11 option:
           // "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
-          "CASE_CONFIG": "case_study/test1/600x200_sin_1cycle_125Hz.conf",
+          "INPUT_JSONS": "case_study/2D_new/input.json",
           "METHOD_NAME": "MyStrategy", // MyStrategy: IncrementalSVD; MyStrategy2: MyIncrementalQR1 QR online basis
-          "NP": "8",
-          "HOSTS": "localhost",
           "KSP_TYPE": "cg", // cg: iterative SPD; preonly: use direct factorization once per set_factorization
           "PC_TYPE": "gamg", // gamg: iterative AMG; lu/cholesky: direct; cholesky only for SPD matrices
           "PC_FACTOR_MAT_SOLVER_TYPE": "", // empty for iterative; direct options: mkl_pardiso(single-node), mumps(MPI/multinode)
@@ -229,9 +225,7 @@
           "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
           // GCC11 option:
           // "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
-          "CASE_CONFIG": "case_study/test4_FOM/600x200_sin_1cycle_125Hz.conf",
-          "NP": "1",
-          "HOSTS": "localhost",
+          "INPUT_JSONS": "case_study/2D_new/input.json",
           "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD
           "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD
           "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso", // single-node direct solver; alternatives: mumps
@@ -272,10 +266,8 @@
           "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
           // GCC11 option:
           // "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
-          "CASE_CONFIG": "case_study/test1/600x200_sin_1cycle_125Hz.conf",
+          "INPUT_JSONS": "case_study/2D_new/input.json",
           "METHOD_NAME": "MyStrategy", // MyStrategy: IncrementalSVD; MyStrategy2: MyIncrementalQR1 QR online basis
-          "NP": "8",
-          "HOSTS": "localhost,192.168.11.21",
           "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD
           "PC_TYPE": "lu", // lu: general; cholesky: SPD and usually faster
           "PC_FACTOR_MAT_SOLVER_TYPE": "mumps", // mumps: MPI direct; mkl_pardiso: single-node/shared-memory direct
@@ -312,12 +304,8 @@
           //"PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
           //"MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
 
-          //"CASE_CONFIGS": "case_study/main_Eigen_all/1thread/FOM/conf.conf  case_study/main_Eigen_all/1thread/strategy_10_20/conf.conf    case_study/main_Eigen_all/1thread/strategy2_10_20/conf.conf   case_study/main_Eigen_all/1thread/strategy_15_25/conf.conf    case_study/main_Eigen_all/1thread/strategy2_15_25/conf.conf   case_study/main_Eigen_all/1thread/strategy_10_25/conf.conf   case_study/main_Eigen_all/1thread/strategy2_10_25/conf.conf",
+          "INPUT_JSONS": "case_study/2D_new/input.json",
 
-          "CASE_CONFIGS": "case_study/main_Eigen_all/tryMPI/conf.conf",
-
-          "NP": "8",
-          "HOSTS": "localhost",//"localhost,192.168.11.21"
           "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
           "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
           "PC_FACTOR_MAT_SOLVER_TYPE": "", // single-node direct solver; alternatives: mumps // mkl_pardiso
@@ -357,13 +345,8 @@
           //"PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
           //"MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
 
-          //"CASE_CONFIGS": "case_study/3/strategy_1thread/conf.conf",
-          //"CASE_CONFIGS": "case_study/3D/FOM/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy2_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf",
-          //"CASE_CONFIGS": "case_study/3/strategy2/conf.conf   case_study/3/strategy/conf.conf   case_study/3/FOM/conf.conf",
-          "CASE_CONFIGS": "case_study/main_Eigen/8thread/FOM/conf.conf   case_study/main_Eigen/8thread/strategy_10_20/conf.conf    case_study/main_Eigen/8thread/strategy2_10_20/conf.conf   case_study/main_Eigen/8thread/strategy_15_25/conf.conf    case_study/main_Eigen/8thread/strategy2_15_25/conf.conf   case_study/main_Eigen/8thread/strategy_10_25/conf.conf   case_study/main_Eigen/8thread/strategy2_10_25/conf.conf",
+          "INPUT_JSONS": "case_study/2D_new/input.json",
 
-          "NP": "1",
-          "HOSTS": "localhost",
           "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
           "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
           "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso", // single-node direct solver; alternatives: mumps // mkl_pardiso
@@ -403,11 +386,8 @@
           "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
           // GCC11 option:
           // "MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
-          //"CASE_CONFIGS": "case_study/3D/FOM/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf case_study/600X200_sin_1cycle_125Hz/Mystrategy2_rank1_10_max_rank_20/600x200_sin_1cycle_125Hz.conf",
-          "CASE_CONFIGS": "case_study/3D/strategy2_iterative/3D.conf",
+          "INPUT_JSONS": "case_study/2D_new/input.json",
           // Add/remove case configs above. They run sequentially with the same solver settings.
-          "NP": "1",
-          "HOSTS": "localhost",
           "KSP_TYPE": "cg", // preonly: direct solve; cg: iterative SPD// preonly
           "PC_TYPE": "gamg", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
           "PC_FACTOR_MAT_SOLVER_TYPE": "", // single-node direct solver; alternatives: mumps // mkl_pardiso
@@ -495,12 +475,8 @@
           //"PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
           //"MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
 
-          //"CASE_CONFIGS": "case_study/main_Eigen_all/1thread/FOM/conf.conf  case_study/main_Eigen_all/1thread/strategy_10_20/conf.conf    case_study/main_Eigen_all/1thread/strategy2_10_20/conf.conf   case_study/main_Eigen_all/1thread/strategy_15_25/conf.conf    case_study/main_Eigen_all/1thread/strategy2_15_25/conf.conf   case_study/main_Eigen_all/1thread/strategy_10_25/conf.conf   case_study/main_Eigen_all/1thread/strategy2_10_25/conf.conf",
+          "INPUT_JSONS": "case_study/3D_structured/FOM/input.json   case_study/3D_structured/strategy_10_25/input.json",
 
-          "CASE_CONFIGS": "case_study/2D_new/conf.conf",
-
-          "NP": "1",
-          "HOSTS": "localhost",
           "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
           "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
           "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso", // single-node direct solver; alternatives: mumps // mkl_pardiso

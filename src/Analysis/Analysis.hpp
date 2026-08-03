@@ -47,6 +47,8 @@ struct Interp {
 
 struct Region {
     int id = 0;
+    std::string name;
+    std::string source = "range";
     std::vector<int> mat_ids;
     std::string status = "design_val";
     std::string range_type = "all";
@@ -87,6 +89,8 @@ struct HMSetRegion : Region {
 
 struct BoundaryCondition {
     int id = 0;
+    std::string name;
+    std::string source = "range";
     std::string kind;
     std::string hmset_name;
     std::array<int, 3> flag{0, 0, 0};

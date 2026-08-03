@@ -60,12 +60,14 @@ target_include_directories(stage2_dynamic_forward PRIVATE src)
 target_include_directories(basis_update_benchmark PRIVATE src)
 target_include_directories(stage2_dynamic_forward SYSTEM PRIVATE
   src/third_party/eigen
+  src/third_party/json
   src/third_party/mma
   src/third_party/mma_matlab_port
   src/third_party/mma_jdumas
 )
 target_include_directories(basis_update_benchmark SYSTEM PRIVATE
   src/third_party/eigen
+  src/third_party/json
 )
 target_link_libraries(stage2_dynamic_forward PRIVATE PkgConfig::PETSC MPI::MPI_CXX OpenMP::OpenMP_CXX)
 target_link_libraries(basis_update_benchmark PRIVATE PkgConfig::PETSC MPI::MPI_CXX OpenMP::OpenMP_CXX)
