@@ -98,6 +98,7 @@ struct BoundaryCondition {
     std::vector<std::array<double, 2>> y_range;
     std::vector<std::array<double, 2>> z_range;
     double amp = 0.0;
+    double base_value = 0.0;
     std::string time_type = "constant";
     double nCycle = 0.0;
     double power = 0.0;

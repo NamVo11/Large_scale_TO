@@ -53,6 +53,72 @@ std::vector<int> parse_ints_after_equals(const std::string& text) {
     return values;
 }
 
+bool try_parse_int_token(const std::string& token, int& value) {
+    const std::string s = trim(token);
+    if (s.empty()) return false;
+    std::size_t pos = 0;
+    try {
+        value = std::stoi(s, &pos);
+    } catch (...) {
+        return false;
+    }
+    return pos == s.size();
+}
+
+bool is_set_card(const std::string& line) {
+    return line.rfind("SET ", 0) == 0 || line.rfind("SET,", 0) == 0;
+}
+
+bool is_bulk_card_start(const std::string& line) {
+    const std::string s = trim(line);
+    if (s.empty()) return true;
+    if (s.rfind("$", 0) == 0) return true;
+    if (s.rfind("BEGIN BULK", 0) == 0 || s.rfind("ENDDATA", 0) == 0) return true;
+    if (s.rfind("GRID", 0) == 0 || s.rfind("CHEXA", 0) == 0 || s.rfind("CTETRA", 0) == 0) return true;
+    if (s.rfind("CPENTA", 0) == 0 || s.rfind("CQUAD4", 0) == 0 || s.rfind("CTRIA3", 0) == 0) return true;
+    if (is_set_card(s)) return true;
+    return false;
+}
+
+int parse_set_id_from_line(const std::string& line) {
+    if (line.rfind("SET,", 0) == 0) {
+        const auto tokens = split_commas(line);
+        if (tokens.size() < 2) throw std::runtime_error("Invalid HyperMesh SET card: " + line);
+        int set_id = 0;
+        if (!try_parse_int_token(tokens[1], set_id)) throw std::runtime_error("Invalid HyperMesh SET id: " + line);
+        return set_id;
+    }
+
+    std::stringstream header(line);
+    std::string set_word;
+    int set_id = 0;
+    header >> set_word >> set_id;
+    return set_id;
+}
+
+std::vector<int> parse_comma_style_set_ids(const std::string& text, int set_id) {
+    std::string s = text;
+    for (char& c : s) {
+        if (c == ',' || c == '\t') c = ' ';
+    }
+
+    std::stringstream ss(s);
+    std::string token;
+    std::vector<int> values;
+    while (ss >> token) {
+        if (token == "SET" || token == "GRID" || token == "ELEM" || token == "LIST" || token == "+") continue;
+        int value = 0;
+        if (try_parse_int_token(token, value)) values.push_back(value);
+    }
+    if (!values.empty() && values.front() == set_id) values.erase(values.begin());
+    return values;
+}
+
+std::vector<int> parse_hypermesh_set_ids(const std::string& text, int set_id, bool comma_style) {
+    if (!comma_style) return parse_ints_after_equals(text);
+    return parse_comma_style_set_ids(text, set_id);
+}
+
 double parse_nastran_double(const std::string& text) {
     const std::string s = trim(text);
     std::size_t pos = 0;
@@ -241,22 +307,24 @@ void UnstructuredMesh::read_hypermesh_fem(const std::string& fem_file) {
             continue;
         }
 
-        if (s.rfind("SET ", 0) == 0) {
+        if (is_set_card(s)) {
             std::string text = s;
+            const bool comma_style = s.rfind("SET,", 0) == 0;
             std::size_t j = i + 1;
             while (j < lines.size()) {
                 const std::string t = trim(lines[j]);
-                if (t.empty() || t.rfind("$", 0) == 0 || t.rfind("BEGIN BULK", 0) == 0) break;
+                if (comma_style) {
+                    if (is_bulk_card_start(t)) break;
+                } else if (t.empty() || t.rfind("$", 0) == 0 || t.rfind("BEGIN BULK", 0) == 0) {
+                    break;
+                }
                 text += " " + t;
                 ++j;
             }
 
-            std::stringstream header(s);
-            std::string set_word;
-            int set_id = 0;
-            header >> set_word >> set_id;
+            const int set_id = parse_set_id_from_line(s);
             auto it = raw_sets.find(set_id);
-            if (it != raw_sets.end()) it->second.raw_ids = parse_ints_after_equals(text);
+            if (it != raw_sets.end()) it->second.raw_ids = parse_hypermesh_set_ids(text, set_id, comma_style);
             continue;
         }
 

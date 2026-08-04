@@ -244,13 +244,13 @@ Eigen::MatrixXd init_design_variables(const FEM& fem,
 double bc_value(const BoundaryCondition& BC, const Analysis& A, int istep) {
     constexpr double pi = 3.141592653589793238462643383279502884;
     const std::string tt = lower(BC.time_type);
-    if (tt == "constant") return BC.amp;
+    if (tt == "constant") return BC.base_value + BC.amp;
     if (tt == "sin") {
         const double t = istep * A.dt;
-        return BC.amp * std::sin(2.0 * pi * BC.nCycle * t / A.Tmax + BC.phase);
+        return BC.base_value + BC.amp * std::sin(2.0 * pi * BC.nCycle * t / A.Tmax + BC.phase);
     }
     if (tt == "linear") {
-        return BC.amp * static_cast<double>(istep) / static_cast<double>(A.Nstep);
+        return BC.base_value + BC.amp * static_cast<double>(istep) / static_cast<double>(A.Nstep);
     }
     if (tt == "sum_sim") {
         const double t = (istep - 1) * A.dt;
@@ -261,7 +261,7 @@ double bc_value(const BoundaryCondition& BC, const Analysis& A, int istep) {
         const double envelope = std::min(t / rise_time, 1.0);
         double sum = 0.0;
         for (int i = 0; i < 7; ++i) sum += scale[i] * std::sin(2.0 * pi * freq[i] * t + phi[i]);
-        return BC.amp * envelope * sum;
+        return BC.base_value + BC.amp * envelope * sum;
     }
     throw std::runtime_error("Unsupported BC time_type");
 }

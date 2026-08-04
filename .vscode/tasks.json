@@ -414,7 +414,7 @@
       "command": "python3",
       "args": [
         "scripts/watch_optimization_live.py",
-        "case_study/2D_new/ROM",
+        "case_study/Engine_bracket/FOM",
         // Case folder to watch. Change this to case_study/test1, case_study/Debug, etc.
         "--scale",
         "8",
@@ -475,7 +475,7 @@
           //"PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
           //"MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
 
-          "INPUT_JSONS": "case_study/3D_structured/FOM/input.json   case_study/3D_structured/strategy_10_25/input.json",
+          "INPUT_JSONS": "case_study/Engine_bracket/FOM/input.json",
 
           "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
           "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg

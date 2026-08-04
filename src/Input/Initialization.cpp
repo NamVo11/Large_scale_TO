@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <numeric>
 #include <stdexcept>
 
 namespace {
@@ -19,11 +20,23 @@ std::string json_string(const json& j, const char* key, const std::string& fallb
 }
 
 double json_double(const json& j, const char* key, double fallback = 0.0) {
-    return j.contains(key) && !j.at(key).is_null() ? j.at(key).get<double>() : fallback;
+    if (!j.contains(key) || j.at(key).is_null()) return fallback;
+    if (j.at(key).is_string()) {
+        const std::string value = j.at(key).get<std::string>();
+        if (value.empty()) return fallback;
+        return std::stod(value);
+    }
+    return j.at(key).get<double>();
 }
 
 int json_int(const json& j, const char* key, int fallback = 0) {
-    return j.contains(key) && !j.at(key).is_null() ? j.at(key).get<int>() : fallback;
+    if (!j.contains(key) || j.at(key).is_null()) return fallback;
+    if (j.at(key).is_string()) {
+        const std::string value = j.at(key).get<std::string>();
+        if (value.empty()) return fallback;
+        return std::stoi(value);
+    }
+    return j.at(key).get<int>();
 }
 
 bool json_bool(const json& j, const char* key, bool fallback = false) {
@@ -63,6 +76,79 @@ std::filesystem::path run_dir_from_json(const json& output_json,
     const std::filesystem::path cfg_path = std::filesystem::path(input_json_path);
     const std::filesystem::path case_dir = cfg_path.has_parent_path() ? cfg_path.parent_path() : std::filesystem::path(".");
     return case_dir / json_string(run_json, "run_name", "FOM");
+}
+
+bool in_range(double x, const std::array<double, 2>& range) {
+    return x >= range[0] && x <= range[1];
+}
+
+const HMSet& find_hmset_by_name_local(const FEM& fem, const std::string& name) {
+    auto it = fem.hm_sets_by_name.find(name);
+    if (it != fem.hm_sets_by_name.end()) return it->second;
+    it = fem.hm_sets_by_name.find(lower_ascii(name));
+    if (it != fem.hm_sets_by_name.end()) return it->second;
+    throw std::runtime_error("HMSET not found: " + name);
+}
+
+bool element_center_in_region_box(const FEM& fem, const Region& region, int elem_id) {
+    if (region.x_range.empty() || region.y_range.empty()) {
+        throw std::runtime_error("Region box needs x/y ranges: " + region.name);
+    }
+    if (region.x_range.size() != region.y_range.size()) {
+        throw std::runtime_error("Region x/y range size mismatch: " + region.name);
+    }
+    if (fem.dim == 3 && region.z_range.size() != region.x_range.size()) {
+        throw std::runtime_error("Region z range size mismatch: " + region.name);
+    }
+
+    const auto& center = fem.elem_center[static_cast<std::size_t>(elem_id)];
+    for (std::size_t r = 0; r < region.x_range.size(); ++r) {
+        bool inside = in_range(center[0], region.x_range[r]) && in_range(center[1], region.y_range[r]);
+        if (fem.dim == 3) inside = inside && in_range(center[2], region.z_range[r]);
+        if (inside) return true;
+    }
+    return false;
+}
+
+void assign_range_region(Region& region, const FEM& fem, const std::vector<int>& assigned) {
+    region.elem_ids.clear();
+    const std::string range_type = lower_ascii(region.range_type.empty() ? "all" : region.range_type);
+    if (range_type == "all") {
+        region.elem_ids.resize(static_cast<std::size_t>(fem.NElem));
+        std::iota(region.elem_ids.begin(), region.elem_ids.end(), 0);
+    } else if (range_type == "box") {
+        for (int e = 0; e < fem.NElem; ++e) {
+            if (element_center_in_region_box(fem, region, e)) region.elem_ids.push_back(e);
+        }
+    } else if (range_type == "other") {
+        for (int e = 0; e < fem.NElem; ++e) {
+            if (assigned[static_cast<std::size_t>(e)] == 0) region.elem_ids.push_back(e);
+        }
+    } else {
+        throw std::runtime_error("Unknown Region.range_type: " + range_type);
+    }
+}
+
+void assign_hmset_region(Region& region, const FEM& fem) {
+    const std::string set_name = !region.hmset_name.empty() ? region.hmset_name : region.status;
+    const HMSet& set = find_hmset_by_name_local(fem, set_name);
+    if (set.kind != 2) throw std::runtime_error("HMSET is not an element set: " + set_name);
+    region.elem_ids = set.local_ids;
+}
+
+void finalize_region_assignment(Region& region, const FEM& fem, std::vector<int>& assigned) {
+    std::sort(region.elem_ids.begin(), region.elem_ids.end());
+    region.elem_ids.erase(std::unique(region.elem_ids.begin(), region.elem_ids.end()), region.elem_ids.end());
+    if (region.elem_ids.empty()) throw std::runtime_error("Region selects no elements: " + region.name);
+
+    for (int e : region.elem_ids) {
+        if (e < 0 || e >= fem.NElem) throw std::runtime_error("Region has invalid element local id: " + region.name);
+        if (assigned[static_cast<std::size_t>(e)] != 0) {
+            throw std::runtime_error("Overlapping regions around element " + std::to_string(e) + ": " + region.name);
+        }
+        assigned[static_cast<std::size_t>(e)] = region.id == 0 ? 1 : region.id;
+    }
+    region.nElem = static_cast<int>(region.elem_ids.size());
 }
 
 Interp make_interp(const json& interp_json) {
@@ -140,6 +226,7 @@ void from_json(const json& j, BoundaryCondition& bc) {
     if (j.contains("y_range")) j.at("y_range").get_to(bc.y_range);
     if (j.contains("z_range")) j.at("z_range").get_to(bc.z_range);
     bc.amp = json_double(j, "amp", bc.amp);
+    bc.base_value = json_double(j, "base_value", bc.base_value);
     bc.time_type = json_string(j, "time_type", bc.time_type);
     bc.nCycle = json_double(j, "nCycle", bc.nCycle);
     bc.power = json_double(j, "power", bc.power);
@@ -248,32 +335,27 @@ OutputData InitializeOutput(const json& output_json,
 }
 
 std::vector<Region> InitializeRegions(const json& regions_json, const FEM& fem) {
-    std::vector<Region> regions = regions_json.get<std::vector<Region>>();
-    if (regions.empty()) throw std::runtime_error("JSON Regions is empty");
+    if (!regions_json.is_array() || regions_json.empty()) throw std::runtime_error("JSON Regions is empty");
 
-    bool all_range = true;
-    bool all_hmset = true;
-    for (const auto& region : regions) {
-        const std::string source = lower_ascii(region.source.empty() ? region.range_type : region.source);
-        all_range = all_range && source == "range";
-        all_hmset = all_hmset && source == "hmset";
-    }
-    if (all_range) {
-        RangeRegion::assign_elements_to_regions(regions, fem);
-        return regions;
-    }
-    if (all_hmset) {
-        HMSetRegion::assign_elements_to_regions(regions, fem);
-        return regions;
-    }
+    std::vector<Region> regions;
+    std::vector<int> assigned(static_cast<std::size_t>(fem.NElem), 0);
 
-    regions.clear();
     for (const auto& item : regions_json) {
-        Region base = item.get<Region>();
-        const std::string source = lower_ascii(base.source.empty() ? base.range_type : base.source);
-        if (source == "hmset") regions.push_back(HMSetRegion(fem, base.hmset_name, base));
-        else if (source == "range") regions.push_back(RangeRegion(fem, base));
-        else throw std::runtime_error("Unknown Region.source: " + source);
+        Region region = item.get<Region>();
+        const std::string source = lower_ascii(region.source.empty() ? "range" : region.source);
+        if (source == "hmset") {
+            assign_hmset_region(region, fem);
+        } else if (source == "range") {
+            assign_range_region(region, fem, assigned);
+        } else {
+            throw std::runtime_error("Unknown Region.source: " + source);
+        }
+        finalize_region_assignment(region, fem, assigned);
+        regions.push_back(std::move(region));
+    }
+
+    if (std::any_of(assigned.begin(), assigned.end(), [](int v) { return v == 0; })) {
+        throw std::runtime_error("Some elements are not assigned to any region");
     }
     return regions;
 }
