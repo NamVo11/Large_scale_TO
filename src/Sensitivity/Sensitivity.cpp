@@ -72,7 +72,8 @@ Eigen::MatrixXd SensitivityBase::constraint_sensitivity(const FEM&,
                                                         Constraint& object,
                                                         const Filtering& filtering,
                                                         const FilteringState& filtering_state,
-                                                        int) {
+                                                        int) {  
+    zero_labeled_rows(object.d_explicit_df_dx, x_label);                                                   
     Eigen::MatrixXd out = filtering_sensitivity(object.d_explicit_df_dx, filtering, filtering_state);
     zero_labeled_rows(out, x_label);
     return out;

@@ -231,26 +231,69 @@ void attach_bcs_to_analysis_by_id(Analysis& A,
 }
 
 Eigen::MatrixXd init_design_variables(const FEM& fem,
-                                      const std::vector<Region>&,
+                                      const std::vector<Region>& regions,
                                       const std::vector<Material>& Mat,
                                       double x0,
                                       std::vector<int>& x_label) {
+
     const int nvar = std::max(1, static_cast<int>(Mat.size()) - 1);
-    Eigen::MatrixXd x = Eigen::MatrixXd::Constant(fem.NElem, nvar, x0);
+
+    if (x0 < 0.0 || x0 > 1.0) {
+        throw std::runtime_error("init_design_variables: x0 must be between 0 and 1");
+    }
+
+    Eigen::MatrixXd x = Eigen::MatrixXd::Zero(fem.NElem, nvar);
     x_label.assign(static_cast<std::size_t>(fem.NElem), 0);
+
+    for (const Region& region : regions) {
+        for (int val_id : region.mat_paras.val_ids) {
+            if (val_id <= 0 || val_id > nvar) {
+                throw std::runtime_error("init_design_variables: region val_id is outside x columns");
+            }
+        }
+
+        for (int elem_id : region.elem_ids) {
+            if (elem_id < 0 || elem_id >= fem.NElem) {
+                throw std::runtime_error("init_design_variables: invalid element id in region");
+            }
+        }
+
+        if (region.status == "solid") {
+            for (int elem_id : region.elem_ids) {
+                x_label[static_cast<std::size_t>(elem_id)] = 1;
+
+                for (int val_id : region.mat_paras.val_ids) {
+                    x(elem_id, val_id - 1) = 1.0;
+                }
+            }
+        } else if (region.status == "void") {
+            for (int elem_id : region.elem_ids) {
+                x_label[static_cast<std::size_t>(elem_id)] = -1;
+                x.row(elem_id).setZero();
+            }
+        } else if (region.status == "design_val") {
+            for (int elem_id : region.elem_ids) {
+                for (int val_id : region.mat_paras.val_ids) {
+                    x(elem_id, val_id - 1) = x0;
+                }
+            }
+        } else {
+            throw std::runtime_error("init_design_variables: unsupported region status: " + region.status);
+        }
+    }
     return x;
 }
 
 double bc_value(const BoundaryCondition& BC, const Analysis& A, int istep) {
     constexpr double pi = 3.141592653589793238462643383279502884;
     const std::string tt = lower(BC.time_type);
-    if (tt == "constant") return BC.base_value + BC.amp;
+    if (tt == "constant") return BC.amp;
     if (tt == "sin") {
         const double t = istep * A.dt;
-        return BC.base_value + BC.amp * std::sin(2.0 * pi * BC.nCycle * t / A.Tmax + BC.phase);
+        return  BC.base_value + BC.amp * std::sin(2.0 * pi * BC.nCycle * t / A.Tmax + BC.phase);
     }
     if (tt == "linear") {
-        return BC.base_value + BC.amp * static_cast<double>(istep) / static_cast<double>(A.Nstep);
+        return BC.amp * static_cast<double>(istep) / static_cast<double>(A.Nstep);
     }
     if (tt == "sum_sim") {
         const double t = (istep - 1) * A.dt;
@@ -261,7 +304,7 @@ double bc_value(const BoundaryCondition& BC, const Analysis& A, int istep) {
         const double envelope = std::min(t / rise_time, 1.0);
         double sum = 0.0;
         for (int i = 0; i < 7; ++i) sum += scale[i] * std::sin(2.0 * pi * freq[i] * t + phi[i]);
-        return BC.base_value + BC.amp * envelope * sum;
+        return BC.amp * envelope * sum;
     }
     throw std::runtime_error("Unsupported BC time_type");
 }

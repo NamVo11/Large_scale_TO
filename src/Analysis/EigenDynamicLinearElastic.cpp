@@ -150,10 +150,7 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
 
     for (const Region &region : analysis.regions)
     {
-        const double region_nu =
-            region.mat_paras.nu.empty()
-                ? fem.nu
-                : region.mat_paras.nu.back();
+        const double region_nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
 
         ElementMatrix uniform_em;
 
@@ -165,10 +162,7 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
                     "eigen assemble_K_M: region has no elements");
             }
 
-            uniform_em = fem.compute_element_matrices(
-                region.elem_ids.front(),
-                region_nu,
-                fem.Thickness);
+            uniform_em = fem.compute_element_matrices(region.elem_ids.front(), region_nu, fem.Thickness);
         }
 
         /*
@@ -179,11 +173,9 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
         {
             const int tid = omp_get_thread_num();
 
-            auto &local_k_triplets =
-                thread_k_triplets[static_cast<std::size_t>(tid)];
+            auto &local_k_triplets = thread_k_triplets[static_cast<std::size_t>(tid)];
 
-            auto &local_m_triplets =
-                thread_m_triplets[static_cast<std::size_t>(tid)];
+            auto &local_m_triplets = thread_m_triplets[static_cast<std::size_t>(tid)];
 
 #pragma omp for schedule(static)
             for (std::size_t e = 0; e < region.elem_ids.size(); ++e)
@@ -191,19 +183,15 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
                 const int elem_id = region.elem_ids[e];
 
                 const double x = y_elem(elem_id, 0);
-                const auto [Eeff, rhoeff] =
-                    interp_region(region, x);
+                const auto [Eeff, rhoeff] = interp_region(region, x);
 
                 ElementMatrix local_em;
                 const ElementMatrix *em_ptr = &uniform_em;
 
                 if (!fem.uniform_element_matrices)
                 {
-                    local_em = fem.compute_element_matrices(elem_id,
-                                                            region_nu,
-                                                            fem.Thickness);
+                    local_em = fem.compute_element_matrices(elem_id, region_nu, fem.Thickness);
                                                      
-
                     em_ptr = &local_em;
                 }
 

@@ -414,7 +414,7 @@
       "command": "python3",
       "args": [
         "scripts/watch_optimization_live.py",
-        "case_study/Engine_bracket/FOM",
+        "case_study/Engine_bracket/Strategy_10_20",
         // Case folder to watch. Change this to case_study/test1, case_study/Debug, etc.
         "--scale",
         "8",
@@ -475,20 +475,20 @@
           //"PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
           //"MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
 
-          "INPUT_JSONS": "case_study/Engine_bracket/FOM/input.json",
+          "INPUT_JSONS": "case_study/Engine_bracket/Strategy_10_20/input.json   case_study/Engine_bracket/FOM_Eigen/input.json",
 
           "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
           "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
           "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso", // single-node direct solver; alternatives: mumps // mkl_pardiso
-          "LINEAR_BACKEND": "petsc", // petsc: PETSc FOM/fallback; eigen: Eigen FOM/fallback. EIGEN_USE_LAPACKE affects only eigen.
+          "LINEAR_BACKEND": "eigen", // petsc: PETSc FOM/fallback; eigen: Eigen FOM/fallback. EIGEN_USE_LAPACKE affects only eigen.
           "STAGE2_EIGEN_CHECK_FOM_RESIDUAL": "0", // Eigen backend FOM direct only: 0 skip extra A*u-rhs check like PETSc; 1 print residual-check timing
           "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
           "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: IncrementalSVD only; ignored by MyStrategy2
           "STAGE2_MYSTRATEGY2_FULL_PROJECTION": "0", // MyStrategy2 only: 0 incremental projection; 1 full V'AV rebuild when projection is needed
           "OMP_NUM_THREADS": "1", // use 1 for method comparison; try 4,8,16 for fast production runs
           "MKL_NUM_THREADS": "1", // match OMP_NUM_THREADS unless testing MKL threading
-          "FACTOR_NUM_THREADS": "1", // used only when NP=1; script forces 1 for MPI/multinode
-          "SENS_ELEMENT_THREADS": "1", // used only when NP=1; script forces 1 for MPI/multinode
+          "FACTOR_NUM_THREADS": "8", // used only when NP=1; script forces 1 for MPI/multinode
+          "SENS_ELEMENT_THREADS": "8", // used only when NP=1; script forces 1 for MPI/multinode
           "OMP_PROC_BIND": "spread", // spread or close
           "OMP_PLACES": "cores" // cores or threads
         }

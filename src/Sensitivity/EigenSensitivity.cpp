@@ -88,8 +88,9 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                                           const ObjectiveGroup& object,
                                           const Eigen::MatrixXd& lambda_all) {
     using Clock = std::chrono::steady_clock;
+
     const auto timer_begin = Clock::now();
-    auto elapsed = [](Clock::time_point a, Clock::time_point b) {
+    const auto elapsed = [](Clock::time_point a, Clock::time_point b) {
         return std::chrono::duration<double>(b - a).count();
     };
 
@@ -100,134 +101,180 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
 
     const int nstep = analysis.Nstep;
     const int nvar = nvar_of(xPhys);
-    const Region& region = analysis.regions.front();
-    const double nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
+
+    if (xPhys.rows() != fem.NElem) {
+        throw std::runtime_error("explicit_gradient_dynamic: xPhys row count does not match fem.NElem");
+    }
+
+    if (analysis.results.U.cols() < nstep + 1 ||
+        analysis.results.A.cols() < nstep + 1 ||
+        lambda_all.cols() < nstep + 1) {
+        throw std::runtime_error("explicit_gradient_dynamic: insufficient time-step columns");
+    }
+
+    if (analysis.results.U.rows() != analysis.results.A.rows() ||
+        analysis.results.U.rows() != lambda_all.rows()) {
+        throw std::runtime_error("explicit_gradient_dynamic: U, A and lambda_all row mismatch");
+    }
 
     int sens_element_threads = 1;
-    if (const char* env = std::getenv("SENS_ELEMENT_THREADS")) sens_element_threads = std::max(1, std::atoi(env));
+    if (const char* env = std::getenv("SENS_ELEMENT_THREADS")) {
+        sens_element_threads = std::max(1, std::atoi(env));
+    }
+
     if (size != 1) sens_element_threads = 1;
 
-    auto t0 = Clock::now();
-    std::vector<double> dE(static_cast<std::size_t>(fem.NElem * nvar), 0.0);
-    std::vector<double> drho(static_cast<std::size_t>(fem.NElem * nvar), 0.0);
-    for (int e = 0; e < fem.NElem; ++e) {
-        for (int v = 0; v < nvar; ++v) {
-            const double x = xPhys(e, v);
-            const std::size_t id = static_cast<std::size_t>(e * nvar + v);
-            dE[id] = ramp_derivative(region.mat_paras.E_inf, x, region.interp.p_E_elastic);
-            drho[id] = ramp_derivative(region.mat_paras.rho, x, region.interp.p_rho);
-        }
-    }
-    auto t1 = Clock::now();
-    const double timing_interp_derivative = elapsed(t0, t1);
-
-    t0 = Clock::now();
-    ElementMatrix uniform_em;
-    if (fem.uniform_element_matrices) {
-        uniform_em = fem.compute_element_matrices(analysis.regions.front().elem_ids.front(), nu, fem.Thickness);
-    }
-    t1 = Clock::now();
-    const double timing_element_matrix = elapsed(t0, t1);
-
-    t0 = Clock::now();
     Eigen::MatrixXd df_dx = Eigen::MatrixXd::Zero(fem.NElem, nvar);
-    t1 = Clock::now();
-    const double timing_alloc_gradient = elapsed(t0, t1);
-
-    t0 = Clock::now();
 
     if (rank == 0) {
         int actual_threads = 1;
+
         #pragma omp parallel num_threads(sens_element_threads) if(sens_element_threads > 1)
         {
             #pragma omp single
             actual_threads = omp_get_num_threads();
         }
-        
-        std::cout << "  thread_debug explicit_gradient_dynamic: requested_threads="
-                  << sens_element_threads
+
+        std::cout << "  thread_debug explicit_gradient_dynamic:"
+                  << " requested_threads=" << sens_element_threads
                   << " actual_threads=" << actual_threads
                   << " omp_get_max_threads=" << omp_get_max_threads()
-                  << "\n";
-        
+                  << '\n';
     }
 
-    #pragma omp parallel for schedule(static) num_threads(sens_element_threads) if(sens_element_threads > 1)
-    for (int e = 0; e < fem.NElem; ++e) {
-        ElementMatrix local_em;
-        const ElementMatrix* em_ptr = &uniform_em;
-        if (!fem.uniform_element_matrices) {
-            local_em = fem.compute_element_matrices(e, nu, fem.Thickness);
-            em_ptr = &local_em;
-        }
-        const ElementMatrix& em = *em_ptr;
-        if (em.ndof > 24) throw std::runtime_error("explicit_gradient_dynamic: element ndof > 24 is not supported by stack buffer");
-        const auto& dofs = fem.ElementDofs.at(static_cast<std::size_t>(e));
-        Eigen::Matrix<double, 24, 1> u_elem_buffer;
-        Eigen::Matrix<double, 24, 1> acc_elem_buffer;
-        Eigen::Matrix<double, 24, 1> lambda_elem_buffer;
-        Eigen::Matrix<double, 24, 1> Ku_elem_buffer;
-        Eigen::Matrix<double, 24, 1> Ma_elem_buffer;
+    const auto t0 = Clock::now();
 
-        for (int k = 0; k <= nstep; ++k) {
-            const auto u = analysis.results.U.col(k);
-            const auto acc = analysis.results.A.col(k);
-            const auto lambda = lambda_all.col(k);
-            for (int i = 0; i < em.ndof; ++i) {
-                const int dof_i = static_cast<int>(dofs[static_cast<std::size_t>(i)]);
-                u_elem_buffer(i) = u(dof_i);
-                acc_elem_buffer(i) = acc(dof_i);
-                lambda_elem_buffer(i) = lambda(dof_i);
+    for (const Region& region : analysis.regions) {
+        if (region.status != "design_val") continue;
+        if (region.elem_ids.empty()) continue;
+
+        if (region.mat_paras.val_ids.empty()) {
+            throw std::runtime_error("explicit_gradient_dynamic: design_val region has no val_ids");
+        }
+
+        if (region.mat_paras.E_inf.empty()) {
+            throw std::runtime_error("explicit_gradient_dynamic: region has no elastic parameters");
+        }
+
+        if (region.mat_paras.rho.empty()) {
+            throw std::runtime_error("explicit_gradient_dynamic: region has no density parameters");
+        }
+
+        for (int val_id : region.mat_paras.val_ids) {
+            if (val_id <= 0 || val_id > nvar) {
+                throw std::runtime_error("explicit_gradient_dynamic: region val_id is outside xPhys columns");
             }
-            auto u_elem = u_elem_buffer.head(em.ndof);
-            auto acc_elem = acc_elem_buffer.head(em.ndof);
-            auto lambda_elem = lambda_elem_buffer.head(em.ndof);
-            auto Ku_elem = Ku_elem_buffer.head(em.ndof);
-            auto Ma_elem = Ma_elem_buffer.head(em.ndof);
-            Ku_elem.noalias() = em.ke * u_elem;
-            if (k != 0) Ma_elem.noalias() = em.me * acc_elem;
-            else Ma_elem.setZero();
-            const double lambda_dot_Ku = lambda_elem.dot(Ku_elem);
-            const double lambda_dot_Ma = lambda_elem.dot(Ma_elem);
-            for (int v = 0; v < nvar; ++v) {
-                const std::size_t ev = static_cast<std::size_t>(e * nvar + v);
-                df_dx(e, v) += dE[ev] * lambda_dot_Ku + drho[ev] * lambda_dot_Ma;
+        }
+
+        for (int elem_id : region.elem_ids) {
+            if (elem_id < 0 || elem_id >= fem.NElem) {
+                throw std::runtime_error("explicit_gradient_dynamic: invalid element id in region");
+            }
+
+            const auto& dofs = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
+            if (dofs.size() > 24) {
+                throw std::runtime_error("explicit_gradient_dynamic: element ndof > 24 is not supported");
+            }
+        }
+
+        const double region_nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
+
+        ElementMatrix uniform_em;
+
+        if (fem.uniform_element_matrices) {
+            uniform_em = fem.compute_element_matrices(region.elem_ids.front(), region_nu, fem.Thickness);
+
+            if (uniform_em.ndof > 24) {
+                throw std::runtime_error("explicit_gradient_dynamic: uniform element ndof > 24");
+            }
+        }
+
+        const int region_nelem = static_cast<int>(region.elem_ids.size());
+
+        #pragma omp parallel for schedule(static) num_threads(sens_element_threads) if(sens_element_threads > 1)
+
+        for (int local_e = 0; local_e < region_nelem; ++local_e) {
+            const int elem_id = region.elem_ids[static_cast<std::size_t>(local_e)];
+
+            ElementMatrix local_em;
+            const ElementMatrix* em_ptr = &uniform_em;
+
+            if (!fem.uniform_element_matrices) {
+                local_em = fem.compute_element_matrices(elem_id, region_nu, fem.Thickness);
+                em_ptr = &local_em;
+            }
+
+            const ElementMatrix& em = *em_ptr;
+            const auto& dofs = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
+
+            Eigen::Matrix<double, 24, 1> u_elem_buffer;
+            Eigen::Matrix<double, 24, 1> acc_elem_buffer;
+            Eigen::Matrix<double, 24, 1> lambda_elem_buffer;
+            Eigen::Matrix<double, 24, 1> Ku_elem_buffer;
+            Eigen::Matrix<double, 24, 1> Ma_elem_buffer;
+
+            double sum_lambda_dot_Ku = 0.0;
+            double sum_lambda_dot_Ma = 0.0;
+
+            for (int k = 0; k <= nstep; ++k) {
+                const auto u = analysis.results.U.col(k);
+                const auto acc = analysis.results.A.col(k);
+                const auto lambda = lambda_all.col(k);
+
+                for (int i = 0; i < em.ndof; ++i) {
+                    const int dof_i = static_cast<int>(dofs[static_cast<std::size_t>(i)]);
+                    u_elem_buffer(i) = u(dof_i);
+                    acc_elem_buffer(i) = acc(dof_i);
+                    lambda_elem_buffer(i) = lambda(dof_i);
+                }
+
+                const auto u_elem = u_elem_buffer.head(em.ndof);
+                const auto acc_elem = acc_elem_buffer.head(em.ndof);
+                const auto lambda_elem = lambda_elem_buffer.head(em.ndof);
+                auto Ku_elem = Ku_elem_buffer.head(em.ndof);
+                auto Ma_elem = Ma_elem_buffer.head(em.ndof);
+
+                Ku_elem.noalias() = em.ke * u_elem;
+
+                if (k == 0) {
+                    Ma_elem.setZero();
+                } else {
+                    Ma_elem.noalias() = em.me * acc_elem;
+                }
+
+                sum_lambda_dot_Ku += lambda_elem.dot(Ku_elem);
+                sum_lambda_dot_Ma += lambda_elem.dot(Ma_elem);
+            }
+
+            for (int val_id : region.mat_paras.val_ids) {
+                const double x = xPhys(elem_id, val_id - 1);
+                const double dE = ramp_derivative(region.mat_paras.E_inf, x, region.interp.p_E_elastic);
+                const double drho = ramp_derivative(region.mat_paras.rho, x, region.interp.p_rho);
+
+                df_dx(elem_id, val_id - 1) += dE * sum_lambda_dot_Ku + drho * sum_lambda_dot_Ma;
             }
         }
     }
-    t1 = Clock::now();
+
+    const auto t1 = Clock::now();
     const double timing_element_loop = elapsed(t0, t1);
 
-    t0 = Clock::now();
-    const double timing_flatten = 0.0;
-    t1 = Clock::now();
-
-    t0 = Clock::now();
-    const double timing_allreduce = 0.0;
-    t1 = Clock::now();
-
-    t0 = Clock::now();
+    const auto add_begin = Clock::now();
     add_scaled(df_dx, object.d_explicit_df_dx, 1.0);
-    t1 = Clock::now();
-    const double timing_unflatten_add = elapsed(t0, t1);
+    const auto add_end = Clock::now();
+
+    const double timing_unflatten_add = elapsed(add_begin, add_end);
 
     if (rank == 0) {
         const double timing_total = elapsed(timer_begin, Clock::now());
-        
+
         std::cout << "  explicit_gradient_dynamic[s]:"
                   << " threads=" << sens_element_threads
-                  << " interp_derivative=" << timing_interp_derivative
-                  << " element_matrix=" << timing_element_matrix
-                  << " alloc_gradient=" << timing_alloc_gradient
                   << " element_loop=" << timing_element_loop
-                  << " flatten=" << timing_flatten
-                  << " allreduce=" << timing_allreduce
                   << " unflatten_add=" << timing_unflatten_add
                   << " total=" << timing_total
-                  << "\n";
-        
+                  << '\n';
     }
-
     return df_dx;
 }
 

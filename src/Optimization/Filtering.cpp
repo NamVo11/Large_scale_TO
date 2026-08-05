@@ -93,11 +93,26 @@ void filtering_calculation(const Eigen::MatrixXd& x,
     state.xTilde = state.H * x;
     state.xTilde.array().colwise() /= state.Hs_eigen.array();
     const double denom = std::tanh(filtering.beta * filtering.T) + std::tanh(filtering.beta * (1.0 - filtering.T));
-    state.xPhys = (std::tanh(filtering.beta * filtering.T) +
-                   (filtering.beta * (state.xTilde.array() - filtering.T)).tanh()).matrix() / denom;
-    for (int e = 0; e < nelem; ++e) {
-        if (x_label[static_cast<std::size_t>(e)] > 0) state.xPhys.row(e).setOnes();
-        if (x_label[static_cast<std::size_t>(e)] < 0) state.xPhys.row(e).setZero();
+    state.xPhys = (std::tanh(filtering.beta * filtering.T) + (filtering.beta * (state.xTilde.array() - filtering.T)).tanh()).matrix() / denom;
+    
+    if (static_cast<int>(x_label.size()) != nelem) {
+    throw std::runtime_error("filtering_calculation: x_label size mismatch");
+    }
+    for (int j = 0; j < nvar; ++j)
+    {
+        double *column = state.xPhys.col(j).data();
+        for (int e = 0; e < nelem; ++e)
+        {
+            const int label = x_label[static_cast<std::size_t>(e)];
+            if (label > 0)
+            {
+                column[e] = 1.0;
+            }
+            else if (label < 0)
+            {
+                column[e] = 0.0;
+            }
+        }
     }
     if (state.xPhys.cols() != nvar) throw std::runtime_error("filtering_calculation: invalid xPhys columns");
 }
