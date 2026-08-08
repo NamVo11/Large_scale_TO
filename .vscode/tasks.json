@@ -425,7 +425,7 @@
         "--port",
         "8765",
         // Browser port, open http://localhost:8765.
-        //"--once",
+        "--once",
         // Run one time, save/update figures and HTML, then exit.
         // "--no-server",
         // Do not start the browser server.
@@ -475,7 +475,7 @@
           //"PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
           //"MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
 
-          "INPUT_JSONS": "case_study/Engine_bracket/8Thread/FOM_Eigen/input.json   case_study/Engine_bracket/8Thread/Strategy_10_20/input.json",
+          "INPUT_JSONS": "case_study/Engine_bracket/mesh_size1.5/FOM/input.json",
 
           "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
           "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg

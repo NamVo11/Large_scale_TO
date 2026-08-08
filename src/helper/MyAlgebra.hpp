@@ -14,6 +14,9 @@ std::vector<int> to_ints(const std::vector<PetscInt>& in);
 
 namespace Petsc {
 void apply_dirichlet_to_matrix(Mat A, const std::vector<int>& fixed, double diag = 1.0);
+
+void check_matrix_diagonal(Mat A, const char* name);
+
 }
 
 namespace EigenOps {

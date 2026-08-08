@@ -236,6 +236,9 @@ void PetscDynamicLinearElastic::solver(const FEM& fem,
 
     Mat K_initial = nullptr;
     MatDuplicate(K, MAT_COPY_VALUES, &K_initial);
+
+    //MyAlgebra::Petsc::check_matrix_diagonal(K_initial,"K");
+
     MyAlgebra::Petsc::apply_dirichlet_to_matrix(K_initial, SPCdofs, 1.0);
     PetscTime(&ts1);
     timing_bc_and_initial_matrix += static_cast<double>(ts1 - ts0);
@@ -294,6 +297,7 @@ void PetscDynamicLinearElastic::solver(const FEM& fem,
     PetscTime(&ts0);
     MatDuplicate(K, MAT_COPY_VALUES, &K_eff);
     MatAXPY(K_eff, a0c, M, SAME_NONZERO_PATTERN);
+    
     MyAlgebra::Petsc::apply_dirichlet_to_matrix(K_eff, SPCdofs, 1.0);
     PetscTime(&ts1);
     timing_keff_prepare += static_cast<double>(ts1 - ts0);

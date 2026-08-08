@@ -133,6 +133,7 @@ double parse_nastran_double(const std::string& text) {
     throw std::runtime_error("Invalid Nastran double: " + s);
 }
 
+// Hàm này trả về chuỗi nằm giữa cặp dấu ngoặc kép (" ") đầu tiên.
 std::string hmset_name_from_line(const std::string& line) {
     const std::size_t q1 = line.find('"');
     if (q1 == std::string::npos) return {};

@@ -17,6 +17,7 @@
 namespace MyAlgebra {
 namespace {
 
+
 int bounded_rank(const Eigen::MatrixXd& X, int max_rank) {
     return std::min({max_rank, static_cast<int>(X.rows()), static_cast<int>(X.cols())});
 }
@@ -65,6 +66,25 @@ std::vector<int> to_ints(const std::vector<PetscInt>& in) {
 }
 
 namespace Petsc {
+
+void check_matrix_diagonal(Mat A, const char* name)
+{
+    PetscBool missing = PETSC_FALSE;
+    PetscInt row = -1;
+
+    PetscCallAbort(
+        PETSC_COMM_WORLD,
+        MatMissingDiagonal(A, &missing, &row)
+    );
+
+    PetscPrintf(
+        PETSC_COMM_WORLD,
+        "%s: missing=%d first_missing=%" PetscInt_FMT "\n",
+        name,
+        static_cast<int>(missing),
+        row
+    );
+}
 
 void apply_dirichlet_to_matrix(Mat A, const std::vector<int>& fixed, double diag) {
     if (!A || fixed.empty()) return;
