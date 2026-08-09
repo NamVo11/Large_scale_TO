@@ -5,6 +5,7 @@
 #include "ROM/ROM.hpp"
 #include "Sensitivity/Sensitivity.hpp"
 #include "helper/MyAlgebra.hpp"
+#include "helper/MemoryDebug.hpp"
 #include "helper/PetscEigenBridge.hpp"
 #include "helper/PetscEigenHelper.hpp"
 #include "JdumasMMASolver.hpp"
@@ -137,7 +138,7 @@ namespace
             eigen_to_petsc_vec(lambda_e, lambda);
         }
 
-        Mat duplicate_with_dirichlet(Mat A, const std::vector<int> &fixed)
+        [[maybe_unused]] Mat duplicate_with_dirichlet(Mat A, const std::vector<int> &fixed)
         {
             Mat B = nullptr;
             MatDuplicate(A, MAT_COPY_VALUES, &B);
@@ -145,11 +146,11 @@ namespace
             return B;
         }
 
-Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
-                                          const Analysis& analysis,
-                                          const Eigen::MatrixXd& xPhys,
-                                          const ObjectiveGroup& object,
-                                          const Eigen::MatrixXd& lambda_all) {
+        Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
+                                                    const Analysis& analysis,
+                                                    const Eigen::MatrixXd& xPhys,
+                                                    const ObjectiveGroup& object,
+                                                    const Eigen::MatrixXd& lambda_all) {
     using Clock = std::chrono::steady_clock;
 
     const auto timer_begin = Clock::now();
@@ -401,8 +402,13 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
 
             if (!object.ROM)
                 throw std::runtime_error("PetscSensitivity requires ObjectiveGroup::ROM initialized");
-            Mat K0 = duplicate_with_dirichlet(analysis.results.K_inf, analysis.results.SPCdofs);
-            Mat Keff = duplicate_with_dirichlet(analysis.results.K_eff, analysis.results.SPCdofs);
+            MemoryDebug::print("petsc_sens_begin");
+            // Memory-saving flow: forward stores SPC-applied K_initial and K_eff,
+            // so sensitivity can reuse them directly without duplicate_with_dirichlet().
+            Mat K0 = analysis.results.K_inf;
+            MemoryDebug::print("petsc_sens_after_get_K0");
+            Mat Keff = analysis.results.K_eff;
+            MemoryDebug::print("petsc_sens_after_get_Keff");
 
             Vec lambda = nullptr;
             Vec lambda_new = nullptr;
@@ -419,8 +425,10 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
             VecDuplicate(lambda, &eta);
             VecDuplicate(lambda, &eta_new);
             VecDuplicate(lambda, &Mlambda);
+            MemoryDebug::print("petsc_sens_after_vec_create");
 
             Eigen::MatrixXd lambda_all(fem.ndof, nstep + 1);
+            MemoryDebug::print("petsc_sens_after_lambda_all_alloc");
 
             object.ROM->set_petsc_factorized_solver(Keff, analysis.results.factorized_K_eff);
 
@@ -433,6 +441,7 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
             set_vec_fixed_from_column_root(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
             solve_adjoint_full(*object.ROM, Keff, rhs, lambda, analysis, Iter, k);
             lambda_all.col(k) = gather_vec_to_all_local(lambda);
+            MemoryDebug::print("petsc_sens_after_step_end");
 
             for (k = nstep - 1; k >= 0; --k)
             {
@@ -468,13 +477,16 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                 }
                 solve_adjoint_full(*object.ROM, k == 0 ? K0 : Keff, rhs, lambda, analysis, Iter, k);
                 lambda_all.col(k) = gather_vec_to_all_local(lambda);
+                if (k == nstep - 1 || k == nstep / 2 || k == 0) {
+                    MemoryDebug::print("petsc_sens_after_step_" + std::to_string(k));
+                }
             }
 
-            Eigen::MatrixXd dfdx_phys =
-                explicit_gradient_dynamic(fem, analysis, filtering_state.xPhys, object, lambda_all);
+            MemoryDebug::print("petsc_sens_before_explicit_gradient");
+            Eigen::MatrixXd dfdx_phys = explicit_gradient_dynamic(fem, analysis, filtering_state.xPhys, object, lambda_all);
+            MemoryDebug::print("petsc_sens_after_explicit_gradient");
 
-            MatDestroy(&K0);
-            MatDestroy(&Keff);
+            // K0 and Keff are borrowed from analysis.results; do not destroy them here.
             VecDestroy(&lambda);
             VecDestroy(&lambda_new);
             VecDestroy(&mu);
@@ -483,6 +495,8 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
             VecDestroy(&eta_new);
             VecDestroy(&rhs);
             VecDestroy(&Mlambda);
+            MemoryDebug::print("petsc_sens_after_destroy_temp");
+            
             return filtering_sensitivity(dfdx_phys, filtering, filtering_state);
         }
         Eigen::MatrixXd AVM(const FEM &fem,

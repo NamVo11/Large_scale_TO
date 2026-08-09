@@ -1,5 +1,6 @@
 #include "ROM/ROM_method/PetscFOM_direct.hpp"
 
+#include "helper/MemoryDebug.hpp"
 #include "helper/PetscEigenBridge.hpp"
 
 #include <algorithm>
@@ -77,6 +78,7 @@ void PetscFOM_direct::set_petsc_system(Mat lhs, Vec rhs, Vec u) {
 }
 
 void PetscFOM_direct::set_factorization(Mat factor_in) {
+    MemoryDebug::print("fom_direct_before_set_factorization");
     PetscLogDouble t0 = 0.0;
     PetscLogDouble t1 = 0.0;
     PetscTime(&t0);
@@ -112,6 +114,7 @@ void PetscFOM_direct::set_factorization(Mat factor_in) {
     PCSetType(pc, PCLU);
     KSPSetFromOptions(ksp_);
     KSPSetUp(ksp_);
+    MemoryDebug::print("fom_direct_after_KSPSetUp");
     PetscTime(&t1);
     last_factorization_time_ = static_cast<double>(t1 - t0);
 }
@@ -162,7 +165,9 @@ SolveStats PetscFOM_direct::FOM_main(const Eigen::SparseMatrix<double>&,
     PetscLogDouble t0 = 0.0;
     PetscLogDouble t1 = 0.0;
     PetscTime(&t0);
+    MemoryDebug::print("fom_direct_before_KSPSolve");
     KSPSolve(ksp_, current_rhs_, current_u_);
+    MemoryDebug::print("fom_direct_after_KSPSolve");
     PetscInt its = 0;
     PetscReal rnorm = 0.0;
     KSPGetIterationNumber(ksp_, &its);

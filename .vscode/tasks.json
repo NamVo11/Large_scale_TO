@@ -480,8 +480,9 @@
           "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
           "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
           "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso", // single-node direct solver; alternatives: mumps // mkl_pardiso
-          "LINEAR_BACKEND": "eigen", // petsc: PETSc FOM/fallback; eigen: Eigen FOM/fallback. EIGEN_USE_LAPACKE affects only eigen.
+          "LINEAR_BACKEND": "petsc", // petsc: PETSc FOM/fallback; eigen: Eigen FOM/fallback. EIGEN_USE_LAPACKE affects only eigen.
           "STAGE2_EIGEN_CHECK_FOM_RESIDUAL": "0", // Eigen backend FOM direct only: 0 skip extra A*u-rhs check like PETSc; 1 print residual-check timing
+          "STAGE2_MEMORY_DEBUG": "1", // 1: print RSS/HWM/MemAvailable at large allocation/solve milestones; 0: silent
           "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
           "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: IncrementalSVD only; ignored by MyStrategy2
           "STAGE2_MYSTRATEGY2_FULL_PROJECTION": "0", // MyStrategy2 only: 0 incremental projection; 1 full V'AV rebuild when projection is needed

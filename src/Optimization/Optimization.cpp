@@ -3,6 +3,7 @@
 #include "MatlabMMA.hpp"
 #include "Optimization/Filtering.hpp"
 #include "ROM/ROM.hpp"
+#include "helper/MemoryDebug.hpp"
 
 #include <petscsys.h>
 
@@ -53,6 +54,7 @@ void evaluate_objective_ptr(const FEM& fem,
                             OptimizationBase& Opt,
                             const Eigen::MatrixXd& xPhys,
                             double& obj_value) {
+    (void)xPhys;
     obj_value = 0.0;
     for (auto& group : Opt.objective_groups) {
         Analysis& analysis = *Opt.analysis_all[static_cast<std::size_t>(group.analysis_id - 1)];
@@ -66,12 +68,11 @@ void evaluate_objective_ptr(const FEM& fem,
             if (lower(term.function_name) != "l2_compliance_elastic") throw std::runtime_error("Unknown objective term");
             const int ndof = fem.ndof;
             const int nstep = analysis.Nstep;
-            const int nvar = nvar_of(xPhys);
             term.dfdu_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
-            term.dfdv_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
-            term.dfda_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
+            term.dfdv_all.resize(0, 0);
+            term.dfda_all.resize(0, 0);
             term.dfdFext_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
-            term.df_dx = Eigen::MatrixXd::Zero(fem.NElem, nvar);
+            term.df_dx.resize(0, 0);
             term.value = 0.0;
             for (int k = 0; k <= nstep; ++k) {
                 const auto u = analysis.results.U.col(k);
@@ -82,8 +83,6 @@ void evaluate_objective_ptr(const FEM& fem,
                 term.dfdFext_all.col(k).noalias() = 2.0 * s * u;
                 for (int d : analysis.results.SPCdofs) {
                     term.dfdu_all(d, k) = 0.0;
-                    term.dfdv_all(d, k) = 0.0;
-                    term.dfda_all(d, k) = 0.0;
                 }
                 for (int d : analysis.results.free) term.dfdFext_all(d, k) = 0.0;
             }
@@ -107,10 +106,7 @@ void evaluate_constraint_ptr(const FEM& fem,
     constr_value_vec.assign(Opt.constraints.size(), 0.0);
     for (std::size_t i = 0; i < Opt.constraints.size(); ++i) {
         Constraint& c = Opt.constraints[i];
-        Analysis& analysis = *Opt.analysis_all[static_cast<std::size_t>(c.analysis_id - 1)];
         if (lower(c.function_name) != "volume_fraction") throw std::runtime_error("Unknown constraint");
-        const int ndof = fem.ndof;
-        const int nstep = analysis.Nstep;
         const int nvar = nvar_of(xPhys);
         const int val_id = c.mat_id - 2;
         if (val_id < 0 || val_id >= nvar) throw std::runtime_error("volume_fraction: invalid mat_id");
@@ -122,10 +118,10 @@ void evaluate_constraint_ptr(const FEM& fem,
         const double material_volume = volume_vec.dot(xPhys.col(val_id));
         if (!(total_volume > 0.0)) throw std::runtime_error("volume_fraction: non-positive total volume");
         c.value = material_volume / total_volume;
-        c.d_explicit_dfdu_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
-        c.d_explicit_dfdv_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
-        c.d_explicit_dfda_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
-        c.d_explicit_dfdFext_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
+        c.d_explicit_dfdu_all.resize(0, 0);
+        c.d_explicit_dfdv_all.resize(0, 0);
+        c.d_explicit_dfda_all.resize(0, 0);
+        c.d_explicit_dfdFext_all.resize(0, 0);
         c.d_explicit_df_dx = Eigen::MatrixXd::Zero(fem.NElem, nvar);
         c.d_explicit_df_dx.col(val_id) = volume_vec / total_volume;
         if (c.value_initial == 0.0) c.value_initial = c.value;
@@ -187,17 +183,22 @@ void OptimizationBase::run(const FEM& fem) {
     double mma_time = 0.0;
 
     while (Iter <= MaxIter && (Iter == 0 || Change > Tol)) {
+        MemoryDebug::print("iter_begin");
         const auto iter_t0 = Clock::now();
         double output_time = 0.0;
         if (Iter > 0) ++loopbeta;
+        MemoryDebug::print("before_filtering");
         filtering_calculation(x, x_label, filtering, filtering_state);
+        MemoryDebug::print("after_filtering");
         if (Output.save_density_each_iter != 0 && Iter % Output.save_density_interval == 0) {
             const auto out_t0 = Clock::now();
             Output.save_density_iteration(fem, filtering_state.xPhys, Iter);
             output_time += elapsed(out_t0, Clock::now());
         }
         auto t0 = Clock::now();
+        MemoryDebug::print("before_forward");
         for (auto& A : analysis_all) A->solver(fem, filtering_state.xPhys, Iter);
+        MemoryDebug::print("after_forward");
         auto t1 = Clock::now();
         forward_time = elapsed(t0, t1);
         for (auto& A : analysis_all) {
@@ -209,12 +210,16 @@ void OptimizationBase::run(const FEM& fem) {
         }
 
         t0 = Clock::now();
+        MemoryDebug::print("before_objective_value");
         evaluate_objective_ptr(fem, *this, filtering_state.xPhys, obj_value);
+        MemoryDebug::print("after_objective_value");
         t1 = Clock::now();
         objective_time = elapsed(t0, t1);
 
         t0 = Clock::now();
+        MemoryDebug::print("before_constraint_value");
         evaluate_constraint_ptr(fem, *this, filtering_state.xPhys, constr_value_vec);
+        MemoryDebug::print("after_constraint_value");
         t1 = Clock::now();
         constraint_time = elapsed(t0, t1);
 
@@ -230,6 +235,7 @@ void OptimizationBase::run(const FEM& fem) {
 
         dObj_dx_mat = Eigen::MatrixXd::Zero(nelem, nvar);
         t0 = Clock::now();
+        MemoryDebug::print("before_objective_sensitivity");
         for (auto& group : objective_groups) {
             Analysis& A = *analysis_all[static_cast<std::size_t>(group.analysis_id - 1)];
             Eigen::MatrixXd dg = lower(group.sens_type) == "debug"
@@ -238,6 +244,7 @@ void OptimizationBase::run(const FEM& fem) {
                 : sensitivity->objective_sensitivity(fem, A, x, x_label, group, filtering, filtering_state, Iter);
             add_scaled(dObj_dx_mat, dg, 1.0);
         }
+        MemoryDebug::print("after_objective_sensitivity");
         t1 = Clock::now();
         objective_sensitivity_time = elapsed(t0, t1);
         dObj_dx_vec = flatten(dObj_dx_mat);
@@ -249,12 +256,14 @@ void OptimizationBase::run(const FEM& fem) {
 
         dConstr_dx.clear();
         t0 = Clock::now();
+        MemoryDebug::print("before_constraint_sensitivity");
         for (auto& c : constraints) {
             Analysis& A = *analysis_all[static_cast<std::size_t>(c.analysis_id - 1)];
             Eigen::MatrixXd dc = sensitivity->constraint_sensitivity(fem, A, x, x_label, c, filtering, filtering_state, Iter);
             std::vector<double> flat = flatten(dc);
             dConstr_dx.insert(dConstr_dx.end(), flat.begin(), flat.end());
         }
+        MemoryDebug::print("after_constraint_sensitivity");
         t1 = Clock::now();
         constraint_sensitivity_time = elapsed(t0, t1);
 
