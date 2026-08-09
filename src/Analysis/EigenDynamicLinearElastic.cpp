@@ -1,6 +1,7 @@
 #include "Analysis/Analysis.hpp"
 #include "MatlabLikeData.hpp"
 #include "ROM/ROM_method/ROM_Base.hpp"
+#include "helper/MemoryDebug.hpp"
 #include "helper/MyAlgebra.hpp"
 
 #include <Eigen/Sparse>
@@ -332,11 +333,13 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
     PetscLogDouble t0 = 0.0;
     PetscLogDouble t1 = 0.0;
     PetscTime(&t0);
+    MemoryDebug::print("forward_begin");
     // Memory-saving flow: K_inf_eigen is assembled as raw K first. After
     // K_eff_eigen is formed, K_inf_eigen is converted in-place to K_initial with SPC.
     Sparse& K = analysis.results.K_inf_eigen;
     Sparse& M = analysis.results.M_eigen;
     assemble_K_M(fem, y_elem, K, M);
+    MemoryDebug::print("forward_after_assemble_K_M");
     PetscTime(&t1);
     analysis.results.assembly_time = static_cast<double>(t1 - t0);
     if (rank == 0)
@@ -352,9 +355,11 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
     analysis.results.K_eff_eigen = K + a0c * M;
     Sparse& K_initial = analysis.results.K_inf_eigen;
     Sparse& K_eff = analysis.results.K_eff_eigen;
+    MemoryDebug::print("forward_after_prepare_Keff");
     // From here, K_initial stores the SPC-applied initial stiffness, not raw K.
     MyAlgebra::EigenOps::apply_dirichlet_to_matrix(K_initial, fixed, 1.0);
     MyAlgebra::EigenOps::apply_dirichlet_to_matrix(K_eff, fixed, 1.0);
+    MemoryDebug::print("forward_after_dirichlet_K_initial");
 
     Eigen::VectorXd u = Eigen::VectorXd::Zero(ndof);
     Eigen::VectorXd v = Eigen::VectorXd::Zero(ndof);
@@ -363,6 +368,7 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
     Eigen::VectorXd v_pred = Eigen::VectorXd::Zero(ndof);
     Eigen::VectorXd rhs = Eigen::VectorXd::Zero(ndof);
     Eigen::VectorXd f_ext = Eigen::VectorXd::Zero(ndof);
+    MemoryDebug::print("forward_after_vec_create");
 
     if (!analysis.ROM)
         throw std::runtime_error("EigenDynamicLinearElastic::solver requires analysis.ROM initialized");
@@ -378,14 +384,16 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
     {
         analysis.results.factorized_K_initial_eigen = rom->get_factorized_solver(K_initial);
     }
+    MemoryDebug::print("forward_after_initial_solve_store_factor");
     if (rank == 0)
         std::cout << "step   0: solve_res = " << initial.residual_norm << "\n";
 
     const int nstore = analysis.Nstep + 1;
     analysis.results.U.resize(ndof, nstore);
-    analysis.results.V.resize(0, 0); // sace memory by not storing velocity history
+    analysis.results.V.resize(0, 0); // save memory by not storing velocity history
     analysis.results.A.resize(ndof, nstore);
     analysis.results.F_ext.resize(ndof, nstore);
+    MemoryDebug::print("forward_after_history_alloc");
     analysis.results.ksp_iterations.clear();
     analysis.results.ksp_residuals.clear();
     analysis.results.SPCdofs = fixed;
@@ -413,6 +421,9 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
         {
             analysis.results.factorized_K_eff_eigen = rom->get_factorized_solver(K_eff);
         }
+        if (istep == 1 || istep == analysis.Nstep) {
+            MemoryDebug::print("forward_after_step_" + std::to_string(istep));
+        }
         analysis.results.ksp_iterations.push_back(step.ksp_iterations);
         analysis.results.ksp_residuals.push_back(step.residual_norm);
 
@@ -434,4 +445,6 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
     }
     PetscTime(&t1);
     analysis.results.solve_time = static_cast<double>(t1 - t0);
+    MemoryDebug::print("forward_after_store_matrices");
+    MemoryDebug::print("forward_after_destroy_temp");
 }

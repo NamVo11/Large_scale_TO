@@ -27,7 +27,7 @@ int env_int_or_default(const char* name, int fallback) {
     if (!value || !*value) return fallback;
     return std::atoi(value);
 }
-
+/*
 double env_double_or_default(const char* name, double fallback) {
     const char* value = std::getenv(name);
     if (!value || !*value) return fallback;
@@ -47,7 +47,7 @@ void check_reduced_matrix_symmetry(const Eigen::MatrixXd& A_r, const char* label
                   << " tol=" << tol << "\n";
     }
 }
-
+*/
 void append_basis_debug(const char* phase,
                         const ROMContext& context,
                         int basis_id,
@@ -153,7 +153,7 @@ void MyStrategy::rebuild_reduced_cache(const Eigen::SparseMatrix<double>& A,
     const double t0 = now_time();
     AV_cache_.noalias() = A * V;
     A_r_cache.noalias() = V.transpose() * AV_cache_;
-    check_reduced_matrix_symmetry(A_r_cache, "MyStrategy::rebuild_reduced_cache");
+    //check_reduced_matrix_symmetry(A_r_cache, "MyStrategy::rebuild_reduced_cache");
     factorized_A_r.compute(A_r_cache);
 
     info.timing_projection += now_time() - t0;
@@ -237,8 +237,8 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
         info.timing_fom_factorization += stats.factorization_time;
         info.timing_fom_solve += stats.solve_time;
         if (u_rom.size() == solution_e.size()) {
-            info.error = eigen_relative_solution_error(solution_e, u_rom);
-            info.basis_error = eigen_basis_error(V, solution_e);
+            //info.error = eigen_relative_solution_error(solution_e, u_rom);
+            //info.basis_error = eigen_basis_error(V, solution_e);
         }
         if (online) {
             const double tu = now_time();
@@ -345,7 +345,7 @@ void MyStrategy2::rebuild_reduced_cache(const Eigen::SparseMatrix<double>& A,
     const double t0 = now_time();
     AV_cache2_.noalias() = A * V;
     A_r_cache.noalias() = V.transpose() * AV_cache2_;
-    check_reduced_matrix_symmetry(A_r_cache, "MyStrategy2::rebuild_reduced_cache");
+    //check_reduced_matrix_symmetry(A_r_cache, "MyStrategy2::rebuild_reduced_cache");
     factorized_A_r.compute(A_r_cache);
     info.timing_projection += now_time() - t0;
     A_r_lhs_cache2_ = &A;
@@ -507,8 +507,8 @@ SolveStats MyStrategy2::main(const Eigen::SparseMatrix<double>& lhs,
         info.timing_fom_factorization += stats.factorization_time;
         info.timing_fom_solve += stats.solve_time;
         if (u_rom.size() == solution_e.size()) {
-            info.error = eigen_relative_solution_error(solution_e, u_rom);
-            info.basis_error = eigen_basis_error(V, solution_e);
+            //info.error = eigen_relative_solution_error(solution_e, u_rom);
+            //info.basis_error = eigen_basis_error(V, solution_e);
         }
         if (online) {
             const double tu = now_time();
