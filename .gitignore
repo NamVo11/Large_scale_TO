@@ -10,3 +10,6 @@ results/
 
 case_study/
 **/case_study/
+
+debug_logs
+**/debug_logs/
