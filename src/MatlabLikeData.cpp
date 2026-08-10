@@ -290,21 +290,27 @@ double bc_value(const BoundaryCondition& BC, const Analysis& A, int istep) {
     if (tt == "constant") return BC.amp;
     if (tt == "sin") {
         const double t = istep * A.dt;
-        return  BC.base_value + BC.amp * std::sin(2.0 * pi * BC.nCycle * t / A.Tmax + BC.phase);
+        return  (BC.base_value + BC.amp* std::sin(2.0 * pi * BC.nCycle * t / A.Tmax + BC.phase))/BC.nDof;
     }
     if (tt == "linear") {
-        return BC.amp * static_cast<double>(istep) / static_cast<double>(A.Nstep);
+        return (BC.amp/BC.nDof) * static_cast<double>(istep) / static_cast<double>(A.Nstep);
     }
-    if (tt == "sum_sim") {
-        const double t = (istep - 1) * A.dt;
-        const double freq[] = {90.0, 63.0, 112.5, 135.0, 153.0, 18.0, 117.0};
-        const double scale[] = {0.5, 0.8, 0.2, 0.70, 0.55, 0.5, 0.5};
-        const double phi[] = {0.0, 1.3, 2.1, 4.0, 5.2, 0.0, 2.0};
-        const double rise_time = 0.001;
-        const double envelope = std::min(t / rise_time, 1.0);
-        double sum = 0.0;
-        for (int i = 0; i < 7; ++i) sum += scale[i] * std::sin(2.0 * pi * freq[i] * t + phi[i]);
-        return BC.amp * envelope * sum;
+    if (tt == "sum_sin") 
+    {
+    const double t = istep * A.dt;
+    constexpr int N = 7;
+    const double freq_factor = 0.9;
+    const double freq[N] = {100.0, 70.0, 125.0, 150.0, 170.0, 120.0, 130.0};
+    const double scale[N] = {0.5, 0.8, 0.2, 0.70, 0.55, 0.5, 0.5};
+    const double phi[N] = {0.0, 1.3, 2.1, 4.0, 5.2, 0.0, 2.0};
+    const double rise_time = 0.001;
+    const double envelope = std::min(t / rise_time, 1.0);
+    double sum = 0.0;
+    for (int i = 0; i < N; ++i) {
+        const double f = freq_factor * freq[i];
+        sum += scale[i] * std::sin(2.0 * pi * f * t + phi[i]);
     }
+    return (BC.base_value + BC.amp*envelope* sum)/BC.nDof;
+}
     throw std::runtime_error("Unsupported BC time_type");
 }

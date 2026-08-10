@@ -122,9 +122,11 @@ struct RangeBoundaryCondition : BoundaryCondition {
     static void assign_nodes_and_dofs_to_bcs(std::vector<BoundaryCondition>& BCs, const FEM& fem);
 };
 
-struct HMSetBoundaryCondition : BoundaryCondition {
+struct HMSetBoundaryCondition : BoundaryCondition 
+{
     HMSetBoundaryCondition(const FEM& fem, const std::string& set_name, BoundaryCondition bc_in = BoundaryCondition{})
-        : BoundaryCondition(std::move(bc_in)) {
+        : BoundaryCondition(std::move(bc_in))
+    {
         hmset_name = set_name;
         std::vector<BoundaryCondition> tmp{*this};
         assign_nodes_and_dofs_to_bcs(tmp, fem);

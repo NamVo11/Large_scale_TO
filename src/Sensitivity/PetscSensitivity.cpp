@@ -111,7 +111,21 @@ namespace
             VecAssemblyEnd(v);
         }
 
-        void solve_adjoint_full(ROMBase &rom, Mat lhs, Vec rhs, Vec lambda, const Analysis &analysis, int Iter, int time_step)
+        double petsc_wall_time()
+        {
+            PetscLogDouble t = 0.0;
+            PetscTime(&t);
+            return static_cast<double>(t);
+        }
+
+        void solve_adjoint_full(ROMBase &rom,
+                                Mat lhs,
+                                Vec rhs,
+                                Vec lambda,
+                                const Analysis &analysis,
+                                int Iter,
+                                int time_step,
+                                Eigen::SparseMatrix<double>* lhs_e_cache = nullptr)
         {
             ROMContext ctx;
             ctx.analysis_id = analysis.id;
@@ -131,11 +145,31 @@ namespace
                 rom.main(empty_lhs, empty_rhs, empty_lambda, ctx);
                 return;
             }
-            const Eigen::SparseMatrix<double> lhs_e = petsc_mat_to_eigen(lhs);
+            const double tm = petsc_wall_time();
+            Eigen::SparseMatrix<double> local_lhs_e;
+            const Eigen::SparseMatrix<double>* lhs_e_ptr = nullptr;
+            if (lhs_e_cache) {
+                if (lhs_e_cache->rows() == 0 || lhs_e_cache->cols() == 0) {
+                    *lhs_e_cache = petsc_mat_to_eigen(lhs);
+                }
+                lhs_e_ptr = lhs_e_cache;
+            } else {
+                local_lhs_e = petsc_mat_to_eigen(lhs);
+                lhs_e_ptr = &local_lhs_e;
+            }
+            const double matrix_convert_time = petsc_wall_time() - tm;
+
+            const double tv = petsc_wall_time();
             const Eigen::VectorXd rhs_e = petsc_vec_to_eigen(rhs);
+            const double vec_convert_time = petsc_wall_time() - tv;
             Eigen::VectorXd lambda_e = Eigen::VectorXd::Zero(rhs_e.size());
-            rom.main(lhs_e, rhs_e, lambda_e, ctx);
+            rom.main(*lhs_e_ptr, rhs_e, lambda_e, ctx);
             eigen_to_petsc_vec(lambda_e, lambda);
+            if (!rom.ROM_info.empty() && !rom.ROM_info.back().empty()) {
+                ROMInfo& info = rom.ROM_info.back().back();
+                info.timing_petsc_to_eigen_mat += matrix_convert_time;
+                info.timing_petsc_to_eigen_vec += vec_convert_time;
+            }
         }
 
         [[maybe_unused]] Mat duplicate_with_dirichlet(Mat A, const std::vector<int> &fixed)
@@ -409,6 +443,8 @@ namespace
             MemoryDebug::print("petsc_sens_after_get_K0");
             Mat Keff = analysis.results.K_eff;
             MemoryDebug::print("petsc_sens_after_get_Keff");
+            Eigen::SparseMatrix<double> K0_eigen_cache;
+            Eigen::SparseMatrix<double> Keff_eigen_cache;
 
             Vec lambda = nullptr;
             Vec lambda_new = nullptr;
@@ -439,7 +475,7 @@ namespace
             VecAXPY(rhs, -dHdu, mu);
             VecAXPY(rhs, -dLdu, eta);
             set_vec_fixed_from_column_root(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
-            solve_adjoint_full(*object.ROM, Keff, rhs, lambda, analysis, Iter, k);
+            solve_adjoint_full(*object.ROM, Keff, rhs, lambda, analysis, Iter, k, &Keff_eigen_cache);
             lambda_all.col(k) = gather_vec_to_all_local(lambda);
             MemoryDebug::print("petsc_sens_after_step_end");
 
@@ -475,7 +511,14 @@ namespace
                 {
                     object.ROM->set_petsc_factorized_solver(K0, analysis.results.factorized_K_initial);
                 }
-                solve_adjoint_full(*object.ROM, k == 0 ? K0 : Keff, rhs, lambda, analysis, Iter, k);
+                solve_adjoint_full(*object.ROM,
+                                   k == 0 ? K0 : Keff,
+                                   rhs,
+                                   lambda,
+                                   analysis,
+                                   Iter,
+                                   k,
+                                   k == 0 ? &K0_eigen_cache : &Keff_eigen_cache);
                 lambda_all.col(k) = gather_vec_to_all_local(lambda);
                 if (k == nstep - 1 || k == nstep / 2 || k == 0) {
                     MemoryDebug::print("petsc_sens_after_step_" + std::to_string(k));

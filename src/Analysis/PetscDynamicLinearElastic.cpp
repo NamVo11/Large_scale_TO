@@ -96,6 +96,12 @@ void zero_spc_entries_for_residual(Vec rhs, const std::vector<int>& fixed) {
     VecAssemblyEnd(rhs);
 }
 
+double petsc_wall_time() {
+    PetscLogDouble t = 0.0;
+    PetscTime(&t);
+    return static_cast<double>(t);
+}
+
 void set_dirichlet_rhs(const Analysis& analysis, Vec rhs, int istep) {
     PetscMPIInt rank = 0;
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
@@ -163,7 +169,8 @@ SolveStats solve_with_common_rom(ROMBase& rom,
                                  Mat lhs,
                                  Vec rhs,
                                  Vec u,
-                                 const ROMContext& context) {
+                                 const ROMContext& context,
+                                 Eigen::SparseMatrix<double>* lhs_e_cache = nullptr) {
     rom.set_petsc_system(lhs, rhs, u);
     if (!rom.use_mor) {
         Eigen::SparseMatrix<double> empty_lhs;
@@ -172,11 +179,31 @@ SolveStats solve_with_common_rom(ROMBase& rom,
         return rom.main(empty_lhs, empty_rhs, empty_u, context);
     }
 
-    const Eigen::SparseMatrix<double> lhs_e = petsc_mat_to_eigen(lhs);
+    const double tm = petsc_wall_time();
+    Eigen::SparseMatrix<double> local_lhs_e;
+    const Eigen::SparseMatrix<double>* lhs_e_ptr = nullptr;
+    if (lhs_e_cache) {
+        if (lhs_e_cache->rows() == 0 || lhs_e_cache->cols() == 0) {
+            *lhs_e_cache = petsc_mat_to_eigen(lhs);
+        }
+        lhs_e_ptr = lhs_e_cache;
+    } else {
+        local_lhs_e = petsc_mat_to_eigen(lhs);
+        lhs_e_ptr = &local_lhs_e;
+    }
+    const double matrix_convert_time = petsc_wall_time() - tm;
+
+    const double tv = petsc_wall_time();
     const Eigen::VectorXd rhs_e = petsc_vec_to_eigen(rhs);
+    const double vec_convert_time = petsc_wall_time() - tv;
     Eigen::VectorXd u_e = Eigen::VectorXd::Zero(rhs_e.size());
-    const SolveStats stats = rom.main(lhs_e, rhs_e, u_e, context);
+    const SolveStats stats = rom.main(*lhs_e_ptr, rhs_e, u_e, context);
     eigen_to_petsc_vec(u_e, u);
+    if (!rom.ROM_info.empty() && !rom.ROM_info.back().empty()) {
+        ROMInfo& info = rom.ROM_info.back().back();
+        info.timing_petsc_to_eigen_mat += matrix_convert_time;
+        info.timing_petsc_to_eigen_vec += vec_convert_time;
+    }
     return stats;
 }
 
@@ -214,6 +241,8 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     double timing_newmark_update = 0.0;
     double timing_history_store = 0.0;
     double timing_final_matrix_store = 0.0;
+    Eigen::SparseMatrix<double> K_initial_eigen_cache;
+    Eigen::SparseMatrix<double> K_eff_eigen_cache;
     PetscTime(&t0);
     MemoryDebug::print("forward_begin");
 
@@ -293,7 +322,8 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     PetscTime(&ts0);
     const SolveStats initial_stats = solve_with_common_rom(
         *analysis.ROM, K, rhs, u,
-        make_context(analysis, Iter, 1, 0, "initial_equilibrium", analysis.Nstep == 0));
+        make_context(analysis, Iter, 1, 0, "initial_equilibrium", analysis.Nstep == 0),
+        &K_initial_eigen_cache);
     PetscTime(&ts1);
     timing_initial_solve += static_cast<double>(ts1 - ts0);
     timing_solve_wall += timing_initial_solve;
@@ -370,7 +400,8 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
 
         PetscTime(&ts0);
         const SolveStats stats = solve_with_common_rom( *analysis.ROM, K_eff, rhs, u,
-                                            make_context(analysis, Iter, istep + 1, istep, "newmark_effective", istep == analysis.Nstep));
+                                            make_context(analysis, Iter, istep + 1, istep, "newmark_effective", istep == analysis.Nstep),
+                                            &K_eff_eigen_cache);
                                             
         PetscTime(&ts1);
         timing_solve_wall += static_cast<double>(ts1 - ts0);
