@@ -307,6 +307,9 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
 
     if (!object.ROM) throw std::runtime_error("EigenSensitivity requires ObjectiveGroup::ROM initialized");
     std::shared_ptr<ROMBase>& rom = object.ROM;
+    if (analysis.results.factorized_K_eff_eigen) {
+        rom->set_factorized_solver(Keff, analysis.results.factorized_K_eff_eigen);
+    }
 
     const int ndof = fem.ndof;
     Eigen::VectorXd lambda = Eigen::VectorXd::Zero(ndof);
@@ -325,9 +328,6 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     set_from_column(rhs, object.d_explicit_dfdu_all, k, -1.0);
     rhs.noalias() += -dHdu * mu - dLdu * eta;
     set_fixed_from_column(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
-    if (analysis.results.factorized_K_eff_eigen) {
-        rom->set_factorized_solver(Keff, analysis.results.factorized_K_eff_eigen);
-    }
     rom->main(Keff, rhs, lambda, make_adjoint_context(analysis, Iter, k));
     lambda_all.col(k) = lambda;
 
@@ -349,14 +349,15 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
         if (k != 0) rhs.noalias() += -dHdu * mu - dLdu * eta;
         set_fixed_from_column(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
         if (k == 0) {
+            rom->set_factorized_solver(Keff, nullptr);
+            analysis.results.factorized_K_eff_eigen.reset();
             if (analysis.results.factorized_K_initial_eigen) {
                 rom->set_factorized_solver(K0, analysis.results.factorized_K_initial_eigen);
             }
             rom->main(K0, rhs, lambda, make_adjoint_context(analysis, Iter, k));
+            rom->set_factorized_solver(K0, nullptr);
+            analysis.results.factorized_K_initial_eigen.reset();
         } else {
-            if (analysis.results.factorized_K_eff_eigen) {
-                rom->set_factorized_solver(Keff, analysis.results.factorized_K_eff_eigen);
-            }
             rom->main(Keff, rhs, lambda, make_adjoint_context(analysis, Iter, k));
         }
         lambda_all.col(k) = lambda;

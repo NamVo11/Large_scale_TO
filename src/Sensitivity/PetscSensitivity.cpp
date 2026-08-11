@@ -118,13 +118,8 @@ namespace
             return static_cast<double>(t);
         }
 
-        void solve_adjoint_full(ROMBase &rom,
-                                Mat lhs,
-                                Vec rhs,
-                                Vec lambda,
-                                const Analysis &analysis,
-                                int Iter,
-                                int time_step,
+        void solve_adjoint_full(ROMBase &rom,Mat lhs,Vec rhs,Vec lambda,
+                                const Analysis &analysis,int Iter,int time_step,
                                 Eigen::SparseMatrix<double>* lhs_e_cache = nullptr)
         {
             ROMContext ctx;
@@ -146,12 +141,14 @@ namespace
                 return;
             }
             const double tm = petsc_wall_time();
+
             Eigen::SparseMatrix<double> local_lhs_e;
+
             const Eigen::SparseMatrix<double>* lhs_e_ptr = nullptr;
+
             if (lhs_e_cache) {
-                if (lhs_e_cache->rows() == 0 || lhs_e_cache->cols() == 0) {
-                    *lhs_e_cache = petsc_mat_to_eigen(lhs);
-                }
+                if (lhs_e_cache->rows() == 0 || lhs_e_cache->cols() == 0)
+                {*lhs_e_cache = petsc_mat_to_eigen(lhs);}
                 lhs_e_ptr = lhs_e_cache;
             } else {
                 local_lhs_e = petsc_mat_to_eigen(lhs);
@@ -185,12 +182,12 @@ namespace
                                                     const Eigen::MatrixXd& xPhys,
                                                     const ObjectiveGroup& object,
                                                     const Eigen::MatrixXd& lambda_all) {
-    using Clock = std::chrono::steady_clock;
+        using Clock = std::chrono::steady_clock;
 
-    const auto timer_begin = Clock::now();
-    const auto elapsed = [](Clock::time_point a, Clock::time_point b) {
-        return std::chrono::duration<double>(b - a).count();
-    };
+        const auto timer_begin = Clock::now();
+        const auto elapsed = [](Clock::time_point a, Clock::time_point b) {
+            return std::chrono::duration<double>(b - a).count();
+        };
 
     PetscMPIInt rank = 0;
     PetscMPIInt size = 1;
@@ -509,16 +506,20 @@ namespace
                 set_vec_fixed_from_column_root(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
                 if (k == 0)
                 {
-                    object.ROM->set_petsc_factorized_solver(K0, analysis.results.factorized_K_initial);
+                    object.ROM->set_petsc_factorized_solver(nullptr, nullptr); // Clear the factorized solver for K_eff to avoid double destruction
+                    if (analysis.results.factorized_K_eff) KSPDestroy(&analysis.results.factorized_K_eff); // 
+
+                    object.ROM->set_petsc_factorized_solver(K0, analysis.results.factorized_K_initial); // Set the factorized solver for K0
+                    solve_adjoint_full(*object.ROM, K0, rhs, lambda, analysis, Iter, k, &K0_eigen_cache); // Use K0 for the first step
+
+                    object.ROM->set_petsc_factorized_solver(nullptr, nullptr); // Clear the factorized solver for K_initial to avoid double destruction
+                    if (analysis.results.factorized_K_initial) KSPDestroy(&analysis.results.factorized_K_initial); // Destroy the factorized solver for K_initial after use
                 }
-                solve_adjoint_full(*object.ROM,
-                                   k == 0 ? K0 : Keff,
-                                   rhs,
-                                   lambda,
-                                   analysis,
-                                   Iter,
-                                   k,
-                                   k == 0 ? &K0_eigen_cache : &Keff_eigen_cache);
+                else
+                {
+                    solve_adjoint_full(*object.ROM, Keff, rhs, lambda, analysis, Iter, k, &Keff_eigen_cache);
+                }
+
                 lambda_all.col(k) = gather_vec_to_all_local(lambda);
                 if (k == nstep - 1 || k == nstep / 2 || k == 0) {
                     MemoryDebug::print("petsc_sens_after_step_" + std::to_string(k));

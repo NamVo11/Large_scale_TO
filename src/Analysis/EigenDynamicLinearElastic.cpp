@@ -6,9 +6,9 @@
 
 #include <Eigen/Sparse>
 #include <Eigen/SparseCholesky>
-#include <petscsys.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -316,23 +316,29 @@ namespace
         return ctx;
     }
 
+    void clear_stored_eigen(Analysis& analysis)
+    {
+        if (analysis.ROM) analysis.ROM->set_factorized_solver(analysis.results.K_inf_eigen, nullptr);
+        analysis.results.K_inf_eigen.resize(0, 0);
+        analysis.results.M_eigen.resize(0, 0);
+        analysis.results.K_eff_eigen.resize(0, 0);
+        analysis.results.factorized_K_initial_eigen.reset();
+        analysis.results.factorized_K_eff_eigen.reset();
+    }
+
 } // namespace
 
 void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_elem, int Iter)
 {
     Analysis &analysis = *this;
     (void)Iter;
-    PetscMPIInt rank = 0;
-    PetscMPIInt size = 1;
-    MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-    MPI_Comm_size(PETSC_COMM_WORLD, &size);
-    if (size != 1)
-        throw std::runtime_error("EigenDynamicLinearElastic::solver requires mpi_size=1");
+    if (!analysis.ROM)
+        throw std::runtime_error("EigenDynamicLinearElastic::solver requires analysis.ROM initialized");
+    clear_stored_eigen(analysis);
 
     const int ndof = fem.ndof;
-    PetscLogDouble t0 = 0.0;
-    PetscLogDouble t1 = 0.0;
-    PetscTime(&t0);
+    using Clock = std::chrono::steady_clock;
+    auto t0 = Clock::now();
     MemoryDebug::print("forward_begin");
     // Memory-saving flow: K_inf_eigen is assembled as raw K first. After
     // K_eff_eigen is formed, K_inf_eigen is converted in-place to K_initial with SPC.
@@ -340,14 +346,10 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
     Sparse& M = analysis.results.M_eigen;
     assemble_K_M(fem, y_elem, K, M);
     MemoryDebug::print("forward_after_assemble_K_M");
-    PetscTime(&t1);
-    analysis.results.assembly_time = static_cast<double>(t1 - t0);
-    if (rank == 0)
-        std::cout << "  assembly[s]: eigen K/M = " << analysis.results.assembly_time << "\n";
+    analysis.results.assembly_time = std::chrono::duration<double>(Clock::now() - t0).count();
+    std::cout << "  assembly[s]: eigen K/M = " << analysis.results.assembly_time << "\n";
 
     const std::vector<int> fixed = analysis.SPC();
-    analysis.results.factorized_K_initial_eigen.reset();
-    analysis.results.factorized_K_eff_eigen.reset();
 
     const double beta = 0.25;
     const double gamma = 0.5;
@@ -370,23 +372,23 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
     Eigen::VectorXd f_ext = Eigen::VectorXd::Zero(ndof);
     MemoryDebug::print("forward_after_vec_create");
 
-    if (!analysis.ROM)
-        throw std::runtime_error("EigenDynamicLinearElastic::solver requires analysis.ROM initialized");
     std::shared_ptr<ROMBase> &rom = analysis.ROM;
-    rom->set_factorized_solver(K_initial, nullptr);
 
     set_neum(analysis, f_ext, 0);
     rhs = f_ext;
     set_dirichlet_rhs(analysis, rhs, 0);
     const SolveStats initial = rom->main(
         K_initial, rhs, u, make_context(analysis, Iter, 1, 0, "initial_equilibrium", analysis.Nstep == 0));
-    if (initial.factorization_time > 0.0)
-    {
+
+    if (analysis.save_factorized_K_initial) {
         analysis.results.factorized_K_initial_eigen = rom->get_factorized_solver(K_initial);
+    } else {
+        rom->set_factorized_solver(K_initial, nullptr);
+        analysis.results.factorized_K_initial_eigen.reset();
     }
+
     MemoryDebug::print("forward_after_initial_solve_store_factor");
-    if (rank == 0)
-        std::cout << "step   0: solve_res = " << initial.residual_norm << "\n";
+    std::cout << "step   0: solve_res = " << initial.residual_norm << "\n";
 
     const int nstore = analysis.Nstep + 1;
     analysis.results.U.resize(ndof, nstore);
@@ -405,7 +407,7 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
     analysis.results.A.col(0) = acc;
     analysis.results.F_ext.col(0) = f_ext;
 
-    PetscTime(&t0);
+    t0 = Clock::now();
     for (int istep = 1; istep <= analysis.Nstep; ++istep)
     {
         u_pred = u + analysis.dt * v + analysis.dt * analysis.dt * (0.5 - beta) * acc;
@@ -417,10 +419,9 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
 
         const SolveStats step = rom->main(
             K_eff, rhs, u, make_context(analysis, Iter, istep + 1, istep, "newmark_effective", istep == analysis.Nstep));
-        if (!analysis.results.factorized_K_eff_eigen && step.factorization_time > 0.0)
-        {
+
+        if (!analysis.results.factorized_K_eff_eigen)
             analysis.results.factorized_K_eff_eigen = rom->get_factorized_solver(K_eff);
-        }
         if (istep == 1 || istep == analysis.Nstep) {
             MemoryDebug::print("forward_after_step_" + std::to_string(istep));
         }
@@ -430,12 +431,9 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
         acc = a0c * (u - u_pred);
         v = v_pred + gamma * analysis.dt * acc;
 
-        if (rank == 0)
-        {
-            std::cout << "step " << istep << ": solve_res = "
-                      << step.residual_norm << ", ksp_it = " << step.ksp_iterations
-                      << ", ksp_res = " << step.residual_norm << "\n";
-        }
+        std::cout << "step " << istep << ": solve_res = "
+                  << step.residual_norm << ", ksp_it = " << step.ksp_iterations
+                  << ", ksp_res = " << step.residual_norm << "\n";
 
         analysis.results.U.col(istep) = u;
         // Velocity history is intentionally not stored in this memory-saving flow.
@@ -443,8 +441,7 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
         analysis.results.A.col(istep) = acc;
         analysis.results.F_ext.col(istep) = f_ext;
     }
-    PetscTime(&t1);
-    analysis.results.solve_time = static_cast<double>(t1 - t0);
+    analysis.results.solve_time = std::chrono::duration<double>(Clock::now() - t0).count();
     MemoryDebug::print("forward_after_store_matrices");
     MemoryDebug::print("forward_after_destroy_temp");
 }

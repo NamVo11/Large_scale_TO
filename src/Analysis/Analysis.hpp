@@ -169,6 +169,7 @@ struct Analysis {
     double Tmax = 0.12;
     int Nstep = 300;
     double dt = Tmax / static_cast<double>(Nstep);
+    bool save_factorized_K_initial = true;
 
     std::shared_ptr<ROMBase> ROM;
     std::string solver_name = "dynamic_elastic_linear";

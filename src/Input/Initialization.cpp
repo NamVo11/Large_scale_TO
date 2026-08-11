@@ -397,6 +397,7 @@ std::unique_ptr<DynamicLinearElastic> InitializeAnalysis(const json& analysis_js
     analysis.Tmax = json_double(analysis_json, "Tmax", analysis.Tmax);
     analysis.Nstep = json_int(analysis_json, "Nstep", analysis.Nstep);
     analysis.dt = analysis.Tmax / static_cast<double>(analysis.Nstep);
+    analysis.save_factorized_K_initial = json_bool(analysis_json, "save_factorized_K_initial", analysis.save_factorized_K_initial);
     analysis.solver_name = json_string(analysis_json, "solver_name", analysis.solver_name);
     analysis.ROM = InitializeROM(analysis_json.value("ROM", json::object()), run_json);
     analysis.regions = regions;

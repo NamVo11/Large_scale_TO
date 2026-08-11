@@ -70,7 +70,9 @@ void PetscDynamicLinearElastic::assemble_K_M(const FEM& fem,
 
 namespace {
 
-void clear_stored_petsc(AnalysisResult& r) {
+void clear_stored_petsc(Analysis& analysis) {
+    if (analysis.ROM) analysis.ROM->set_petsc_factorized_solver(nullptr, nullptr);
+    AnalysisResult& r = analysis.results;
     if (r.K_inf) MatDestroy(&r.K_inf);
     if (r.M) MatDestroy(&r.M);
     if (r.K_eff) MatDestroy(&r.K_eff);
@@ -79,7 +81,7 @@ void clear_stored_petsc(AnalysisResult& r) {
 }
 
 void store_factorized_solver(KSP& target, KSP source) {
-     if (!source) return;
+    if (!source) return;
     PetscObjectReference((PetscObject)source);
     if (target) KSPDestroy(&target);
     target = source;
@@ -218,7 +220,7 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     PetscMPIInt rank = 0;
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
     const PetscInt ndof = fem.ndof;
-    clear_stored_petsc(analysis.results);
+    clear_stored_petsc(analysis);
 
     PetscLogDouble t0 = 0.0;
     PetscLogDouble t1 = 0.0;
@@ -327,8 +329,14 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     PetscTime(&ts1);
     timing_initial_solve += static_cast<double>(ts1 - ts0);
     timing_solve_wall += timing_initial_solve;
-    store_factorized_solver(analysis.results.factorized_K_initial,
-                            analysis.ROM->get_petsc_factorized_solver(K));
+
+    if (analysis.save_factorized_K_initial) {
+        store_factorized_solver(analysis.results.factorized_K_initial, analysis.ROM->get_petsc_factorized_solver(K));
+    } else {
+        analysis.ROM->set_petsc_factorized_solver(nullptr, nullptr);
+        if (analysis.results.factorized_K_initial) KSPDestroy(&analysis.results.factorized_K_initial);
+    }
+
     MemoryDebug::print("forward_after_initial_solve_store_factor");
 
     // Full residual_norm_free() costs one extra MatMult per step. Keep the
@@ -406,7 +414,10 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
         PetscTime(&ts1);
         timing_solve_wall += static_cast<double>(ts1 - ts0);
 
-        store_factorized_solver(analysis.results.factorized_K_eff, analysis.ROM->get_petsc_factorized_solver(K_eff));
+        if (!analysis.results.factorized_K_eff) {
+            store_factorized_solver(analysis.results.factorized_K_eff,
+                                    analysis.ROM->get_petsc_factorized_solver(K_eff));
+        }
 
         if (istep == 1 || istep == analysis.Nstep) {
             MemoryDebug::print("forward_after_step_" + std::to_string(istep));
