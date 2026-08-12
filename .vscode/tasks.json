@@ -455,8 +455,7 @@
       },
       "problemMatcher": []
     },
-
- //----------------- batch single node single rank, sequential cases -----------------
+    //----------------- batch single node single rank, sequential cases -----------------
     {
       "label": "Run batch: 11111",
       "type": "shell",
@@ -476,25 +475,185 @@
           //"MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
 
           "INPUT_JSONS": "case_study/Engine_bracket/mesh_size_1.5_new/input.json",
+          // Multiple models run sequentially:
+          // "INPUT_JSONS": "case_study/model1/input.json case_study/model2/input.json case_study/model3/input.json",
 
-          "KSP_TYPE": "preonly", // preonly: direct solve; cg: iterative SPD// preonly
-          "PC_TYPE": "cholesky", // cholesky for SPD dynamic elastic matrices; use lu if matrix is not SPD// cholesky // gamg
-          "PC_FACTOR_MAT_SOLVER_TYPE": "mkl_pardiso", // single-node direct solver; alternatives: mumps // mkl_pardiso
-          "LINEAR_BACKEND": "petsc", // petsc: PETSc FOM/fallback; eigen: Eigen FOM/fallback. EIGEN_USE_LAPACKE affects only eigen.
           "STAGE2_EIGEN_CHECK_FOM_RESIDUAL": "0", // Eigen backend FOM direct only: 0 skip extra A*u-rhs check like PETSc; 1 print residual-check timing
           "STAGE2_MEMORY_DEBUG": "0", // 1: print RSS/HWM/MemAvailable at large allocation/solve milestones; 0: silent
-          "POD_BACKEND": "snapshot_mkl", // snapshot_mkl: MKL POD; snapshot_eigen: Eigen POD; bdcsvd: old Eigen BDCSVD
-          "ONLINE_BACKEND": "incremental_mkl", // incremental_mkl: IncrementalSVD only; ignored by MyStrategy2
-          "STAGE2_MYSTRATEGY2_FULL_PROJECTION": "0", // MyStrategy2 only: 0 incremental projection; 1 full V'AV rebuild when projection is needed
-          "OMP_NUM_THREADS": "8", // use 1 for method comparison; try 4,8,16 for fast production runs
-          "MKL_NUM_THREADS": "8", // match OMP_NUM_THREADS unless testing MKL threading
-          "FACTOR_NUM_THREADS": "8", // used only when NP=1; script forces 1 for MPI/multinode
-          "SENS_ELEMENT_THREADS": "8", // used only when NP=1; script forces 1 for MPI/multinode
-          "OMP_PROC_BIND": "spread", // spread or close
-          "OMP_PLACES": "cores" // cores or threads
+          "STAGE2_MYSTRATEGY2_FULL_PROJECTION": "0" // MyStrategy2 only: 0 incremental projection; 1 full V'AV rebuild when projection is needed
         }
       },
       "dependsOn": "CMake: build stage2 Release",
+      "group": "test",
+      "problemMatcher": []
+    },
+    //----------------- Docker: build image env -------------------------------------------------
+    {
+      "label": "Docker: build image env",
+      "type": "shell",
+      "command": "docker",
+      "args": [
+        "build",
+        "-t",
+        "large-scale-to-env:gcc11-gcc13-petsc-mkl-mumps",
+        "-f",
+        "${workspaceFolder}/docker/Dockerfile",
+        "--build-arg",
+        "BUILD_JOBS=8",
+        "${workspaceFolder}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    //----------------- Docker: smoke test env -------------------------------------------------
+    {
+      "label": "Docker: smoke test env",
+      "type": "shell",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-v",
+        "${workspaceFolder}:/workspace/Large_scale_TO",
+        "-w",
+        "/workspace/Large_scale_TO",
+        "-e",
+        "TO_TOOLCHAIN=gcc13",
+        // GCC11 option:
+        // "-e", "TO_TOOLCHAIN=gcc11",
+        "large-scale-to-env:gcc11-gcc13-petsc-mkl-mumps",
+        "bash",
+        "-lc",
+        "source /opt/large-scale-to/env.sh && echo TO_TOOLCHAIN=$TO_TOOLCHAIN && echo MPICH_HOME=$MPICH_HOME && echo PETSC_PREFIX=$PETSC_PREFIX && echo MKLROOT=$MKLROOT && python3 --version && cmake --version | head -1 && $MPICH_HOME/bin/mpicxx --version | head -1 && $MPICH_HOME/bin/mpiexec -n 1 /bin/hostname && pkg-config --modversion PETSc && test -f $MKLROOT/include/mkl_lapacke.h"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Docker: build image env",
+      "group": "test",
+      "problemMatcher": []
+    },
+    //----------------- Docker: configure stage2 Release -------------------------------------------------
+    {
+      "label": "Docker: configure stage2 Release",
+      "type": "shell",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-v",
+        "${workspaceFolder}:/workspace/Large_scale_TO",
+        "-w",
+        "/workspace/Large_scale_TO",
+        "-e",
+        "TO_TOOLCHAIN=gcc13",
+        "-e",
+        "BUILD_DIR=build-docker-release-gcc13",
+        "-e",
+        "PETSC_PREFIX=/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13",
+        "-e",
+        "MPICH_HOME=/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
+        // GCC11 option:
+        // "-e", "TO_TOOLCHAIN=gcc11",
+        // "-e", "BUILD_DIR=build-docker-release-gcc11",
+        // "-e", "PETSC_PREFIX=/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
+        // "-e", "MPICH_HOME=/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
+        "large-scale-to-env:gcc11-gcc13-petsc-mkl-mumps",
+        "bash",
+        "-lc",
+        "source /opt/large-scale-to/env.sh && cmake -S . -B $BUILD_DIR -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_CXX_COMPILER=$MPICH_HOME/bin/mpicxx -DSTAGE2_EIGEN_USE_LAPACKE=ON -DPETSC_PKG=PETSc"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Docker: build image env",
+      "group": "build",
+      "problemMatcher": []
+    },
+    //----------------- Docker: build stage2 Release -------------------------------------------------
+    {
+      "label": "Docker: build stage2 Release",
+      "type": "shell",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-v",
+        "${workspaceFolder}:/workspace/Large_scale_TO",
+        "-w",
+        "/workspace/Large_scale_TO",
+        "-e",
+        "TO_TOOLCHAIN=gcc13",
+        "-e",
+        "BUILD_DIR=build-docker-release-gcc13",
+        "-e",
+        "PETSC_PREFIX=/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13",
+        "-e",
+        "MPICH_HOME=/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
+        // GCC11 option:
+        // "-e", "TO_TOOLCHAIN=gcc11",
+        // "-e", "BUILD_DIR=build-docker-release-gcc11",
+        // "-e", "PETSC_PREFIX=/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
+        // "-e", "MPICH_HOME=/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
+        "large-scale-to-env:gcc11-gcc13-petsc-mkl-mumps",
+        "bash",
+        "-lc",
+        "source /opt/large-scale-to/env.sh && cmake --build $BUILD_DIR --target stage2_dynamic_forward -j $(nproc)"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Docker: configure stage2 Release",
+      "group": "build",
+      "problemMatcher": "$gcc"
+    },
+    //----------------- Docker Run batch: 11111 -------------------------------------------------
+    {
+      "label": "Docker Run batch: 11111",
+      "type": "shell",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-v",
+        "${workspaceFolder}:/workspace/Large_scale_TO",
+        "-w",
+        "/workspace/Large_scale_TO",
+        "-e",
+        "TO_TOOLCHAIN=gcc13",
+        "-e",
+        "BUILD_DIR=build-docker-release-gcc13",
+        "-e",
+        "PETSC_PREFIX=/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc13",
+        "-e",
+        "MPICH_HOME=/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc13",
+        // GCC11 option:
+        // "-e", "TO_TOOLCHAIN=gcc11",
+        // "-e", "BUILD_DIR=build-docker-release-gcc11",
+        // "-e", "PETSC_PREFIX=/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
+        // "-e", "MPICH_HOME=/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
+        "-e",
+        "INPUT_JSONS=case_study/Engine_bracket/mesh_size_1.5_new/input.json",
+        // Multiple models run sequentially:
+        // "-e", "INPUT_JSONS=case_study/model1/input.json case_study/model2/input.json case_study/model3/input.json",
+        "-e",
+        "STAGE2_EIGEN_CHECK_FOM_RESIDUAL=0",
+        "-e",
+        "STAGE2_MEMORY_DEBUG=0",
+        "-e",
+        "STAGE2_MYSTRATEGY2_FULL_PROJECTION=0",
+        "large-scale-to-env:gcc11-gcc13-petsc-mkl-mumps",
+        "bash",
+        "-lc",
+        "source /opt/large-scale-to/env.sh && bash scripts/run_stage2_case.sh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Docker: build stage2 Release",
       "group": "test",
       "problemMatcher": []
     }
