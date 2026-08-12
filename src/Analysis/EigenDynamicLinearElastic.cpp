@@ -159,8 +159,7 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
         {
             if (region.elem_ids.empty())
             {
-                throw std::runtime_error(
-                    "eigen assemble_K_M: region has no elements");
+                throw std::runtime_error( "eigen assemble_K_M: region has no elements");
             }
 
             uniform_em = fem.compute_element_matrices(region.elem_ids.front(), region_nu, fem.Thickness);
@@ -170,7 +169,7 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
          * uniform_em được tạo trước vùng song song và sau đó chỉ được đọc.
          * Mỗi thread ghi vào vector triplet riêng.
          */
-#pragma omp parallel num_threads(num_threads)
+            #pragma omp parallel num_threads(num_threads)
         {
             const int tid = omp_get_thread_num();
 
@@ -178,7 +177,8 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
 
             auto &local_m_triplets = thread_m_triplets[static_cast<std::size_t>(tid)];
 
-#pragma omp for schedule(static)
+            #pragma omp for schedule(static)
+            
             for (std::size_t e = 0; e < region.elem_ids.size(); ++e)
             {
                 const int elem_id = region.elem_ids[e];
