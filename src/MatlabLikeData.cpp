@@ -299,7 +299,7 @@ double bc_value(const BoundaryCondition& BC, const Analysis& A, int istep) {
     {
     const double t = istep * A.dt;
     constexpr int N = 7;
-    const double freq_factor = 0.9;
+    const double freq_factor = 0.5;// previously was 0.9
     const double freq[N] = {100.0, 70.0, 125.0, 150.0, 170.0, 120.0, 130.0};
     const double scale[N] = {0.5, 0.8, 0.2, 0.70, 0.55, 0.5, 0.5};
     const double phi[N] = {0.0, 1.3, 2.1, 4.0, 5.2, 0.0, 2.0};
