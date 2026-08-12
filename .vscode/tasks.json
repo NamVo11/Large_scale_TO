@@ -496,6 +496,7 @@
         "build",
         "-t",
         "large-scale-to-env:gcc11-gcc13-petsc-mkl-mumps",
+        //"ghcr.io/namvo11/large-scale-to-env:v1",
         "-f",
         "${workspaceFolder}/docker/Dockerfile",
         "--build-arg",
@@ -532,7 +533,7 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "dependsOn": "Docker: build image env",
+      //"dependsOn": "Docker: build image env",
       "group": "test",
       "problemMatcher": []
     },
@@ -569,7 +570,7 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "dependsOn": "Docker: build image env",
+      //"dependsOn": "Docker: build image env",
       "group": "build",
       "problemMatcher": []
     },

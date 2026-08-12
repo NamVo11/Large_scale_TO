@@ -145,15 +145,29 @@ The image contains both GCC11 and GCC13 MPICH/PETSc stacks. The source is not
 copied into the image; only the Docker build files are used because `.dockerignore`
 limits the build context.
 
-## 8. Run VS Code Tasks
+## 8. Smoke Test The Image
 
-After the image is built:
+From the repo root in WSL:
+
+```bash
+docker run --rm \
+  -v "$PWD:/workspace/Large_scale_TO" \
+  -w /workspace/Large_scale_TO \
+  -e TO_TOOLCHAIN=gcc13 \
+  large-scale-to-env:gcc11-gcc13-petsc-mkl-mumps \
+  bash -lc 'source /opt/large-scale-to/env.sh && python3 --version && cmake --version | head -1 && $MPICH_HOME/bin/mpiexec -n 1 /bin/hostname && pkg-config --modversion PETSc'
+```
+
+Expected:
 
 ```text
-Docker: smoke test env
-Docker: build stage2 Release
-Docker Run batch: 11111
+python3 works
+cmake works
+mpiexec works
+PETSc version is printed
 ```
+
+## 9. Build And Run From Mounted Source
 
 The Docker run tasks mount the whole repo:
 
@@ -162,3 +176,14 @@ ${workspaceFolder}:/workspace/Large_scale_TO
 ```
 
 So source, `input.json`, case files, and build outputs remain on the host.
+
+Recommended VS Code tasks after the image is built:
+
+```text
+Docker: smoke test env
+Docker: build stage2 Release
+Docker Run batch: 11111
+```
+
+The task `Docker Run batch: 11111` supports many cases by listing paths in
+`INPUT_JSONS`, using the same pattern as the old non-Docker batch task.
