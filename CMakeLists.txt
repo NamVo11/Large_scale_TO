@@ -35,8 +35,8 @@ add_executable(stage2_dynamic_forward
   src/ROM/ROM_method/PetscFOM_direct.cpp
   src/ROM/ROM_method/PetscFOM_iterative.cpp
   src/ROM/ROM_method/MyStrategy.cpp
+  src/ROM/ROM_method/MyStrategy2.cpp
   src/ROM/ROM_method/ROM_factory.cpp
-  src/ROM/Utils/rom_eigen_utils.cpp
   src/ROM/Error_Estimator/RelativeResidualEstimator.cpp
   src/ROM/Reduced_Basis_Algorithm/UpdateBase.cpp
   src/ROM/Reduced_Basis_Algorithm/MyPOD_SVD1.cpp

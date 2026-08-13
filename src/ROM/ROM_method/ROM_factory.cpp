@@ -4,16 +4,28 @@
 #include "ROM/ROM_method/FOM_direct.hpp"
 #include "ROM/ROM_method/FOM_iterative.hpp"
 #include "ROM/ROM_method/MyStrategy.hpp"
+#include "ROM/ROM_method/MyStrategy2.hpp"
 #include "ROM/ROM_method/PetscFOM_direct.hpp"
 #include "ROM/ROM_method/PetscFOM_iterative.hpp"
-#include "ROM/Utils/rom_eigen_utils.hpp"
 #include "MatlabLikeData.hpp"
 #include "ROM/Reduced_Basis_Algorithm/IncrementalSVD.hpp"
 #include "ROM/Reduced_Basis_Algorithm/MyIncrementalQR1.hpp"
 #include "ROM/Reduced_Basis_Algorithm/MyPOD_SVD1.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <stdexcept>
 
+namespace {
+
+std::string lower_string(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return s;
+}
+
+} // namespace
 
 std::shared_ptr<ROMBase> make_fom_solver(const std::string& fom_solver_type,
                                          const std::string& linear_backend) {

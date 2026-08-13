@@ -8,7 +8,6 @@
 #include <Eigen/SparseCholesky>
 #endif
 
-
 class FactorizedSolver {
 public:
 #ifdef EIGEN_USE_LAPACKE
@@ -40,4 +39,3 @@ private:
     double last_factorization_time_ = 0.0;
     void set_factorization(const Eigen::SparseMatrix<double>& lhs);
 };
-

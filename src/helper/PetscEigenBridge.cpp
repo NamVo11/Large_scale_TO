@@ -2,7 +2,6 @@
 
 #include <mpi.h>
 
-#include <algorithm>
 #include <stdexcept>
 #include <vector>
 
@@ -71,23 +70,3 @@ Eigen::SparseMatrix<double> petsc_mat_to_eigen(Mat A) {
     out.makeCompressed();
     return out;
 }
-
-double eigen_relative_residual(const Eigen::SparseMatrix<double>& A,
-                               const Eigen::VectorXd& rhs,
-                               const Eigen::VectorXd& solution) {
-    const double denom = std::max(rhs.norm(), 1e-30);
-    return (A * solution - rhs).norm() / denom;
-}
-
-double eigen_relative_solution_error(const Eigen::VectorXd& u_fom,
-                                     const Eigen::VectorXd& u_rom) {
-    const double denom = std::max(u_fom.norm(), 1e-30);
-    return (u_fom - u_rom).norm() / denom;
-}
-
-double eigen_basis_error(const Eigen::MatrixXd& V, const Eigen::VectorXd& solution) {
-    if (V.cols() == 0) return 1.0;
-    const Eigen::VectorXd projection = V * (V.transpose() * solution);
-    return eigen_relative_solution_error(solution, projection);
-}
-
