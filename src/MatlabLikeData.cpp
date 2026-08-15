@@ -295,8 +295,10 @@ double bc_value(const BoundaryCondition& BC, const Analysis& A, int istep) {
     if (tt == "linear") {
         return (BC.amp/BC.nDof) * static_cast<double>(istep) / static_cast<double>(A.Nstep);
     }
-    if (tt == "sum_sin") 
+    if (tt == "sum_sin" || tt == "sum_sim") 
     {
+    // old implementation of sum_sin, commented out for reference
+    /*
     const double t = istep * A.dt;
     constexpr int N = 7;
     const double freq_factor = 0.5;// previously was 0.9
@@ -311,6 +313,24 @@ double bc_value(const BoundaryCondition& BC, const Analysis& A, int istep) {
         sum += scale[i] * std::sin(2.0 * pi * f * t + phi[i]);
     }
     return (BC.base_value + BC.amp*envelope* sum)/BC.nDof;
-}
+    */
+    // new implementation of sum_sin
+    
+    const double t = istep * A.dt;
+    constexpr int N = 6;
+    const double freq_factor = 0.35;// previously was 0.9
+    const double freq[N] = {25.0, 55.0, 95.0, 150.0, 180.0, 200.0};
+    const double scale[N] = {1.00, 0.82, 0.58, 0.44, 0.30, 0.30};
+    const double phi[N] = {0.37, 2.11, 4.38, 1.42, 5.83, 2.84};
+    const double rise_time = 0.001;
+    const double envelope = std::min(t / rise_time, 1.0);
+    double sum = 0.0;
+    for (int i = 0; i < N; ++i) {
+        const double f = freq_factor * freq[i];
+        sum += scale[i] * std::sin(2.0 * pi * f * t + phi[i]);
+    }
+    return (BC.base_value + BC.amp*envelope* sum)/BC.nDof;
+    
+    }
     throw std::runtime_error("Unsupported BC time_type");
 }

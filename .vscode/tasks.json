@@ -414,7 +414,7 @@
       "command": "python3",
       "args": [
         "scripts/watch_optimization_live.py",
-        "case_study/mesh_size_1.5_new/Strategy_15_30",
+        "case_study/Engine_bracket/coarse_mesh/try",
         // Case folder to watch. Change this to case_study/test1, case_study/Debug, etc.
         "--scale",
         "8",
@@ -425,7 +425,7 @@
         "--port",
         "8765",
         // Browser port, open http://localhost:8765.
-        "--once",
+        //"--once",
         // Run one time, save/update figures and HTML, then exit.
         // "--no-server",
         // Do not start the browser server.
@@ -474,7 +474,7 @@
           //"PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
           //"MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
 
-          "INPUT_JSONS": "case_study/Engine_bracket/coarse_mesh/sum_sin/input.json",
+          "INPUT_JSONS": "case_study/Engine_bracket/coarse_mesh/try/input.json",
           // Multiple models run sequentially:
           // "INPUT_JSONS": "case_study/model1/input.json case_study/model2/input.json case_study/model3/input.json",
 
