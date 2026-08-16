@@ -342,7 +342,7 @@ double bc_value(const BoundaryCondition& BC, const Analysis& A, int istep) {
     const double freq[N] = {25.0, 55.0, 95.0, 150.0, 180.0, 200.0};
     const double scale[N] = {1.00, 0.82, 0.58, 0.44, 0.30, 0.30};
     const double phi[N] = {0.37, 2.11, 4.38, 1.42, 5.83, 2.84};
-    const double phi_scale = 0.5;
+    const double phi_scale = 0.8;
     const double rise_time = 0.001;
     const double envelope = std::min(t / rise_time, 1.0);
     double sum = 0.0;

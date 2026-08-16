@@ -36,7 +36,7 @@ BC_Fz.freq  = [25.0 55.0 95.0 150.0 180.0 200.0];
 BC_Fz.scale = [1.00 0.82 0.58 0.44 0.30 0.30];
 
 % Different phase from Fx
-BC_Fz.phi = 0.5*[0.37 2.11 4.38 1.42 5.83 2.84];
+BC_Fz.phi = 0.8*[0.37 2.11 4.38 1.42 5.83 2.84];
 
 BC_Fz.rise_time = 0.001;
 
@@ -50,7 +50,7 @@ BC_Fz.rise_time = 0.001;
 %  Therefore negative Fmass means downward force.
 % ==========================================================
 BC_Fmass.type = 'constant';
-BC_Fmass.amp  = -20000;
+BC_Fmass.amp  = -40000;
 
 
 %% =========================================================
