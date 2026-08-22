@@ -114,6 +114,14 @@ void PetscFOM_direct::set_factorization(Mat factor_in) {
     PCSetType(pc, PCLU);
     KSPSetFromOptions(ksp_);
     KSPSetUp(ksp_);
+#if defined(PETSC_HAVE_MKL_PARDISO)
+    Mat F = nullptr;
+    PCFactorGetMatrix(pc, &F);
+    if (F) {
+        MatMkl_PardisoSetCntl(F, 8, 0);
+        if (rank == 0) std::cout << "  petsc_pardiso_debug: iparm(8) refinement_steps = 0\n";
+    }
+#endif
     MemoryDebug::print("fom_direct_after_KSPSetUp");
     PetscTime(&t1);
     last_factorization_time_ = static_cast<double>(t1 - t0);

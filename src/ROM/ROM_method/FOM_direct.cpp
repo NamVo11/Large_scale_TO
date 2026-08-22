@@ -105,6 +105,9 @@ void FOM_direct::set_factorization(const Eigen::SparseMatrix<double>& lhs) {
               << "\n";
 #endif
     solver_ = std::make_shared<FactorizedSolver>();
+#ifdef EIGEN_USE_LAPACKE
+    solver_->solver.pardisoParameterArray()[7] = 0;
+#endif
     solver_->solver.compute(lhs);
     last_factorization_time_ = now_time() - tf;
     if (solver_->solver.info() != Eigen::Success) {

@@ -474,7 +474,7 @@
           //"PETSC_PREFIX": "/home/votrongnam/opt/petsc-3.19.6-mpich-ch3-cxx-mkl2025-mumps-gcc11",
           //"MPICH_HOME": "/home/votrongnam/opt/mpich-4.0-ch3-cxx-gcc11",
 
-          "INPUT_JSONS": "case_study/Engine_bracket/coarse_mesh/try/input.json",
+          "INPUT_JSONS": "case_study/2D_new/input.json",
           // Multiple models run sequentially:
           // "INPUT_JSONS": "case_study/model1/input.json case_study/model2/input.json case_study/model3/input.json",
 

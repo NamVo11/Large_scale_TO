@@ -127,6 +127,8 @@ int main(int argc, char** argv) {
         } else {
             OptSolver->primary_analysis().solver(fem, OptSolver->x, 0);
         }
+
+        /*
         DynamicLinearElastic& Aout = OptSolver->primary_analysis();
 
         if (rank == 0) {
@@ -136,6 +138,8 @@ int main(int argc, char** argv) {
             write_info(out_dir + "/solver_info.txt", fem, Aout, size);
             std::cout << "stage2 output: " << out_dir << "\n";
         }
+        */
+    
     } catch (const std::exception& ex) {
         std::cerr << "[rank " << rank << "] stage2_dynamic_forward error: " << ex.what() << "\n";
         exit_code = 1;
