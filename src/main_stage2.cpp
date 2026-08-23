@@ -94,9 +94,14 @@ int main(int argc, char** argv) {
         std::vector<BoundaryCondition> Dirich = InitializeBoundaryConditions(bc_json.at("Dirich"), fem);
         std::vector<BoundaryCondition> Neum = InitializeBoundaryConditions(bc_json.at("Neum"), fem);
         const json analysis_all_json = cfg.at("Analysis");
+
+
         std::unique_ptr<DynamicLinearElastic> A1_owner =
             InitializeAnalysis(analysis_all_json.at(0), run_json, cfg.value("Interp", json::object()), Mat, regions, Dirich, Neum);
+            
         DynamicLinearElastic& A1 = *A1_owner;
+
+
         Optimization Opt = InitializeOptimization(cfg.at("Optimization"),
                                                   analysis_all_json,
                                                   cfg.value("Output", json::object()),
