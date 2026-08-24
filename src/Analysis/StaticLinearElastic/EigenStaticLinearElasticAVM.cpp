@@ -132,7 +132,11 @@ Eigen::MatrixXd static_elastic_base_full_impl(const FEM& fem,
     Eigen::VectorXd rhs = object.d_explicit_dfdu_all.col(analysis.Nstep);
     zero_fixed(rhs, analysis.results.SPCdofs);
     Eigen::VectorXd lambda = Eigen::VectorXd::Zero(rhs.size());
+    if (analysis.results.factorized_K_initial_eigen) {
+        object.ROM->set_factorized_solver(K, analysis.results.factorized_K_initial_eigen);
+    }
     const SolveStats stats = object.ROM->main(K, rhs, lambda, make_adjoint_context(analysis, Iter));
+    object.ROM->set_factorized_solver(K, nullptr);
     (void)stats;
     return filtering.sensitivity(explicit_gradient_static(fem, analysis, filtering_state.xPhys, object, lambda),
                                  filtering_state);

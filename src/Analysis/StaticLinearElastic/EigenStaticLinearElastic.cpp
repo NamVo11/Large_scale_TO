@@ -166,7 +166,11 @@ void EigenStaticLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_e
     const auto ts = Clock::now();
     const SolveStats stats = ROM->main(K, rhs, u, make_context(*this, Iter));
     results.solve_time = std::chrono::duration<double>(Clock::now() - ts).count();
-    results.factorized_K_initial_eigen = ROM->get_factorized_solver(K);
+    if (save_factorized_K_initial) {
+        results.factorized_K_initial_eigen = ROM->get_factorized_solver(K);
+    } else {
+        results.factorized_K_initial_eigen.reset();
+    }
 
     results.U = Eigen::MatrixXd::Zero(ndof, Nstep + 1);
     results.V.resize(0, 0);
