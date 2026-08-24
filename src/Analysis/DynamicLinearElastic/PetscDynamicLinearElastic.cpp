@@ -1,5 +1,4 @@
 #include "Analysis/Analysis.hpp"
-#include "MatlabLikeData.hpp"
 #include "ROM/ROM.hpp"
 #include "helper/MyAlgebra.hpp"
 #include "helper/MemoryDebug.hpp"
@@ -193,8 +192,9 @@ void set_dirichlet_rhs(const Analysis& analysis, Vec rhs, int istep) {
     PetscMPIInt rank = 0;
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
     if (rank == 0) {
-        for (const auto& bc : analysis.Dirich) {
-            const PetscScalar value = bc.fun_value ? bc.fun_value(istep) : bc_value(bc, analysis, istep);
+        for (const auto& bc_ptr : analysis.Dirich) {
+            const BoundaryCondition& bc = *bc_ptr;
+            const PetscScalar value = bc.value(analysis, istep, 1.0);
             for (int dof0 : bc.dof_ids) {
                 const PetscInt dof = static_cast<PetscInt>(dof0);
                 VecSetValues(rhs, 1, &dof, &value, INSERT_VALUES);
@@ -210,8 +210,9 @@ void set_neum(const Analysis& analysis, Vec f, int istep) {
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
     VecSet(f, 0.0);
     if (rank == 0) {
-        for (const auto& bc : analysis.Neum) {
-            const PetscScalar value = bc.fun_value ? bc.fun_value(istep) : bc_value(bc, analysis, istep);
+        for (const auto& bc_ptr : analysis.Neum) {
+            const BoundaryCondition& bc = *bc_ptr;
+            const PetscScalar value = bc.value(analysis, istep, static_cast<double>(bc.nDof));
             for (int dof0 : bc.dof_ids) {
                 PetscInt dof = dof0;
                 VecSetValues(f, 1, &dof, &value, ADD_VALUES);
@@ -228,12 +229,13 @@ ROMContext make_context(const Analysis& analysis,
                         int time_step,
                         const std::string& system_type,
                         bool is_end) {
+    const auto& dynamic = dynamic_cast<const DynamicLinearElastic&>(analysis);
     ROMContext ctx;
     ctx.analysis_id = analysis.id;
     ctx.opt_iter = Iter;
     ctx.solve_step = solve_step;
     ctx.time_step = time_step;
-    ctx.time = time_step * analysis.dt;
+    ctx.time = time_step * dynamic.dt;
     ctx.role = "primal";
     ctx.system_type = system_type;
     ctx.is_end_of_analysis = is_end;
@@ -298,7 +300,7 @@ SolveStats solve_with_common_rom(ROMBase& rom,
 
 void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_elem,int Iter)
 {
-    Analysis& analysis = *this;
+    DynamicLinearElastic& analysis = *this;
     if (!analysis.ROM) throw std::runtime_error("PetscDynamicLinearElastic::solver requires analysis.ROM initialized");
     if (analysis.Nstep < 0 || analysis.dt <= 0.0) throw std::runtime_error("Invalid time data");
 

@@ -13,22 +13,36 @@ pkg_check_modules(PETSC REQUIRED IMPORTED_TARGET ${PETSC_PKG})
 
 add_executable(stage2_dynamic_forward
   src/main_stage2.cpp
-  src/MatlabLikeData.cpp
   src/Analysis/Analysis.cpp
+  src/BounadryCondition/Function.cpp
+  src/BounadryCondition/BoundaryCondition.cpp
+  src/BounadryCondition/RangeBoundaryCondition.cpp
+  src/BounadryCondition/HMSetBoundaryCondition.cpp
   src/FEM/FEM.cpp
   src/FEM/Element/ElementBase.cpp
   src/Input/Initialization.cpp
-  src/Optimization/Filtering.cpp
+  src/Optimization/Filtering/Filtering.cpp
   src/Optimization/Optimization.cpp
+  src/Optimization/Volume/VolumeFunctional.cpp
+  src/Optimization/Volume/VolumeFractionConstraint.cpp
+  src/Optimization/SensitivityMethod/AVM.cpp
+  src/Optimization/SensitivityMethod/Debug.cpp
   src/Output/OutputData.cpp
-  src/Sensitivity/Sensitivity.cpp
   src/helper/MyAlgebra.cpp
   src/helper/PetscEigenBridge.cpp
   src/helper/PetscEigenHelper.cpp
-  src/Analysis/PetscDynamicLinearElastic.cpp
-  src/Analysis/EigenDynamicLinearElastic.cpp
-  src/Sensitivity/PetscSensitivity.cpp
-  src/Sensitivity/EigenSensitivity.cpp
+  src/Analysis/DynamicLinearElastic/PetscDynamicLinearElastic.cpp
+  src/Analysis/DynamicLinearElastic/EigenDynamicLinearElastic.cpp
+  src/Analysis/StaticLinearElastic/PetscStaticLinearElastic.cpp
+  src/Analysis/StaticLinearElastic/EigenStaticLinearElastic.cpp
+  src/Analysis/SensitivityBase.cpp
+  src/Analysis/DynamicLinearElastic/DynamicLinearElasticFunctional.cpp
+  src/Analysis/DynamicLinearElastic/DynamicLinearElasticAVM.cpp
+  src/Analysis/DynamicLinearElastic/EigenDynamicLinearElasticAVM.cpp
+  src/Analysis/DynamicLinearElastic/PetscDynamicLinearElasticAVM.cpp
+  src/Analysis/StaticLinearElastic/StaticLinearElasticFunctional.cpp
+  src/Analysis/StaticLinearElastic/StaticLinearElasticAVM.cpp
+  src/Analysis/StaticLinearElastic/EigenStaticLinearElasticAVM.cpp
   src/ROM/ROM_method/ROM_Base.cpp
   src/ROM/ROM_method/FOM_direct.cpp
   src/ROM/ROM_method/FOM_iterative.cpp

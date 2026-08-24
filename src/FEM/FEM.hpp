@@ -9,6 +9,8 @@
 #include <petscksp.h>
 #include <Eigen/Dense>
 
+#include "myjson.hpp"
+
 struct Geometry {
     double Lx = 1200.0;
     double Ly = 400.0;
@@ -16,6 +18,17 @@ struct Geometry {
     int nelx = 120;
     int nely = 40;
     int nelz = 1;
+
+    Geometry() = default;
+
+    explicit Geometry(const myjson::json& j) {
+        Lx = myjson::double_value(j, "Lx", Lx);
+        Ly = myjson::double_value(j, "Ly", Ly);
+        Lz = myjson::double_value(j, "Lz", Lz);
+        nelx = myjson::int_value(j, "nelx", nelx);
+        nely = myjson::int_value(j, "nely", nely);
+        nelz = myjson::int_value(j, "nelz", nelz);
+    }
 };
 
 struct ElementBase;

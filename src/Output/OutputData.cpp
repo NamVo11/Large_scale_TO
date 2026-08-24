@@ -372,5 +372,5 @@ void OutputData::save_rom_histories(const OptimizationBase& Opt) const {
     if (rank != 0) return;
     std::filesystem::create_directories(outDir_mat);
     if (!Opt.analysis_all.empty()) save_rom_info_group(outDir_mat, "forward", Opt.analysis_all.front()->ROM);
-    if (!Opt.objective_groups.empty()) save_rom_info_group(outDir_mat, "obj_sens", Opt.objective_groups.front().ROM);
+    if (!Opt.objective.groups.empty()) save_rom_info_group(outDir_mat, "obj_sens", Opt.objective.groups.front()->ROM);
 }

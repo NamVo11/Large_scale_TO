@@ -1,5 +1,4 @@
 #include "Input/Initialization.hpp"
-#include "MatlabLikeData.hpp"
 #include "Optimization/Optimization.hpp"
 #include "ROM/ROM.hpp"
 
@@ -41,8 +40,10 @@ void write_info(const std::string& path,
     out << "nelem=" << fem.NElem << "\n";
     out << "ndof=" << fem.ndof << "\n";
     out << "nstep=" << A.Nstep << "\n";
-    out << "dt=" << A.dt << "\n";
-    out << "tmax=" << A.Tmax << "\n";
+    if (const auto* dynamic = dynamic_cast<const DynamicLinearElastic*>(&A)) {
+        out << "dt=" << dynamic->dt << "\n";
+        out << "tmax=" << dynamic->Tmax << "\n";
+    }
     out << "rom_name=" << (A.ROM ? A.ROM->name : "none") << "\n";
     out << "mpi_size=" << mpi_size << "\n";
     out << "assembly_time=" << A.results.assembly_time << "\n";
@@ -85,22 +86,28 @@ int main(int argc, char** argv) {
             run_json["linear_backend"] = "petsc";
         }
 
-        Geometry geom = cfg.at("Geom").get<Geometry>();
+        Geometry geom(cfg.at("Geom"));
         std::unique_ptr<FEM> fem_owner = InitializeFEM(cfg.at("FEM"), geom);
         FEM& fem = *fem_owner;
-        std::vector<Material> Mat = cfg.at("Materials").get<std::vector<Material>>();
+        std::vector<Material> Mat;
+        Mat.reserve(cfg.at("Materials").size());
+        for (const auto& material_json : cfg.at("Materials")) {
+            Mat.emplace_back(material_json);
+        }
         std::vector<Region> regions = InitializeRegions(cfg.at("Regions"), fem);
         const json bc_json = cfg.at("BoundaryConditions");
-        std::vector<BoundaryCondition> Dirich = InitializeBoundaryConditions(bc_json.at("Dirich"), fem);
-        std::vector<BoundaryCondition> Neum = InitializeBoundaryConditions(bc_json.at("Neum"), fem);
+        std::vector<std::shared_ptr<BoundaryCondition>> Dirich = InitializeBoundaryConditions(bc_json.at("Dirich"), fem);
+        std::vector<std::shared_ptr<BoundaryCondition>> Neum = InitializeBoundaryConditions(bc_json.at("Neum"), fem);
         const json analysis_all_json = cfg.at("Analysis");
 
-
-        std::unique_ptr<DynamicLinearElastic> A1_owner =
-            InitializeAnalysis(analysis_all_json.at(0), run_json, cfg.value("Interp", json::object()), Mat, regions, Dirich, Neum);
-            
-        DynamicLinearElastic& A1 = *A1_owner;
-
+        std::vector<std::unique_ptr<Analysis>> analysis_all;
+        analysis_all.reserve(analysis_all_json.size());
+        for (const auto& analysis_json : analysis_all_json) {
+            analysis_all.push_back(InitializeAnalysis(analysis_json, run_json, cfg.value("Interp", json::object()),
+                                                     Mat, regions, Dirich, Neum));
+        }
+        if (analysis_all.empty()) throw std::runtime_error("JSON Analysis is empty");
+        Analysis& A1 = *analysis_all.front();
 
         Optimization Opt = InitializeOptimization(cfg.at("Optimization"),
                                                   analysis_all_json,
@@ -126,7 +133,7 @@ int main(int argc, char** argv) {
         }
 
         std::unique_ptr<OptimizationBase> OptSolver =
-            make_optimization_solver(run_json.value("linear_backend", std::string("petsc")), std::move(A1_owner), std::move(Opt));
+            make_optimization_solver(run_json.value("linear_backend", std::string("petsc")), std::move(analysis_all), std::move(Opt));
         if (run_json.value("run_optimization", true)) {
             OptSolver->run(fem);
         } else {

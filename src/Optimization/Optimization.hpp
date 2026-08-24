@@ -1,13 +1,27 @@
 #pragma once
 
 #include "Analysis/Analysis.hpp"
-#include "MatlabLikeData.hpp"
+#include "Analysis/SensitivityBase.hpp"
+#include "Optimization/Constraint/Constraint.hpp"
+#include "Optimization/Filtering/Filtering.hpp"
+#include "Optimization/Objective/Objective.hpp"
 #include "Output/OutputData.hpp"
-#include "Sensitivity/Sensitivity.hpp"
 
 #include <memory>
 #include <string>
 #include <vector>
+
+struct Algorithm {
+    std::string type = "MMA";
+    double move = 0.1;
+
+    Algorithm() = default;
+
+    explicit Algorithm(const myjson::json& j) {
+        type = myjson::string_value(j, "type", type);
+        move = myjson::double_value(j, "move", move);
+    }
+};
 
 struct OptimizationHistory {
     std::vector<int> Iter;
@@ -35,22 +49,19 @@ struct Optimization {
     Algorithm algorithm;
     double debug_fd_epsilon = 1e-6;
     int debug_fd_max_checks = 20;
-    bool save_density_each_iter = true;
-    int save_density_interval = 1;
     OutputData Output;
-    std::vector<ObjectiveGroup> objective_groups;
-    std::vector<Constraint> constraints;
+    Objective objective;
+    Constraint constraint;
     OptimizationHistory history;
 };
 
 struct OptimizationBase : Optimization {
-    std::vector<std::unique_ptr<DynamicLinearElastic>> analysis_all;
-    std::unique_ptr<SensitivityBase> sensitivity;
+    std::vector<std::unique_ptr<Analysis>> analysis_all;
 
     virtual ~OptimizationBase() = default;
 
-    DynamicLinearElastic& primary_analysis();
-    const DynamicLinearElastic& primary_analysis() const;
+    Analysis& primary_analysis();
+    const Analysis& primary_analysis() const;
 
     virtual const char* backend_name() const = 0;
     virtual void validate_backend() const {}
@@ -59,22 +70,20 @@ struct OptimizationBase : Optimization {
 };
 
 struct PetscOptimization : OptimizationBase {
-    PetscOptimization() {
-        sensitivity = std::make_unique<PetscSensitivity>();
-    }
-
     const char* backend_name() const override { return "petsc"; }
 };
 
 struct EigenOptimization : OptimizationBase {
-    EigenOptimization() {
-        sensitivity = std::make_unique<EigenSensitivity>();
-    }
-
     const char* backend_name() const override { return "eigen"; }
     void validate_backend() const override;
 };
 
 std::unique_ptr<OptimizationBase> make_optimization_solver(std::string linear_backend,
-                                                           std::unique_ptr<DynamicLinearElastic> analysis,
+                                                           std::vector<std::unique_ptr<Analysis>> analysis_all,
                                                            Optimization opt);
+
+Eigen::MatrixXd init_design_variables(const FEM& fem,
+                                      const std::vector<Region>& regions,
+                                      const std::vector<Material>& Mat,
+                                      double x0,
+                                      std::vector<int>& x_label);

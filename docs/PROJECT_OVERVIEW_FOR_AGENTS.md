@@ -289,7 +289,7 @@ Khong tu y xoa build/results lon neu user chua yeu cau. Neu can cleanup, hoi ro.
 4. Kiem tra git status --short.
 5. Neu lien quan VS Code/task, doc .vscode/tasks.json, .vscode/task_111.json, .vscode/launch.json.
 6. Neu lien quan run, doc scripts/run_stage2_case.sh, scripts/run_stage2_multinode.sh, scripts/mpiexec_mpich_ch3_cxx.sh.
-7. Neu lien quan FOM/optimization, doc src/stage2/main_stage2.cpp, Optimization.cpp, DynamicElasticLinear.cpp, MatlabLikeData.cpp.
+7. Neu lien quan FOM/optimization, doc src/main_stage2.cpp, src/Optimization/Optimization.cpp, src/Analysis/Analysis.cpp, src/BounadryCondition/.
 8. Neu lien quan ROM, doc src/ROM/ va src/ROM/, sau do doi chieu MATLAB src/ROM.
 9. Chay test nho truoc khi ket luan.
 10. Khi bao ket qua cho user, noi ro path/file/task/output label da dung.

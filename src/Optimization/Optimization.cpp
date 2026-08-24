@@ -1,9 +1,9 @@
 #include "Optimization/Optimization.hpp"
 
 #include "MatlabMMA.hpp"
-#include "Optimization/Filtering.hpp"
-#include "ROM/ROM.hpp"
+#include "Optimization/Filtering/Filtering.hpp"
 #include "helper/MemoryDebug.hpp"
+#include "myjson.hpp"
 
 #include <petscsys.h>
 
@@ -18,13 +18,6 @@
 #include <stdexcept>
 
 namespace {
-
-std::string lower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return s;
-}
 
 int nvar_of(const Eigen::MatrixXd& x) {
     return static_cast<int>(x.cols());
@@ -41,105 +34,62 @@ Eigen::MatrixXd unflatten(const std::vector<double>& x, int nelem, int nvar) {
         x.data(), nelem, nvar);
 }
 
-void add_scaled(Eigen::MatrixXd& a, const Eigen::MatrixXd& b, double scale) {
-    if (b.size() == 0) return;
-    if (a.size() == 0) {
-        a = scale * b;
-        return;
-    }
-    a.noalias() += scale * b;
-}
-
-void evaluate_objective_ptr(const FEM& fem,
-                            OptimizationBase& Opt,
-                            const Eigen::MatrixXd& xPhys,
-                            double& obj_value) {
-    (void)xPhys;
-    obj_value = 0.0;
-    for (auto& group : Opt.objective_groups) {
-        Analysis& analysis = *Opt.analysis_all[static_cast<std::size_t>(group.analysis_id - 1)];
-        group.value = 0.0;
-        group.d_explicit_dfdu_all.resize(0, 0);
-        group.d_explicit_dfdv_all.resize(0, 0);
-        group.d_explicit_dfda_all.resize(0, 0);
-        group.d_explicit_dfdFext_all.resize(0, 0);
-        group.d_explicit_df_dx.resize(0, 0);
-        for (auto& term : group.terms) {
-            if (lower(term.function_name) != "l2_compliance_elastic") throw std::runtime_error("Unknown objective term");
-            const int ndof = fem.ndof;
-            const int nstep = analysis.Nstep;
-            term.dfdu_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
-            term.dfdv_all.resize(0, 0);
-            term.dfda_all.resize(0, 0);
-            term.dfdFext_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
-            term.df_dx.resize(0, 0);
-            term.value = 0.0;
-            for (int k = 0; k <= nstep; ++k) {
-                const auto u = analysis.results.U.col(k);
-                const auto f = analysis.results.F_ext.col(k);
-                const double s = f.dot(u);
-                term.value += s * s;
-                term.dfdu_all.col(k).noalias() = 2.0 * s * f;
-                term.dfdFext_all.col(k).noalias() = 2.0 * s * u;
-                for (int d : analysis.results.SPCdofs) {
-                    term.dfdu_all(d, k) = 0.0;
-                }
-                for (int d : analysis.results.free) term.dfdFext_all(d, k) = 0.0;
-            }
-            if (term.value_initial == 0.0) term.value_initial = term.value;
-            const double alpha = term.weight / term.value_initial;
-            group.value += alpha * term.value;
-            add_scaled(group.d_explicit_dfdu_all, term.dfdu_all, alpha);
-            add_scaled(group.d_explicit_dfdv_all, term.dfdv_all, alpha);
-            add_scaled(group.d_explicit_dfda_all, term.dfda_all, alpha);
-            add_scaled(group.d_explicit_dfdFext_all, term.dfdFext_all, alpha);
-            add_scaled(group.d_explicit_df_dx, term.df_dx, alpha);
-        }
-        obj_value += group.value;
-    }
-}
-
-void evaluate_constraint_ptr(const FEM& fem,
-                             OptimizationBase& Opt,
-                             const Eigen::MatrixXd& xPhys,
-                             std::vector<double>& constr_value_vec) {
-    constr_value_vec.assign(Opt.constraints.size(), 0.0);
-    for (std::size_t i = 0; i < Opt.constraints.size(); ++i) {
-        Constraint& c = Opt.constraints[i];
-        if (lower(c.function_name) != "volume_fraction") throw std::runtime_error("Unknown constraint");
-        const int nvar = nvar_of(xPhys);
-        const int val_id = c.mat_id - 2;
-        if (val_id < 0 || val_id >= nvar) throw std::runtime_error("volume_fraction: invalid mat_id");
-        if (static_cast<int>(fem.volume.size()) != fem.NElem) {
-            throw std::runtime_error("volume_fraction: fem volume is not initialized");
-        }
-        const Eigen::Map<const Eigen::VectorXd> volume_vec(fem.volume.data(), fem.NElem);
-        const double total_volume = volume_vec.sum();
-        const double material_volume = volume_vec.dot(xPhys.col(val_id));
-        if (!(total_volume > 0.0)) throw std::runtime_error("volume_fraction: non-positive total volume");
-        c.value = material_volume / total_volume;
-        c.d_explicit_dfdu_all.resize(0, 0);
-        c.d_explicit_dfdv_all.resize(0, 0);
-        c.d_explicit_dfda_all.resize(0, 0);
-        c.d_explicit_dfdFext_all.resize(0, 0);
-        c.d_explicit_df_dx = Eigen::MatrixXd::Zero(fem.NElem, nvar);
-        c.d_explicit_df_dx.col(val_id) = volume_vec / total_volume;
-        if (c.value_initial == 0.0) c.value_initial = c.value;
-        constr_value_vec[i] = c.value / c.value_initial - c.limit;
-        c.d_explicit_df_dx *= 1.0 / c.value_initial;
-    }
-}
-
 } // namespace
 
-DynamicLinearElastic& OptimizationBase::primary_analysis() {
+Analysis& OptimizationBase::primary_analysis() {
     if (analysis_all.empty()) throw std::runtime_error("Optimization has no Analysis object");
     return *analysis_all.front();
 }
 
-const DynamicLinearElastic& OptimizationBase::primary_analysis() const {
+const Analysis& OptimizationBase::primary_analysis() const {
     if (analysis_all.empty()) throw std::runtime_error("Optimization has no Analysis object");
     return *analysis_all.front();
+}
+
+Eigen::MatrixXd init_design_variables(const FEM& fem,
+                                      const std::vector<Region>& regions,
+                                      const std::vector<Material>& Mat,
+                                      double x0,
+                                      std::vector<int>& x_label) {
+    const int nvar = std::max(1, static_cast<int>(Mat.size()) - 1);
+
+    if (x0 < 0.0 || x0 > 1.0) {
+        throw std::runtime_error("init_design_variables: x0 must be between 0 and 1");
+    }
+
+    Eigen::MatrixXd x = Eigen::MatrixXd::Zero(fem.NElem, nvar);
+    x_label.assign(static_cast<std::size_t>(fem.NElem), 0);
+
+    for (const auto& region : regions) {
+        for (int val_id : region.mat_paras.val_ids) {
+            if (val_id <= 0 || val_id > nvar) {
+                throw std::runtime_error("init_design_variables: region val_id is outside x columns");
+            }
+        }
+        for (int e : region.elem_ids) {
+            if (e < 0 || e >= fem.NElem) throw std::runtime_error("init_design_variables: invalid element id in region");
+        }
+
+        const std::string status = myjson::lower_ascii(region.status);
+        if (status == "solid") {
+            for (int e : region.elem_ids) {
+                x_label[static_cast<std::size_t>(e)] = 1;
+                for (int val_id : region.mat_paras.val_ids) x(e, val_id - 1) = 1.0;
+            }
+        } else if (status == "void") {
+            for (int e : region.elem_ids) {
+                x_label[static_cast<std::size_t>(e)] = -1;
+                x.row(e).setZero();
+            }
+        } else if (status == "design_val") {
+            for (int e : region.elem_ids) {
+                for (int val_id : region.mat_paras.val_ids) x(e, val_id - 1) = x0;
+            }
+        } else {
+            throw std::runtime_error("init_design_variables: unsupported region status: " + region.status);
+        }
+    }
+    return x;
 }
 
 void EigenOptimization::validate_backend() const {
@@ -150,17 +100,16 @@ void EigenOptimization::validate_backend() const {
 
 void OptimizationBase::run(const FEM& fem) {
     validate_backend();
-    if (!sensitivity) throw std::runtime_error("Optimization sensitivity object is not initialized");
 
     PetscMPIInt rank = 0;
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
     Output.prepare_case_folders();
     Output.initialize_vtk_cache(fem);
     FilteringState filtering_state;
-    filtering_initilization(fem, filtering, filtering_state);
+    filtering.initialize(fem, filtering_state);
     const int nelem = fem.NElem;
     const int nvar = nvar_of(x);
-    MatlabMMA mma(nelem * nvar, static_cast<int>(constraints.size()), 1.0, 0.0, 1000.0, 0.0);
+    MatlabMMA mma(nelem * nvar, static_cast<int>(constraint.groups.size()), 1.0, 0.0, 1000.0, 0.0);
 
     using Clock = std::chrono::steady_clock;
     auto elapsed = [](Clock::time_point t0, Clock::time_point t1) {
@@ -188,7 +137,7 @@ void OptimizationBase::run(const FEM& fem) {
         double output_time = 0.0;
         if (Iter > 0) ++loopbeta;
         MemoryDebug::print("before_filtering");
-        filtering_calculation(x, x_label, filtering, filtering_state);
+        filtering.calculate(x, x_label, filtering_state);
         MemoryDebug::print("after_filtering");
         if (Output.save_density_each_iter != 0 && Iter % Output.save_density_interval == 0) {
             const auto out_t0 = Clock::now();
@@ -211,14 +160,17 @@ void OptimizationBase::run(const FEM& fem) {
 
         t0 = Clock::now();
         MemoryDebug::print("before_objective_value");
-        evaluate_objective_ptr(fem, *this, filtering_state.xPhys, obj_value);
+        if (Iter == 0) objective.initialize(fem, analysis_all, filtering_state.xPhys);
+        else objective.calculate(fem, analysis_all, filtering_state.xPhys);
+        obj_value = objective.value;
         MemoryDebug::print("after_objective_value");
         t1 = Clock::now();
         objective_time = elapsed(t0, t1);
 
         t0 = Clock::now();
         MemoryDebug::print("before_constraint_value");
-        evaluate_constraint_ptr(fem, *this, filtering_state.xPhys, constr_value_vec);
+        constraint.calculate(fem, analysis_all, filtering_state.xPhys);
+        constr_value_vec = constraint.values;
         MemoryDebug::print("after_constraint_value");
         t1 = Clock::now();
         constraint_time = elapsed(t0, t1);
@@ -236,14 +188,9 @@ void OptimizationBase::run(const FEM& fem) {
         dObj_dx_mat = Eigen::MatrixXd::Zero(nelem, nvar);
         t0 = Clock::now();
         MemoryDebug::print("before_objective_sensitivity");
-        for (auto& group : objective_groups) {
-            Analysis& A = *analysis_all[static_cast<std::size_t>(group.analysis_id - 1)];
-            Eigen::MatrixXd dg = lower(group.sens_type) == "debug"
-                ? sensitivity->debug_objective_sensitivity(fem, A, x, x_label, group, filtering, filtering_state,
-                                                           Output, debug_fd_epsilon, debug_fd_max_checks, Iter)
-                : sensitivity->objective_sensitivity(fem, A, x, x_label, group, filtering, filtering_state, Iter);
-            add_scaled(dObj_dx_mat, dg, 1.0);
-        }
+        objective.calculate_sensitivity(fem, analysis_all, x, x_label, filtering, filtering_state, Output,
+                                        debug_fd_epsilon, debug_fd_max_checks, Iter);
+        dObj_dx_mat = objective.sensitivity;
         MemoryDebug::print("after_objective_sensitivity");
         t1 = Clock::now();
         objective_sensitivity_time = elapsed(t0, t1);
@@ -257,9 +204,9 @@ void OptimizationBase::run(const FEM& fem) {
         dConstr_dx.clear();
         t0 = Clock::now();
         MemoryDebug::print("before_constraint_sensitivity");
-        for (auto& c : constraints) {
-            Analysis& A = *analysis_all[static_cast<std::size_t>(c.analysis_id - 1)];
-            Eigen::MatrixXd dc = sensitivity->constraint_sensitivity(fem, A, x, x_label, c, filtering, filtering_state, Iter);
+        constraint.calculate_sensitivity(fem, analysis_all, x, x_label, filtering, filtering_state,
+                                         Output, debug_fd_epsilon, debug_fd_max_checks, Iter);
+        for (const auto& dc : constraint.sensitivity) {
             std::vector<double> flat = flatten(dc);
             dConstr_dx.insert(dConstr_dx.end(), flat.begin(), flat.end());
         }
@@ -331,12 +278,12 @@ void OptimizationBase::run(const FEM& fem) {
 }
 
 std::unique_ptr<OptimizationBase> make_optimization_solver(std::string linear_backend,
-                                                           std::unique_ptr<DynamicLinearElastic> analysis,
+                                                           std::vector<std::unique_ptr<Analysis>> analysis_all,
                                                            Optimization opt) {
     std::unique_ptr<OptimizationBase> solver;
-    if (lower(std::move(linear_backend)) == "eigen") solver = std::make_unique<EigenOptimization>();
+    if (myjson::lower_ascii(linear_backend) == "eigen") solver = std::make_unique<EigenOptimization>();
     else solver = std::make_unique<PetscOptimization>();
     static_cast<Optimization&>(*solver) = std::move(opt);
-    solver->analysis_all.push_back(std::move(analysis));
+    solver->analysis_all = std::move(analysis_all);
     return solver;
 }

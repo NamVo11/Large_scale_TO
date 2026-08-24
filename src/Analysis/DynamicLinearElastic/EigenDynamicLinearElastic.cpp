@@ -1,5 +1,4 @@
 #include "Analysis/Analysis.hpp"
-#include "MatlabLikeData.hpp"
 #include "ROM/ROM_method/ROM_Base.hpp"
 #include "helper/MemoryDebug.hpp"
 #include "helper/MyAlgebra.hpp"
@@ -279,9 +278,10 @@ namespace
     void set_neum(const Analysis &analysis, Eigen::VectorXd &f, int istep)
     {
         f.setZero();
-        for (const auto &bc : analysis.Neum)
+        for (const auto &bc_ptr : analysis.Neum)
         {
-            const double value = bc.fun_value ? bc.fun_value(istep) : bc_value(bc, analysis, istep);
+            const BoundaryCondition& bc = *bc_ptr;
+            const double value = bc.value(analysis, istep, static_cast<double>(bc.nDof));
             for (int dof : bc.dof_ids)
                 f(dof) += value;
         }
@@ -289,9 +289,10 @@ namespace
 
     void set_dirichlet_rhs(const Analysis &analysis, Eigen::VectorXd &rhs, int istep)
     {
-        for (const auto &bc : analysis.Dirich)
+        for (const auto &bc_ptr : analysis.Dirich)
         {
-            const double value = bc.fun_value ? bc.fun_value(istep) : bc_value(bc, analysis, istep);
+            const BoundaryCondition& bc = *bc_ptr;
+            const double value = bc.value(analysis, istep, 1.0);
             for (int dof : bc.dof_ids)
                 rhs(dof) = value;
         }
@@ -304,12 +305,13 @@ namespace
                             const std::string &system_type,
                             bool is_end)
     {
+        const auto& dynamic = dynamic_cast<const DynamicLinearElastic&>(analysis);
         ROMContext ctx;
         ctx.analysis_id = analysis.id;
         ctx.opt_iter = Iter;
         ctx.solve_step = solve_step;
         ctx.time_step = time_step;
-        ctx.time = time_step * analysis.dt;
+        ctx.time = time_step * dynamic.dt;
         ctx.role = "primal";
         ctx.system_type = system_type;
         ctx.is_end_of_analysis = is_end;
@@ -330,7 +332,7 @@ namespace
 
 void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_elem, int Iter)
 {
-    Analysis &analysis = *this;
+    DynamicLinearElastic &analysis = *this;
     (void)Iter;
     if (!analysis.ROM)
         throw std::runtime_error("EigenDynamicLinearElastic::solver requires analysis.ROM initialized");

@@ -1,25 +1,15 @@
-#include "Analysis/Analysis.hpp"
-#include "MatlabLikeData.hpp"
+#include "Analysis/DynamicLinearElastic/DynamicLinearElasticAVM.hpp"
 
-#include "Optimization/Filtering.hpp"
+#include "Analysis/Analysis.hpp"
 #include "ROM/ROM_method/ROM_Base.hpp"
-#include "Sensitivity/Sensitivity.hpp"
-#include "MatlabMMA.hpp"
 
 #include <petscsys.h>
 
 #include <algorithm>
 #include <chrono>
-#include <cctype>
-#include <cmath>
-#include <cstdio>
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
 #include <iostream>
-#include <limits>
 #include <stdexcept>
-#include <vector>
 
 #include <omp.h>
 
@@ -70,12 +60,13 @@ void zero_fixed(Eigen::VectorXd& v, const std::vector<int>& fixed) {
 }
 
 ROMContext make_adjoint_context(const Analysis& analysis, int Iter, int time_step) {
+    const auto& dynamic = dynamic_cast<const DynamicLinearElastic&>(analysis);
     ROMContext ctx;
     ctx.analysis_id = analysis.id;
     ctx.opt_iter = Iter;
     ctx.solve_step = time_step + 1;
     ctx.time_step = time_step;
-    ctx.time = time_step * analysis.dt;
+    ctx.time = time_step * dynamic.dt;
     ctx.role = "adjoint";
     ctx.system_type = "newmark_adjoint_effective";
     ctx.is_end_of_analysis = time_step == 0;
@@ -85,7 +76,7 @@ ROMContext make_adjoint_context(const Analysis& analysis, int Iter, int time_ste
 Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                                           const Analysis& analysis,
                                           const Eigen::MatrixXd& xPhys,
-                                          const ObjectiveGroup& object,
+                                          const DynamicLinearElasticAVM& object,
                                           const Eigen::MatrixXd& lambda_all) {
     using Clock = std::chrono::steady_clock;
 
@@ -102,16 +93,12 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
     const int nstep = analysis.Nstep;
     const int nvar = nvar_of(xPhys);
 
-    if (xPhys.rows() != fem.NElem) {
-        throw std::runtime_error("explicit_gradient_dynamic: xPhys row count does not match fem.NElem");
-    }
-
+    if (xPhys.rows() != fem.NElem) throw std::runtime_error("explicit_gradient_dynamic: xPhys row mismatch");
     if (analysis.results.U.cols() < nstep + 1 ||
         analysis.results.A.cols() < nstep + 1 ||
         lambda_all.cols() < nstep + 1) {
         throw std::runtime_error("explicit_gradient_dynamic: insufficient time-step columns");
     }
-
     if (analysis.results.U.rows() != analysis.results.A.rows() ||
         analysis.results.U.rows() != lambda_all.rows()) {
         throw std::runtime_error("explicit_gradient_dynamic: U, A and lambda_all row mismatch");
@@ -121,20 +108,17 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
     if (const char* env = std::getenv("SENS_ELEMENT_THREADS")) {
         sens_element_threads = std::max(1, std::atoi(env));
     }
-
     if (size != 1) sens_element_threads = 1;
 
     Eigen::MatrixXd df_dx = Eigen::MatrixXd::Zero(fem.NElem, nvar);
 
     if (rank == 0) {
         int actual_threads = 1;
-
         #pragma omp parallel num_threads(sens_element_threads) if(sens_element_threads > 1)
         {
             #pragma omp single
             actual_threads = omp_get_num_threads();
         }
-
         std::cout << "  thread_debug explicit_gradient_dynamic:"
                   << " requested_threads=" << sens_element_threads
                   << " actual_threads=" << actual_threads
@@ -147,58 +131,34 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
     for (const Region& region : analysis.regions) {
         if (region.status != "design_val") continue;
         if (region.elem_ids.empty()) continue;
-
-        if (region.mat_paras.val_ids.empty()) {
-            throw std::runtime_error("explicit_gradient_dynamic: design_val region has no val_ids");
-        }
-
-        if (region.mat_paras.E_inf.empty()) {
-            throw std::runtime_error("explicit_gradient_dynamic: region has no elastic parameters");
-        }
-
-        if (region.mat_paras.rho.empty()) {
-            throw std::runtime_error("explicit_gradient_dynamic: region has no density parameters");
-        }
+        if (region.mat_paras.val_ids.empty()) throw std::runtime_error("explicit_gradient_dynamic: no val_ids");
+        if (region.mat_paras.E_inf.empty()) throw std::runtime_error("explicit_gradient_dynamic: no elastic parameters");
+        if (region.mat_paras.rho.empty()) throw std::runtime_error("explicit_gradient_dynamic: no density parameters");
 
         for (int val_id : region.mat_paras.val_ids) {
-            if (val_id <= 0 || val_id > nvar) {
-                throw std::runtime_error("explicit_gradient_dynamic: region val_id is outside xPhys columns");
-            }
+            if (val_id <= 0 || val_id > nvar) throw std::runtime_error("explicit_gradient_dynamic: val_id outside xPhys");
         }
 
         for (int elem_id : region.elem_ids) {
-            if (elem_id < 0 || elem_id >= fem.NElem) {
-                throw std::runtime_error("explicit_gradient_dynamic: invalid element id in region");
-            }
-
+            if (elem_id < 0 || elem_id >= fem.NElem) throw std::runtime_error("explicit_gradient_dynamic: invalid elem id");
             const auto& dofs = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
-            if (dofs.size() > 24) {
-                throw std::runtime_error("explicit_gradient_dynamic: element ndof > 24 is not supported");
-            }
+            if (dofs.size() > 24) throw std::runtime_error("explicit_gradient_dynamic: element ndof > 24");
         }
 
         const double region_nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
-
         ElementMatrix uniform_em;
-
         if (fem.uniform_element_matrices) {
             uniform_em = fem.compute_element_matrices(region.elem_ids.front(), region_nu, fem.Thickness);
-
-            if (uniform_em.ndof > 24) {
-                throw std::runtime_error("explicit_gradient_dynamic: uniform element ndof > 24");
-            }
+            if (uniform_em.ndof > 24) throw std::runtime_error("explicit_gradient_dynamic: uniform element ndof > 24");
         }
 
         const int region_nelem = static_cast<int>(region.elem_ids.size());
-
         #pragma omp parallel for schedule(static) num_threads(sens_element_threads) if(sens_element_threads > 1)
-
         for (int local_e = 0; local_e < region_nelem; ++local_e) {
             const int elem_id = region.elem_ids[static_cast<std::size_t>(local_e)];
 
             ElementMatrix local_em;
             const ElementMatrix* em_ptr = &uniform_em;
-
             if (!fem.uniform_element_matrices) {
                 local_em = fem.compute_element_matrices(elem_id, region_nu, fem.Thickness);
                 em_ptr = &local_em;
@@ -235,12 +195,8 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                 auto Ma_elem = Ma_elem_buffer.head(em.ndof);
 
                 Ku_elem.noalias() = em.ke * u_elem;
-
-                if (k == 0) {
-                    Ma_elem.setZero();
-                } else {
-                    Ma_elem.noalias() = em.me * acc_elem;
-                }
+                if (k == 0) Ma_elem.setZero();
+                else Ma_elem.noalias() = em.me * acc_elem;
 
                 sum_lambda_dot_Ku += lambda_elem.dot(Ku_elem);
                 sum_lambda_dot_Ma += lambda_elem.dot(Ma_elem);
@@ -250,7 +206,6 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                 const double x = xPhys(elem_id, val_id - 1);
                 const double dE = ramp_derivative(region.mat_paras.E_inf, x, region.interp.p_E_elastic);
                 const double drho = ramp_derivative(region.mat_paras.rho, x, region.interp.p_rho);
-
                 df_dx(elem_id, val_id - 1) += dE * sum_lambda_dot_Ku + drho * sum_lambda_dot_Ma;
             }
         }
@@ -263,15 +218,12 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
     add_scaled(df_dx, object.d_explicit_df_dx, 1.0);
     const auto add_end = Clock::now();
 
-    const double timing_unflatten_add = elapsed(add_begin, add_end);
-
     if (rank == 0) {
         const double timing_total = elapsed(timer_begin, Clock::now());
-
         std::cout << "  explicit_gradient_dynamic[s]:"
                   << " threads=" << sens_element_threads
                   << " element_loop=" << timing_element_loop
-                  << " unflatten_add=" << timing_unflatten_add
+                  << " unflatten_add=" << elapsed(add_begin, add_end)
                   << " total=" << timing_total
                   << '\n';
     }
@@ -280,14 +232,15 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
 
 Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
                                                Analysis& analysis,
-                                               ObjectiveGroup& object,
+                                               DynamicLinearElasticAVM& object,
                                                const Filtering& filtering,
                                                const FilteringState& filtering_state,
                                                int Iter) {
+    auto& dynamic = dynamic_cast<DynamicLinearElastic&>(analysis);
     const int nstep = analysis.Nstep;
     const double beta = 0.25;
     const double gamma = 0.5;
-    const double dt = analysis.dt;
+    const double dt = dynamic.dt;
     const double a0c = 1.0 / (beta * dt * dt);
     const double dHdu = a0c;
     const double dLdu = gamma / (beta * dt);
@@ -304,8 +257,8 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     if (K0.rows() == 0 || Keff.rows() == 0 || M.rows() == 0) {
         throw std::runtime_error("eigen_backend sensitivity requires Eigen forward matrices");
     }
+    if (!object.ROM) throw std::runtime_error("EigenDynamicLinearElasticAVM requires ROM initialized");
 
-    if (!object.ROM) throw std::runtime_error("EigenSensitivity requires ObjectiveGroup::ROM initialized");
     std::shared_ptr<ROMBase>& rom = object.ROM;
     if (analysis.results.factorized_K_eff_eigen) {
         rom->set_factorized_solver(Keff, analysis.results.factorized_K_eff_eigen);
@@ -364,33 +317,21 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     }
 
     Eigen::MatrixXd dfdx_phys = explicit_gradient_dynamic(fem, analysis, filtering_state.xPhys, object, lambda_all);
-    return filtering_sensitivity(dfdx_phys, filtering, filtering_state);
-}
-
-Eigen::MatrixXd AVM(const FEM& fem,
-                    Analysis& analysis,
-                    const Eigen::MatrixXd&,
-                    const std::vector<int>& x_label,
-                    ObjectiveGroup& object,
-                    const Filtering& filtering,
-                    const FilteringState& filtering_state,
-                    int Iter) {
-    Eigen::MatrixXd out = dynamic_elastic_base_full_impl(fem, analysis, object, filtering, filtering_state, Iter);
-    for (Eigen::Index e = 0; e < out.rows(); ++e) {
-        if (x_label[static_cast<std::size_t>(e)] != 0) out.row(e).setZero();
-    }
-    return out;
+    return filtering.sensitivity(dfdx_phys, filtering_state);
 }
 
 } // namespace
 
-Eigen::MatrixXd EigenSensitivity::objective_sensitivity(const FEM& fem,
-                                                        Analysis& analysis,
-                                                        const Eigen::MatrixXd& x,
-                                                        const std::vector<int>& x_label,
-                                                        ObjectiveGroup& object,
-                                                        const Filtering& filtering,
-                                                        const FilteringState& filtering_state,
-                                                        int Iter) {
-    return AVM(fem, analysis, x, x_label, object, filtering, filtering_state, Iter);
+Eigen::MatrixXd EigenDynamicLinearElasticAVM::AVM(const FEM& fem,
+                                                  Analysis& analysis,
+                                                  const Eigen::MatrixXd&,
+                                                  const std::vector<int>& x_label,
+                                                  const Filtering& filtering,
+                                                  const FilteringState& filtering_state,
+                                                  int Iter) {
+    Eigen::MatrixXd out = dynamic_elastic_base_full_impl(fem, analysis, *this, filtering, filtering_state, Iter);
+    for (Eigen::Index e = 0; e < out.rows(); ++e) {
+        if (x_label[static_cast<std::size_t>(e)] != 0) out.row(e).setZero();
+    }
+    return out;
 }
