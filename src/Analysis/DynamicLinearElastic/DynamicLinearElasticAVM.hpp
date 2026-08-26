@@ -35,7 +35,6 @@ struct DynamicLinearElasticAVM : GroupFunctionalBase {
                         const Eigen::MatrixXd& x,
                         const std::vector<int>& x_label,
                         const Filtering& filtering,
-                        const FilteringState& filtering_state,
                         int Iter) override;
 
 private:
@@ -51,7 +50,6 @@ struct EigenDynamicLinearElasticAVM : DynamicLinearElasticAVM {
                         const Eigen::MatrixXd& x,
                         const std::vector<int>& x_label,
                         const Filtering& filtering,
-                        const FilteringState& filtering_state,
                         int Iter) override;
 };
 
@@ -64,6 +62,11 @@ struct PetscDynamicLinearElasticAVM : DynamicLinearElasticAVM {
                         const Eigen::MatrixXd& x,
                         const std::vector<int>& x_label,
                         const Filtering& filtering,
-                        const FilteringState& filtering_state,
                         int Iter) override;
 };
+
+inline std::unique_ptr<GroupFunctionalBase> InitializeDynamicLinearElasticGroupFunctional(const myjson::json& j,
+                                                                                         const std::string& backend) {
+    if (backend == "eigen") return std::make_unique<EigenDynamicLinearElasticAVM>(j);
+    return std::make_unique<PetscDynamicLinearElasticAVM>(j);
+}

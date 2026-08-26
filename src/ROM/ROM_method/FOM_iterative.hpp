@@ -20,4 +20,3 @@ public:
                         Eigen::VectorXd& u,
                         const ROMContext& context) override;
 };
-

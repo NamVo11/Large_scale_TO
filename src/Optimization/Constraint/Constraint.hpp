@@ -37,10 +37,7 @@ struct Constraint {
                                const Eigen::MatrixXd& x,
                                const std::vector<int>& x_label,
                                const Filtering& filtering,
-                               const FilteringState& filtering_state,
                                const OutputData& output,
-                               double fd_epsilon,
-                               int max_checks,
                                int Iter) {
         sensitivity.resize(groups.size());
         for (std::size_t i = 0; i < groups.size(); ++i) {
@@ -48,8 +45,8 @@ struct Constraint {
             if (!group->sensitivity_method) throw std::runtime_error("Constraint group has no sensitivity method");
             Analysis& analysis = *analysis_all.at(static_cast<std::size_t>(group->analysis_id - 1));
             sensitivity.at(i) = group->sensitivity_method->run(fem, analysis, x, x_label, *group,
-                                                               filtering, filtering_state, output,
-                                                               fd_epsilon, max_checks, Iter);
+                                                               filtering, output,
+                                                               Iter);
         }
     }
 };

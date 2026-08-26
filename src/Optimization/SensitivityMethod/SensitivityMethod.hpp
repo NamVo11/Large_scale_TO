@@ -27,10 +27,7 @@ struct SensitivityMethodBase {
                                 const std::vector<int>& x_label,
                                 GroupFunctionalBase& object,
                                 const Filtering& filtering,
-                                const FilteringState& filtering_state,
                                 const OutputData& output,
-                                double fd_epsilon,
-                                int max_checks,
                                 int Iter) = 0;
 };
 
@@ -45,14 +42,14 @@ struct AVMSensitivityMethod : SensitivityMethodBase {
                         const std::vector<int>& x_label,
                         GroupFunctionalBase& object,
                         const Filtering& filtering,
-                        const FilteringState& filtering_state,
                         const OutputData& output,
-                        double fd_epsilon,
-                        int max_checks,
                         int Iter) override;
 };
 
 struct DebugSensitivityMethod : SensitivityMethodBase {
+    double fd_epsilon = 1e-6;
+    int max_checks = 20;
+
     DebugSensitivityMethod() {
         type = "Debug";
     }
@@ -63,10 +60,7 @@ struct DebugSensitivityMethod : SensitivityMethodBase {
                         const std::vector<int>& x_label,
                         GroupFunctionalBase& object,
                         const Filtering& filtering,
-                        const FilteringState& filtering_state,
                         const OutputData& output,
-                        double fd_epsilon,
-                        int max_checks,
                         int Iter) override;
 };
 

@@ -30,7 +30,6 @@ Eigen::MatrixXd DynamicLinearElasticAVM::AVM(const FEM&,
                                             const Eigen::MatrixXd&,
                                             const std::vector<int>&,
                                             const Filtering&,
-                                            const FilteringState&,
                                             int) {
     throw std::runtime_error("DynamicLinearElasticAVM::AVM backend implementation is not migrated yet");
 }

@@ -154,19 +154,8 @@ ElementType element_type_from_card(const std::string& card, std::size_t node_cou
 
 } // namespace
 
-std::string element_type_name(ElementType type) {
-    switch (type) {
-        case ElementType::Q4: return "Q4";
-        case ElementType::TRI3: return "TRI3";
-        case ElementType::H8: return "H8";
-        case ElementType::T4: return "T4";
-        case ElementType::P6: return "P6";
-        default: return "Unknown";
-    }
-}
-
 void StructuredMesh::build_from_geometry(const Geometry& geom) {
-    const std::string type_name = lower(type);
+    const std::string type_name = lower(fem_type);
     Node.clear();
     Element.clear();
     ElementObjects.clear();
@@ -179,15 +168,12 @@ void StructuredMesh::build_from_geometry(const Geometry& geom) {
     element_ids.clear();
     node_id_to_local.clear();
     element_id_to_local.clear();
-    hm_sets_by_id.clear();
-    hm_sets_by_name.clear();
     nelx = geom.nelx;
     nely = geom.nely;
     nelz = geom.nelz;
 
     if (type_name == "plane_stress" || type_name == "plane_strain") {
         dim = 2;
-        mesh_type = "2D_Q4";
         const double ex = geom.Lx / static_cast<double>(geom.nelx);
         const double ey = geom.Ly / static_cast<double>(geom.nely);
         const int nx = geom.nelx + 1;
@@ -213,7 +199,6 @@ void StructuredMesh::build_from_geometry(const Geometry& geom) {
         }
     } else if (type_name == "3d_brick") {
         dim = 3;
-        mesh_type = "3D_H8";
         const double ex = geom.Lx / static_cast<double>(geom.nelx);
         const double ey = geom.Ly / static_cast<double>(geom.nely);
         const double ez = geom.Lz / static_cast<double>(geom.nelz);
@@ -245,7 +230,7 @@ void StructuredMesh::build_from_geometry(const Geometry& geom) {
             }
         }
     } else {
-        throw std::runtime_error("StructuredMesh: unsupported fem.type");
+        throw std::runtime_error("StructuredMesh: unsupported FEM.fem_type");
     }
 
     NNode = static_cast<int>(Node.size());
@@ -288,11 +273,19 @@ void UnstructuredMesh::read_hypermesh_fem(const std::string& fem_file) {
     hm_sets_by_id.clear();
     hm_sets_by_name.clear();
 
-    dim = 3;
-    mesh_type = "unstructured";
+    const std::string type_name = lower(fem_type);
+    if (type_name == "plane_stress" || type_name == "plane_strain") {
+        dim = 2;
+    } else if (type_name == "3d_brick") {
+        dim = 3;
+    } else {
+        throw std::runtime_error("UnstructuredMesh: unsupported FEM.fem_type: " + fem_type);
+    }
     uniform_element_matrices = false;
 
     std::unordered_map<int, HMSet> raw_sets;
+    bool all_2d = true;
+    bool all_3d = true;
 
     for (std::size_t i = 0; i < lines.size(); ++i) {
         const std::string s = trim(lines[i]);
@@ -341,15 +334,15 @@ void UnstructuredMesh::read_hypermesh_fem(const std::string& fem_file) {
                             parse_nastran_double(tokens[5])});
             continue;
         }
-
+       
         const bool is_element_card =
-            s.rfind("CHEXA", 0) == 0 ||
-            s.rfind("CTETRA", 0) == 0 ||
-            s.rfind("CPENTA", 0) == 0 ||
-            s.rfind("CQUAD4", 0) == 0 ||
-            s.rfind("CTRIA3", 0) == 0;
+                                    s.rfind("CHEXA", 0) == 0 ||
+                                    s.rfind("CTETRA", 0) == 0 ||
+                                    s.rfind("CPENTA", 0) == 0 ||
+                                    s.rfind("CQUAD4", 0) == 0 ||
+                                    s.rfind("CTRIA3", 0) == 0;
         if (!is_element_card) continue;
-
+        // ======================  get element information ===============================
         std::string card_text = s;
         std::size_t j = i + 1;
         while (j < lines.size()) {
@@ -371,9 +364,27 @@ void UnstructuredMesh::read_hypermesh_fem(const std::string& fem_file) {
         std::vector<int> raw_nodes;
         raw_nodes.reserve(tokens.size() - 3);
         for (std::size_t k = 3; k < tokens.size(); ++k) raw_nodes.push_back(std::stoi(tokens[k]));
+        
         const ElementType etype = element_type_from_card(card, raw_nodes.size());
         if (etype == ElementType::Unknown) {
             throw std::runtime_error("Unsupported first-order element card: " + card);
+        }
+
+        const bool is_2d_element = etype == ElementType::Q4 || etype == ElementType::TRI3;
+        const bool is_3d_element = etype == ElementType::H8 || etype == ElementType::T4 || etype == ElementType::P6;
+        all_2d = all_2d && is_2d_element;
+        all_3d = all_3d && is_3d_element;
+        if (!all_2d && !all_3d) {
+            throw std::runtime_error("HyperMesh fem file mixes 2D and 3D elements near raw element id " +
+                                     std::to_string(raw_elem_id));
+        }
+        if (dim == 2 && !is_2d_element) {
+            throw std::runtime_error("FEM.fem_type=" + fem_type +
+                                     " requires 2D elements, but found card " + card);
+        }
+        if (dim == 3 && !is_3d_element) {
+            throw std::runtime_error("FEM.fem_type=" + fem_type +
+                                     " requires 3D elements, but found card " + card);
         }
 
         std::vector<int> elem;
@@ -396,20 +407,6 @@ void UnstructuredMesh::read_hypermesh_fem(const std::string& fem_file) {
     NNode = static_cast<int>(Node.size());
     NElem = static_cast<int>(Element.size());
     if (NNode == 0 || NElem == 0) throw std::runtime_error("HyperMesh fem file contains no usable GRID/elements");
-
-    bool all_h8 = true;
-    bool all_q4 = true;
-    bool all_2d = true;
-    for (ElementType t : ElementTypes) {
-        all_h8 = all_h8 && (t == ElementType::H8);
-        all_q4 = all_q4 && (t == ElementType::Q4);
-        all_2d = all_2d && (t == ElementType::Q4 || t == ElementType::TRI3);
-    }
-    if (all_h8) mesh_type = "3D_H8";
-    else if (all_2d) {
-        mesh_type = all_q4 ? "2D_Q4" : "2D_unstructured";
-        dim = 2;
-    }
 
     ndof = NNode * dim;
     AllDofs.resize(static_cast<std::size_t>(ndof));
@@ -438,33 +435,47 @@ void UnstructuredMesh::read_hypermesh_fem(const std::string& fem_file) {
     }
 }
 
-void FEM::build_element_objects() {
-    ElementObjects.clear();
-    ElementObjects.reserve(static_cast<std::size_t>(NElem));
-    for (int e = 0; e < NElem; ++e) {
-        ElementObjects.push_back(make_element_object(*this, e));
-    }
+const HMSet& UnstructuredMesh::hmset_by_name(const std::string& name) const {
+    auto it = hm_sets_by_name.find(name);
+    if (it != hm_sets_by_name.end()) return it->second;
+    it = hm_sets_by_name.find(lower(name));
+    if (it != hm_sets_by_name.end()) return it->second;
+    throw std::runtime_error("HMSET not found: " + name);
 }
 
-void FEM::precompute_element_geometry() {
-    if (static_cast<int>(ElementObjects.size()) != NElem) build_element_objects();
+void FEM::precompute_elements() {
+    ElementObjects.assign(static_cast<std::size_t>(NElem), nullptr);
+    ElementDofs.resize(static_cast<std::size_t>(NElem));
     elem_center.resize(static_cast<std::size_t>(NElem));
     volume.resize(static_cast<std::size_t>(NElem));
     mesh_size.resize(static_cast<std::size_t>(NElem));
     nonpositive_detJ_element_ids.clear();
     std::vector<int> nonpositive_detJ_flags(static_cast<std::size_t>(NElem), 0);
+
 #pragma omp parallel for num_threads(kFEMPrecomputeThreads) schedule(static)
+
     for (int e = 0; e < NElem; ++e) {
-        const auto& elem_obj = ElementObjects.at(static_cast<std::size_t>(e));
+        const auto& elem = Element.at(static_cast<std::size_t>(e));
+        auto& dofs = ElementDofs[static_cast<std::size_t>(e)];
+        dofs.resize(elem.size() * static_cast<std::size_t>(dim));
+        for (std::size_t a = 0; a < elem.size(); ++a) {
+            for (int d = 0; d < dim; ++d) {
+                dofs[a * static_cast<std::size_t>(dim) + static_cast<std::size_t>(d)] =
+                    static_cast<PetscInt>(dim * elem[a] + d);
+            }
+        }
+
+        auto elem_obj = make_element_object(*this, e);
         elem_center[static_cast<std::size_t>(e)] = elem_obj->center(*this);
         const double v = elem_obj->volume(*this);
         if (!(v > 0.0)) {
-            throw std::runtime_error("FEM::precompute_element_geometry: non-positive element volume at element " +
+            throw std::runtime_error("FEM::precompute_elements: non-positive element volume at element " +
                                      std::to_string(e));
         }
         volume[static_cast<std::size_t>(e)] = v;
         mesh_size[static_cast<std::size_t>(e)] = elem_obj->mesh_size(*this);
         if (!elem_obj->detJ_is_positive) nonpositive_detJ_flags[static_cast<std::size_t>(e)] = 1;
+        ElementObjects[static_cast<std::size_t>(e)] = std::move(elem_obj);
     }
 
     for (int e = 0; e < NElem; ++e) {
@@ -484,30 +495,32 @@ void FEM::precompute_element_geometry() {
     }
 }
 
-void FEM::precompute_element_dofs() {
-    ElementDofs.resize(static_cast<std::size_t>(NElem));
-#pragma omp parallel for num_threads(kFEMPrecomputeThreads) schedule(static)
-    for (int e = 0; e < NElem; ++e) {
-        const auto& elem = Element.at(static_cast<std::size_t>(e));
-        auto& dofs = ElementDofs[static_cast<std::size_t>(e)];
-        dofs.resize(elem.size() * static_cast<std::size_t>(dim));
-        for (std::size_t a = 0; a < elem.size(); ++a) {
-            for (int d = 0; d < dim; ++d) {
-                dofs[a * static_cast<std::size_t>(dim) + static_cast<std::size_t>(d)] =
-                    static_cast<PetscInt>(dim * elem[a] + d);
+void FEM::InitializeMaterials(const myjson::json& materials_json) {
+    if (!materials_json.is_array() || materials_json.empty()) {
+        throw std::runtime_error("JSON Materials is empty");
+    }
+    if (Regions.empty()) {
+        throw std::runtime_error("FEM::InitializeMaterials requires FEM Regions initialized");
+    }
+    for (const Region& region : Regions) {
+        const auto material = InitializeMaterial(materials_json, region.mat_ids, region.status);
+        for (int elem_id : region.elem_ids) {
+            if (elem_id < 0 || elem_id >= static_cast<int>(ElementObjects.size())) {
+                throw std::runtime_error("FEM::InitializeMaterials: element id outside ElementObjects");
             }
+            ElementObjects[static_cast<std::size_t>(elem_id)]->material = material;
         }
     }
 }
 
 void FEM::debug_check_element_orientation() const {
     if (ElementObjects.empty()) {
-        std::cout << "FEM orientation check: ElementObjects is empty. Call build_element_objects() first.\n";
+        std::cout << "FEM orientation check: ElementObjects is empty. Call precompute_elements() first.\n";
         return;
     }
 
     std::cout << "FEM orientation check\n"
-              << "  mesh_type = " << mesh_type << "\n"
+              << "  fem_type  = " << fem_type << "\n"
               << "  nodes     = " << NNode << "\n"
               << "  elements  = " << NElem << "\n";
 
@@ -586,208 +599,3 @@ void FEM::debug_check_element_orientation() const {
         }
     }
 }
-
-using Mat3 = std::array<double, 9>;
-
-double det3(const Mat3& a) {
-    return a[0] * (a[4] * a[8] - a[5] * a[7])
-         - a[1] * (a[3] * a[8] - a[5] * a[6])
-         + a[2] * (a[3] * a[7] - a[4] * a[6]);
-}
-
-Mat3 inv3(const Mat3& a) {
-    const double d = det3(a);
-    if (std::abs(d) < 1e-30) throw std::runtime_error("Singular H8 Jacobian");
-    return {
-         (a[4] * a[8] - a[5] * a[7]) / d,
-        -(a[1] * a[8] - a[2] * a[7]) / d,
-         (a[1] * a[5] - a[2] * a[4]) / d,
-        -(a[3] * a[8] - a[5] * a[6]) / d,
-         (a[0] * a[8] - a[2] * a[6]) / d,
-        -(a[0] * a[5] - a[2] * a[3]) / d,
-         (a[3] * a[7] - a[4] * a[6]) / d,
-        -(a[0] * a[7] - a[1] * a[6]) / d,
-         (a[0] * a[4] - a[1] * a[3]) / d};
-}
-
-void add_btdb(LocalDenseMatrix& ke,
-              const std::vector<double>& B,
-              const std::vector<double>& D,
-              int strain_dim,
-              int ndof,
-              double weight) {
-    for (int i = 0; i < ndof; ++i) {
-        for (int j = 0; j < ndof; ++j) {
-            double v = 0.0;
-            for (int a = 0; a < strain_dim; ++a) {
-                double db = 0.0;
-                for (int b = 0; b < strain_dim; ++b) db += D[a * strain_dim + b] * B[b * ndof + j];
-                v += B[a * ndof + i] * db;
-            }
-            ke(i, j) += v * weight;
-        }
-    }
-}
-
-ElementMatrix compute_q4(const FEM& fem, int elem_id, double nu, double thickness) {
-    ElementMatrix out;
-    out.ndof = 8;
-    out.ke = LocalDenseMatrix::Zero(out.ndof, out.ndof);
-    out.me = LocalDenseMatrix::Zero(out.ndof, out.ndof);
-
-    const auto& elem = fem.Element.at(static_cast<std::size_t>(elem_id));
-    const double c = 1.0 / (1.0 - nu * nu);
-    const std::vector<double> D = {
-        c, c * nu, 0.0,
-        c * nu, c, 0.0,
-        0.0, 0.0, c * (1.0 - nu) / 2.0};
-    constexpr double gp[2] = {-0.57735026918962576451, 0.57735026918962576451};
-
-    for (double xi : gp) {
-        for (double eta : gp) {
-            const double N[4] = {
-                0.25 * (1.0 - xi) * (1.0 - eta),
-                0.25 * (1.0 + xi) * (1.0 - eta),
-                0.25 * (1.0 + xi) * (1.0 + eta),
-                0.25 * (1.0 - xi) * (1.0 + eta)};
-            const double dNdxi[8] = {
-                -0.25 * (1.0 - eta), -0.25 * (1.0 - xi),
-                 0.25 * (1.0 - eta), -0.25 * (1.0 + xi),
-                 0.25 * (1.0 + eta),  0.25 * (1.0 + xi),
-                -0.25 * (1.0 + eta),  0.25 * (1.0 - xi)};
-
-            double J[4] = {0.0, 0.0, 0.0, 0.0};
-            for (int a = 0; a < 4; ++a) {
-                const auto& p = fem.Node.at(static_cast<std::size_t>(elem[a]));
-                J[0] += p[0] * dNdxi[2 * a + 0];
-                J[1] += p[0] * dNdxi[2 * a + 1];
-                J[2] += p[1] * dNdxi[2 * a + 0];
-                J[3] += p[1] * dNdxi[2 * a + 1];
-            }
-            const double detJ = J[0] * J[3] - J[1] * J[2];
-            if (std::abs(detJ) < 1e-30) throw std::runtime_error("Singular Q4 Jacobian");
-            const double invJ[4] = {J[3] / detJ, -J[1] / detJ, -J[2] / detJ, J[0] / detJ};
-
-            std::vector<double> B(3 * 8, 0.0);
-            for (int a = 0; a < 4; ++a) {
-                const double dx = invJ[0] * dNdxi[2 * a + 0] + invJ[1] * dNdxi[2 * a + 1];
-                const double dy = invJ[2] * dNdxi[2 * a + 0] + invJ[3] * dNdxi[2 * a + 1];
-                B[0 * 8 + 2 * a + 0] = dx;
-                B[1 * 8 + 2 * a + 1] = dy;
-                B[2 * 8 + 2 * a + 0] = dy;
-                B[2 * 8 + 2 * a + 1] = dx;
-            }
-            add_btdb(out.ke, B, D, 3, 8, std::abs(detJ) * thickness);
-
-            for (int a = 0; a < 4; ++a) {
-                for (int b = 0; b < 4; ++b) {
-                    const double v = N[a] * N[b] * std::abs(detJ) * thickness;
-                    out.me(2 * a + 0, 2 * b + 0) += v;
-                    out.me(2 * a + 1, 2 * b + 1) += v;
-                }
-            }
-        }
-    }
-    return out;
-}
-
-ElementMatrix compute_h8(const FEM& fem, int elem_id, double nu) {
-    ElementMatrix out;
-    out.ndof = 24;
-    out.ke = LocalDenseMatrix::Zero(out.ndof, out.ndof);
-    out.me = LocalDenseMatrix::Zero(out.ndof, out.ndof);
-
-    const auto& elem = fem.Element.at(static_cast<std::size_t>(elem_id));
-    const double c = 1.0 / ((1.0 + nu) * (1.0 - 2.0 * nu));
-    std::vector<double> D(6 * 6, 0.0);
-    D[0 * 6 + 0] = c * (1.0 - nu);
-    D[0 * 6 + 1] = c * nu;
-    D[0 * 6 + 2] = c * nu;
-    D[1 * 6 + 0] = c * nu;
-    D[1 * 6 + 1] = c * (1.0 - nu);
-    D[1 * 6 + 2] = c * nu;
-    D[2 * 6 + 0] = c * nu;
-    D[2 * 6 + 1] = c * nu;
-    D[2 * 6 + 2] = c * (1.0 - nu);
-    D[3 * 6 + 3] = c * (1.0 - 2.0 * nu) / 2.0;
-    D[4 * 6 + 4] = c * (1.0 - 2.0 * nu) / 2.0;
-    D[5 * 6 + 5] = c * (1.0 - 2.0 * nu) / 2.0;
-
-    constexpr int s[8][3] = {
-        {-1, -1, -1}, { 1, -1, -1}, { 1,  1, -1}, {-1,  1, -1},
-        {-1, -1,  1}, { 1, -1,  1}, { 1,  1,  1}, {-1,  1,  1}};
-    constexpr double gp[2] = {-0.57735026918962576451, 0.57735026918962576451};
-
-    for (double xi : gp) {
-        for (double eta : gp) {
-            for (double zeta : gp) {
-                std::array<double, 8> N{};
-                std::array<double, 24> dNdxi{};
-                for (int i = 0; i < 8; ++i) {
-                    const double sx = s[i][0];
-                    const double sy = s[i][1];
-                    const double sz = s[i][2];
-                    N[i] = 0.125 * (1.0 + sx * xi) * (1.0 + sy * eta) * (1.0 + sz * zeta);
-                    dNdxi[i * 3 + 0] = 0.125 * sx * (1.0 + sy * eta) * (1.0 + sz * zeta);
-                    dNdxi[i * 3 + 1] = 0.125 * sy * (1.0 + sx * xi) * (1.0 + sz * zeta);
-                    dNdxi[i * 3 + 2] = 0.125 * sz * (1.0 + sx * xi) * (1.0 + sy * eta);
-                }
-                Mat3 J{};
-                for (int a = 0; a < 8; ++a) {
-                    const auto& p = fem.Node.at(static_cast<std::size_t>(elem[a]));
-                    for (int alpha = 0; alpha < 3; ++alpha) {
-                        J[0 * 3 + alpha] += p[0] * dNdxi[a * 3 + alpha];
-                        J[1 * 3 + alpha] += p[1] * dNdxi[a * 3 + alpha];
-                        J[2 * 3 + alpha] += p[2] * dNdxi[a * 3 + alpha];
-                    }
-                }
-                const double detJ = std::abs(det3(J));
-                const Mat3 iJ = inv3(J);
-                std::vector<double> B(6 * 24, 0.0);
-                for (int a = 0; a < 8; ++a) {
-                    double d[3]{};
-                    for (int beta = 0; beta < 3; ++beta) {
-                        for (int alpha = 0; alpha < 3; ++alpha) d[beta] += dNdxi[a * 3 + alpha] * iJ[alpha * 3 + beta];
-                    }
-                    const int col = 3 * a;
-                    B[0 * 24 + col + 0] = d[0];
-                    B[1 * 24 + col + 1] = d[1];
-                    B[2 * 24 + col + 2] = d[2];
-                    B[3 * 24 + col + 0] = d[1];
-                    B[3 * 24 + col + 1] = d[0];
-                    B[4 * 24 + col + 1] = d[2];
-                    B[4 * 24 + col + 2] = d[1];
-                    B[5 * 24 + col + 0] = d[2];
-                    B[5 * 24 + col + 2] = d[0];
-                }
-                add_btdb(out.ke, B, D, 6, 24, detJ);
-                for (int a = 0; a < 8; ++a) {
-                    for (int b = 0; b < 8; ++b) {
-                        const double v = N[a] * N[b] * detJ;
-                        for (int d = 0; d < 3; ++d) out.me(3 * a + d, 3 * b + d) += v;
-                    }
-                }
-            }
-        }
-    }
-    return out;
-}
-
-
-ElementMatrix FEM::compute_element_matrices(int elem_id, double nu, double thickness) const {
-    const FEM& fem = *this;
-    ElementType type = ElementType::Unknown;
-    if (elem_id >= 0 && elem_id < static_cast<int>(fem.ElementTypes.size())) {
-        type = fem.ElementTypes[static_cast<std::size_t>(elem_id)];
-    } else if (fem.mesh_type == "2D_Q4") {
-        type = ElementType::Q4;
-    } else if (fem.mesh_type == "3D_H8") {
-        type = ElementType::H8;
-    }
-
-    if (type == ElementType::Q4) return compute_q4(fem, elem_id, nu, thickness);
-    if (type == ElementType::H8) return compute_h8(fem, elem_id, nu);
-    throw std::runtime_error("compute_element_matrices: unsupported element type " + element_type_name(type));
-}
-
-

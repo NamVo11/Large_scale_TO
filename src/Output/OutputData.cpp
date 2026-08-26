@@ -2,7 +2,7 @@
 
 #include "Optimization/Optimization.hpp"
 
-#include "ROM/ROM.hpp"
+#include "ROM/ROM_method/ROM_Base.hpp"
 
 #include <petscsys.h>
 
@@ -147,8 +147,6 @@ ElementType element_type_of(const FEM& fem, int elem_id) {
     if (elem_id >= 0 && elem_id < static_cast<int>(fem.ElementTypes.size())) {
         return fem.ElementTypes[static_cast<std::size_t>(elem_id)];
     }
-    if (fem.mesh_type == "2D_Q4") return ElementType::Q4;
-    if (fem.mesh_type == "3D_H8") return ElementType::H8;
     return ElementType::Unknown;
 }
 
@@ -366,7 +364,7 @@ void OutputData::save_history_csv(const Optimization& Opt) const {
     }
 }
 
-void OutputData::save_rom_histories(const OptimizationBase& Opt) const {
+void OutputData::save_rom_histories(const Optimization& Opt) const {
     PetscMPIInt rank = 0;
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
     if (rank != 0) return;

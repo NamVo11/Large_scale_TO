@@ -1,4 +1,4 @@
-#include "MatlabMMA.hpp"
+#include "Optimization/Algorithm/Algorithm.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -491,29 +491,6 @@ namespace
         result.s = std::move(s);
         return result;
     }
-}
-
-MatlabMMA::MatlabMMA(int n, int m, double a0, double ai, double ci, double di)
-    : n_(n),
-      m_(m),
-      iter_(0),
-      a0_(a0),
-      a_(static_cast<std::size_t>(m), ai),
-      c_(static_cast<std::size_t>(m), ci),
-      d_(static_cast<std::size_t>(m), di),
-      xold1_(static_cast<std::size_t>(n), 0.0),
-      xold2_(static_cast<std::size_t>(n), 0.0),
-      low_(static_cast<std::size_t>(n), 0.0),
-      upp_(static_cast<std::size_t>(n), 0.0),
-      ymma_(static_cast<std::size_t>(m), 0.0),
-      zmma_(0.0),
-      lam_(static_cast<std::size_t>(m), 0.0),
-      xsi_(static_cast<std::size_t>(n), 0.0),
-      eta_(static_cast<std::size_t>(n), 0.0),
-      mu_(static_cast<std::size_t>(m), 0.0),
-      zet_(0.0),
-      s_(static_cast<std::size_t>(m), 0.0)
-{
 }
 
 void MatlabMMA::Reset()

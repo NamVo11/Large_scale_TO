@@ -2,6 +2,7 @@
 
 #include "ROM/Error_Estimator/ErrorEstimatorBase.hpp"
 #include "ROM/ROMTypes.hpp"
+#include "myjson.hpp"
 
 #include <Eigen/Cholesky>
 #include <Eigen/Dense>
@@ -9,6 +10,7 @@
 #include <petscksp.h>
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -100,14 +102,16 @@ protected:
 #endif
 };
 
-std::shared_ptr<ROMBase> make_fom_solver(const std::string& fom_solver_type,
-                                         const std::string& linear_backend = "eigen");
+std::shared_ptr<ROMBase> InitializeFOMSolver(const std::string& fom_solver_type,
+                                             const std::string& linear_backend = "eigen");
 
+std::shared_ptr<ROMBase> InitializeDynamicROM(const std::string& method_name,
+                                              const std::string& fom_solver_type,
+                                              double residual_tol,
+                                              int rank1,
+                                              int max_rank,
+                                              bool online,
+                                              const std::string& linear_backend = "eigen");
 
-std::shared_ptr<ROMBase> make_dynamic_ROM(const std::string& method_name,
-                                          const std::string& fom_solver_type,
-                                          double residual_tol,
-                                          int rank1,
-                                          int max_rank,
-                                          bool online,
-                                          const std::string& linear_backend = "eigen");
+std::shared_ptr<ROMBase> InitializeROM(const myjson::json& rom_json,
+                                       const myjson::json& run_json);

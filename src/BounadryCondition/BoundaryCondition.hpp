@@ -6,6 +6,7 @@
 
 #include <array>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -65,3 +66,19 @@ struct HMSetBoundaryCondition : BoundaryCondition {
 
     void assign_nodes_and_dofs_to_bcs(const FEM& fem);
 };
+
+inline std::vector<std::shared_ptr<BoundaryCondition>>
+InitializeBoundaryConditions(const myjson::json& bcs_json, const FEM& fem) {
+    std::vector<std::shared_ptr<BoundaryCondition>> bcs;
+    for (const auto& item : bcs_json) {
+        const std::string source = myjson::lower_ascii(myjson::string_value(item, "source", "range"));
+        if (source == "hmset") {
+            bcs.push_back(std::make_shared<HMSetBoundaryCondition>(fem, item));
+        } else if (source == "range") {
+            bcs.push_back(std::make_shared<RangeBoundaryCondition>(fem, item));
+        } else {
+            throw std::runtime_error("Unknown BoundaryCondition.source: " + source);
+        }
+    }
+    return bcs;
+}

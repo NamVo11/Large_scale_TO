@@ -7,11 +7,8 @@ Eigen::MatrixXd AVMSensitivityMethod::run(const FEM& fem,
                                           const Eigen::MatrixXd& x,
                                           const std::vector<int>& x_label,
                                           GroupFunctionalBase& object,
-                                          const Filtering& filtering,
-                                          const FilteringState& filtering_state,
-                                          const OutputData&,
-                                          double,
-                                          int,
-                                          int Iter) {
-    return object.AVM(fem, analysis, x, x_label, filtering, filtering_state, Iter);
+                        const Filtering& filtering,
+                        const OutputData&,
+                        int Iter) {
+    return object.AVM(fem, analysis, x, x_label, filtering, Iter);
 }

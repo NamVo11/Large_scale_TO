@@ -1,4 +1,5 @@
 #include "Analysis/Analysis.hpp"
+#include "FEM/Element/ElementBase.hpp"
 
 #include "ROM/ROM_method/ROM_Base.hpp"
 #include "helper/MemoryDebug.hpp"
@@ -21,10 +22,17 @@ namespace {
 using Sparse = Eigen::SparseMatrix<double>;
 using Triplet = Eigen::Triplet<double>;
 
-double interp_elastic(const Region& region, double x) {
-    return region.interp.elastic_interp
-        ? region.interp.elastic_interp(region.mat_paras.E_inf, x)
-        : RAMP(region.mat_paras.E_inf, x, region.interp.p_E_elastic);
+const Material& element_material(const FEM& fem, int elem_id) {
+    const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
+    if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
+    return *element->material;
+}
+
+double interp_elastic(const Analysis& analysis, const FEM& fem, int elem_id, double x) {
+    const Material& material = element_material(fem, elem_id);
+    if (!analysis.interp) throw std::runtime_error("Analysis interpolation is not initialized");
+    const int val_id = material.val_ids.empty() ? 0 : material.val_ids.front();
+    return analysis.interp->calculate(material.E_values, x, material.is_design(), val_id, analysis.interp->modulus_penalty());
 }
 
 int omp_threads_from_env() {
@@ -89,12 +97,12 @@ void EigenStaticLinearElastic::assemble_K(const FEM& fem,
     const std::size_t reserve_per_thread = reserve_nnz / static_cast<std::size_t>(num_threads) + 1;
     for (auto& triplets : thread_triplets) triplets.reserve(reserve_per_thread);
 
-    for (const Region& region : regions) {
-        const double region_nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
+    for (const Region& region : fem.Regions) {
+        const double region_nu = element_material(fem, region.elem_ids.front()).nu();
         ElementMatrix uniform_em;
         if (fem.uniform_element_matrices) {
             if (region.elem_ids.empty()) throw std::runtime_error("eigen assemble_K: region has no elements");
-            uniform_em = fem.compute_element_matrices(region.elem_ids.front(), region_nu, fem.Thickness);
+            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.Thickness);
         }
 
         #pragma omp parallel num_threads(num_threads)
@@ -105,11 +113,11 @@ void EigenStaticLinearElastic::assemble_K(const FEM& fem,
             #pragma omp for schedule(static)
             for (std::size_t e = 0; e < region.elem_ids.size(); ++e) {
                 const int elem_id = region.elem_ids[e];
-                const double Eeff = interp_elastic(region, y_elem(elem_id, 0));
+                const double Eeff = interp_elastic(*this, fem, elem_id, y_elem(elem_id, 0));
                 ElementMatrix local_em;
                 const ElementMatrix* em_ptr = &uniform_em;
                 if (!fem.uniform_element_matrices) {
-                    local_em = fem.compute_element_matrices(elem_id, region_nu, fem.Thickness);
+                    local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.Thickness);
                     em_ptr = &local_em;
                 }
                 const ElementMatrix& em = *em_ptr;

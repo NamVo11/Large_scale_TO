@@ -1,7 +1,8 @@
 #include "Analysis/DynamicLinearElastic/DynamicLinearElasticAVM.hpp"
 
 #include "Analysis/Analysis.hpp"
-#include "ROM/ROM.hpp"
+#include "FEM/Element/ElementBase.hpp"
+#include "ROM/ROM_method/ROM_Base.hpp"
 #include "helper/MemoryDebug.hpp"
 #include "helper/PetscEigenBridge.hpp"
 #include "helper/PetscEigenHelper.hpp"
@@ -38,10 +39,10 @@ void add_scaled(Eigen::MatrixXd& a, const Eigen::MatrixXd& b, double scale) {
     a.noalias() += scale * b;
 }
 
-double ramp_derivative(const std::vector<double>& para, double x, double p) {
-    const double denom = 1.0 + p * (1.0 - x);
-    const double dg = (1.0 + p) / (denom * denom);
-    return (para[1] - para[0]) * dg;
+const Material& element_material(const FEM& fem, int elem_id) {
+    const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
+    if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
+    return *element->material;
 }
 
 void set_vec_from_column_root(Vec v, const Eigen::MatrixXd& values, int k, double scale = 1.0) {
@@ -209,20 +210,22 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
     const double timing_alloc_gradient = elapsed(t0, t1);
 
     t0 = Clock::now();
-    for (const Region& region : analysis.regions) {
+    for (const Region& region : fem.Regions) {
         if (region.status != "design_val") continue;
         if (region.elem_ids.empty()) continue;
-        if (region.mat_paras.val_ids.empty()) {
+        const Material& region_material = element_material(fem, region.elem_ids.front());
+        if (region_material.val_ids.empty()) {
             throw std::runtime_error("explicit_gradient_dynamic: design_val region has no val_ids");
         }
-        if (region.mat_paras.E_inf.empty()) {
+        if (region_material.E_values.empty()) {
             throw std::runtime_error("explicit_gradient_dynamic: design_val region has no elastic parameters");
         }
-        if (region.mat_paras.rho.empty()) {
+        if (region_material.rho_values.empty()) {
             throw std::runtime_error("explicit_gradient_dynamic: design_val region has no density parameters");
         }
+        if (!analysis.interp) throw std::runtime_error("Analysis interpolation is not initialized");
 
-        for (int val_id : region.mat_paras.val_ids) {
+        for (int val_id : region_material.val_ids) {
             if (val_id <= 0 || val_id > nvar) {
                 throw std::runtime_error("explicit_gradient_dynamic: region val_id is outside xPhys columns");
             }
@@ -239,10 +242,10 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
             }
         }
 
-        const double region_nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
+        const double region_nu = region_material.nu();
         ElementMatrix uniform_em;
         if (fem.uniform_element_matrices) {
-            uniform_em = fem.compute_element_matrices(region.elem_ids.front(), region_nu, fem.Thickness);
+            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.Thickness);
             if (uniform_em.ndof > 24) {
                 throw std::runtime_error("explicit_gradient_dynamic: uniform element ndof > 24");
             }
@@ -257,7 +260,7 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
             ElementMatrix local_em;
             const ElementMatrix* em_ptr = &uniform_em;
             if (!fem.uniform_element_matrices) {
-                local_em = fem.compute_element_matrices(elem_id, region_nu, fem.Thickness);
+                local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.Thickness);
                 em_ptr = &local_em;
             }
 
@@ -299,10 +302,11 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                 sum_lambda_dot_Ma += lambda_elem.dot(Ma_elem);
             }
 
-            for (int val_id : region.mat_paras.val_ids) {
+            const Material& material = element_material(fem, elem_id);
+            for (int val_id : material.val_ids) {
                 const double x = xPhys(elem_id, val_id - 1);
-                const double dE = ramp_derivative(region.mat_paras.E_inf, x, region.interp.p_E_elastic);
-                const double drho = ramp_derivative(region.mat_paras.rho, x, region.interp.p_rho);
+                const double dE = analysis.interp->sensitivity(material.E_values, x, material.is_design(), val_id, analysis.interp->modulus_penalty());
+                const double drho = analysis.interp->sensitivity(material.rho_values, x, material.is_design(), val_id, analysis.interp->mass_density_penalty());
                 const std::size_t ev =
                     static_cast<std::size_t>(elem_id) * static_cast<std::size_t>(nvar) +
                     static_cast<std::size_t>(val_id - 1);
@@ -358,7 +362,6 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
                                                Analysis& analysis,
                                                DynamicLinearElasticAVM& object,
                                                const Filtering& filtering,
-                                               const FilteringState& filtering_state,
                                                int Iter) {
     auto& dynamic = dynamic_cast<DynamicLinearElastic&>(analysis);
     const int nstep = analysis.Nstep;
@@ -467,7 +470,7 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     }
 
     MemoryDebug::print("petsc_sens_before_explicit_gradient");
-    Eigen::MatrixXd dfdx_phys = explicit_gradient_dynamic(fem, analysis, filtering_state.xPhys, object, lambda_all);
+    Eigen::MatrixXd dfdx_phys = explicit_gradient_dynamic(fem, analysis, filtering.xPhys, object, lambda_all);
     MemoryDebug::print("petsc_sens_after_explicit_gradient");
 
     VecDestroy(&lambda);
@@ -480,7 +483,7 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     VecDestroy(&Mlambda);
     MemoryDebug::print("petsc_sens_after_destroy_temp");
 
-    return filtering.sensitivity(dfdx_phys, filtering_state);
+    return filtering.sensitivity(dfdx_phys);
 }
 
 } // namespace
@@ -490,9 +493,8 @@ Eigen::MatrixXd PetscDynamicLinearElasticAVM::AVM(const FEM& fem,
                                                   const Eigen::MatrixXd&,
                                                   const std::vector<int>& x_label,
                                                   const Filtering& filtering,
-                                                  const FilteringState& filtering_state,
                                                   int Iter) {
-    Eigen::MatrixXd out = dynamic_elastic_base_full_impl(fem, analysis, *this, filtering, filtering_state, Iter);
+    Eigen::MatrixXd out = dynamic_elastic_base_full_impl(fem, analysis, *this, filtering, Iter);
     for (Eigen::Index e = 0; e < out.rows(); ++e) {
         if (x_label[static_cast<std::size_t>(e)] != 0) out.row(e).setZero();
     }

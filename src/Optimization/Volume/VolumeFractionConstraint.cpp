@@ -27,9 +27,8 @@ Eigen::MatrixXd VolumeFractionConstraint::AVM(const FEM&,
                                               const Eigen::MatrixXd&,
                                               const std::vector<int>& x_label,
                                               const Filtering& filtering,
-                                              const FilteringState& filtering_state,
                                               int) {
-    Eigen::MatrixXd out = filtering.sensitivity(d_explicit_df_dx, filtering_state);
+    Eigen::MatrixXd out = filtering.sensitivity(d_explicit_df_dx);
     for (Eigen::Index e = 0; e < out.rows(); ++e) {
         if (x_label[static_cast<std::size_t>(e)] != 0) out.row(e).setZero();
     }

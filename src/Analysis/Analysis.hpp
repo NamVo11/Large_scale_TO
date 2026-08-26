@@ -2,6 +2,10 @@
 
 #include "BounadryCondition/BoundaryCondition.hpp"
 #include "FEM/FEM.hpp"
+#include "Material/Material.hpp"
+#include "Optimization/Interpolation/Interpolation.hpp"
+#include "Region/Region.hpp"
+#include "ROM/ROM_method/ROM_Base.hpp"
 #include "myjson.hpp"
 
 #include <Eigen/Dense>
@@ -9,8 +13,8 @@
 #include <petscksp.h>
 
 #include <algorithm>
-#include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -19,108 +23,6 @@ class ROMBase;
 class FactorizedSolver;
 struct Optimization;
 struct OutputData;
-
-struct Material {
-    int id = 0;
-    std::string type = "elastic";
-    double E_inf = 0.0;
-    double E = 0.0;
-    double nu = 0.3;
-    double rho = 0.0;
-
-    Material() = default;
-
-    explicit Material(const myjson::json& j) {
-        id = myjson::int_value(j, "id", id);
-        type = myjson::string_value(j, "type", type);
-        E_inf = myjson::double_value(j, "E_inf", E_inf);
-        E = myjson::double_value(j, "E", E);
-        nu = myjson::double_value(j, "nu", nu);
-        rho = myjson::double_value(j, "rho", rho);
-    }
-};
-
-struct MatParas {
-    int nMat = 0;
-    std::vector<int> mat_ids;
-    std::vector<int> val_ids;
-    std::vector<double> E_inf;
-    std::vector<double> nu;
-    std::vector<double> rho;
-};
-
-using InterpFunction = std::function<double(const std::vector<double>& para, double x)>;
-
-struct Interp {
-    double p_E_elastic = 8.0;
-    double p_rho = 0.0;
-    InterpFunction elastic_interp;
-    InterpFunction mass_density_interp;
-
-    Interp() = default;
-
-    explicit Interp(const myjson::json& j) {
-        p_E_elastic = myjson::double_value(j, "p_E_elastic", p_E_elastic);
-        p_rho = myjson::double_value(j, "p_rho", p_rho);
-    }
-};
-
-struct Region {
-    int id = 0;
-    std::string name;
-    std::string source = "range";
-    std::vector<int> mat_ids;
-    std::string status = "design_val";
-    std::string range_type = "all";
-    std::string hmset_name;
-    std::vector<std::array<double, 2>> x_range;
-    std::vector<std::array<double, 2>> y_range;
-    std::vector<std::array<double, 2>> z_range;
-
-    std::vector<int> elem_ids;
-    int nElem = 0;
-    MatParas mat_paras;
-    Interp interp;
-
-    Region() = default;
-
-    explicit Region(const myjson::json& j) {
-        id = myjson::int_value(j, "id", id);
-        name = myjson::string_value(j, "name", name);
-        source = myjson::string_value(j, "source", source);
-        status = myjson::string_value(j, "status", status);
-        range_type = myjson::string_value(j, "range_type", range_type);
-        hmset_name = myjson::string_value(j, "hmset_name", hmset_name);
-        if (j.contains("mat_ids")) j.at("mat_ids").get_to(mat_ids);
-        if (j.contains("x_range")) j.at("x_range").get_to(x_range);
-        if (j.contains("y_range")) j.at("y_range").get_to(y_range);
-        if (j.contains("z_range")) j.at("z_range").get_to(z_range);
-    }
-};
-
-struct RangeRegion : Region {
-    RangeRegion(const FEM& fem, Region region_in = Region{})
-        : Region(std::move(region_in)) {
-        std::vector<Region> tmp{*this};
-        assign_elements_to_regions(tmp, fem);
-        static_cast<Region&>(*this) = std::move(tmp.front());
-    }
-
-    static void assign_elements_to_regions(std::vector<Region>& regions, const FEM& fem);
-};
-
-struct HMSetRegion : Region {
-    HMSetRegion(const FEM& fem, const std::string& set_name, Region region_in = Region{})
-        : Region(std::move(region_in)) {
-        hmset_name = set_name;
-        range_type = "hmset";
-        std::vector<Region> tmp{*this};
-        assign_elements_to_regions(tmp, fem);
-        static_cast<Region&>(*this) = std::move(tmp.front());
-    }
-
-    static void assign_elements_to_regions(std::vector<Region>& regions, const FEM& fem);
-};
 
 struct AnalysisResult {
     Eigen::MatrixXd U;
@@ -154,10 +56,11 @@ struct Analysis {
     std::string method = "linear";
     int Nstep = 300;
     bool save_factorized_K_initial = true;
+    int interp_id = 1;
 
     std::shared_ptr<ROMBase> ROM;
     std::string solver_name = "dynamic_elastic_linear";
-    std::vector<Region> regions;
+    std::shared_ptr<Interpolation> interp;
     std::vector<std::shared_ptr<const BoundaryCondition>> Dirich;
     std::vector<std::shared_ptr<const BoundaryCondition>> Neum;
     AnalysisResult results;
@@ -175,13 +78,13 @@ struct Analysis {
         type = myjson::required_string(j, "type", owner);
         method = myjson::required_string(j, "method", owner);
         solver_name = myjson::required_string(j, "solver_name", owner);
+        interp_id = myjson::int_value(j, "interp_id", myjson::int_value(j, "InterpType", interp_id));
         save_factorized_K_initial = myjson::bool_value(j, "save_factorized_K_initial", save_factorized_K_initial);
     }
 
     virtual ~Analysis() = default;
     virtual void solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter = 0);
-    void init_mat(const std::vector<Material>& Mat);
-    void init_interp(const Interp& interp);
+    void init_interp(const std::vector<std::shared_ptr<Interpolation>>& interps);
     void attach_bcs_by_id(const std::vector<std::shared_ptr<BoundaryCondition>>& Dirich,
                           const std::vector<std::shared_ptr<BoundaryCondition>>& Neum);
     std::vector<int> SPC() const {
@@ -297,4 +200,34 @@ struct EigenStaticLinearElastic : StaticLinearElastic {
     void solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter = 0) override;
 };
 
-double RAMP(const std::vector<double>& para, double x, double p);
+inline std::unique_ptr<Analysis> InitializeAnalysis(const myjson::json& analysis_json,
+                                                    const myjson::json& run_json,
+                                                    const std::vector<std::shared_ptr<Interpolation>>& interps,
+                                                    FEM&,
+                                                    const std::vector<std::shared_ptr<BoundaryCondition>>& dirich,
+                                                    const std::vector<std::shared_ptr<BoundaryCondition>>& neum) {
+    const std::string linear_backend = myjson::lower_ascii(myjson::string_value(run_json, "linear_backend", "petsc"));
+    const std::string owner = "Analysis[" + std::to_string(myjson::int_value(analysis_json, "id", 0)) + "]";
+    const std::string type = myjson::lower_ascii(myjson::required_string(analysis_json, "type", owner));
+    const std::string method = myjson::lower_ascii(myjson::required_string(analysis_json, "method", owner));
+    const std::string solver_name = myjson::lower_ascii(myjson::required_string(analysis_json, "solver_name", owner));
+
+    std::unique_ptr<Analysis> analysis;
+    if (type == "dynamic" && method == "linear" && solver_name == "dynamic_elastic_linear") {
+        if (linear_backend == "eigen") analysis = std::make_unique<EigenDynamicLinearElastic>(analysis_json);
+        else analysis = std::make_unique<PetscDynamicLinearElastic>(analysis_json);
+    } else if (type == "static" && method == "linear" && solver_name == "static_elastic_linear") {
+        if (linear_backend == "eigen") analysis = std::make_unique<EigenStaticLinearElastic>(analysis_json);
+        else analysis = std::make_unique<PetscStaticLinearElastic>(analysis_json);
+    } else if (type == "dynamic" && method == "linear" && solver_name == "dynamic_viscoelastic_linear") {
+        throw std::runtime_error("dynamic_viscoelastic_linear is recognized but the Analysis class is not implemented yet");
+    } else {
+        throw std::runtime_error("Unsupported Analysis type/method/solver_name: " +
+                                 type + "/" + method + "/" + solver_name);
+    }
+
+    analysis->ROM = InitializeROM(analysis_json.at("ROM"), run_json);
+    analysis->init_interp(interps);
+    analysis->attach_bcs_by_id(dirich, neum);
+    return analysis;
+}

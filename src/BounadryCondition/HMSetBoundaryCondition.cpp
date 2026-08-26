@@ -1,29 +1,20 @@
 #include "BounadryCondition/BoundaryCondition.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <stdexcept>
 
 namespace {
-
-std::string lower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return s;
-}
 
 int dof_id_from_node_component(const FEM& fem, int node_local, int component) {
     return fem.dim * node_local + component;
 }
 
 const HMSet& find_hmset_by_name(const FEM& fem, const std::string& name) {
-    auto it = fem.hm_sets_by_name.find(name);
-    if (it != fem.hm_sets_by_name.end()) return it->second;
-    const std::string lname = lower(name);
-    it = fem.hm_sets_by_name.find(lname);
-    if (it != fem.hm_sets_by_name.end()) return it->second;
-    throw std::runtime_error("HMSET not found: " + name);
+    const auto* unstructured = dynamic_cast<const UnstructuredMesh*>(&fem);
+    if (!unstructured) {
+        throw std::runtime_error("BoundaryCondition source=hmset requires UnstructuredMesh: " + name);
+    }
+    return unstructured->hmset_by_name(name);
 }
 
 std::vector<int> active_components(const BoundaryCondition& bc, int dim) {

@@ -30,7 +30,6 @@ void GroupFunctionalBase::debug_FDM(const FEM& fem,
                                     const Eigen::MatrixXd& x,
                                     const std::vector<int>& x_label,
                                     const Filtering& filtering,
-                                    const FilteringState& filtering_state,
                                     const OutputData& output,
                                     double fd_epsilon,
                                     int max_checks,
@@ -66,18 +65,18 @@ void GroupFunctionalBase::debug_FDM(const FEM& fem,
             double value_minus = current_value;
             if (h_plus > 0.0) {
                 Eigen::MatrixXd xp = x;
-                FilteringState state_plus = filtering_state;
+                Filtering state_plus = filtering;
                 xp(e, v) = x0 + h_plus;
-                filtering.calculate(xp, x_label, state_plus);
+                state_plus.calculate(xp, x_label);
                 analysis.solver(fem, state_plus.xPhys, Iter);
                 calculate_terms(fem, analysis, state_plus.xPhys);
                 value_plus = value;
             }
             if (h_minus > 0.0) {
                 Eigen::MatrixXd xm = x;
-                FilteringState state_minus = filtering_state;
+                Filtering state_minus = filtering;
                 xm(e, v) = x0 - h_minus;
-                filtering.calculate(xm, x_label, state_minus);
+                state_minus.calculate(xm, x_label);
                 analysis.solver(fem, state_minus.xPhys, Iter);
                 calculate_terms(fem, analysis, state_minus.xPhys);
                 value_minus = value;
@@ -100,8 +99,8 @@ void GroupFunctionalBase::debug_FDM(const FEM& fem,
         }
     }
 
-    analysis.solver(fem, filtering_state.xPhys, Iter);
-    calculate_terms(fem, analysis, filtering_state.xPhys);
+    analysis.solver(fem, filtering.xPhys, Iter);
+    calculate_terms(fem, analysis, filtering.xPhys);
 }
 
 void GroupFunctionalBase::reset_accumulated_derivatives() {

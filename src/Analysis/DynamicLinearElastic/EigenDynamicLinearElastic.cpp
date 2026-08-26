@@ -1,4 +1,5 @@
 #include "Analysis/Analysis.hpp"
+#include "FEM/Element/ElementBase.hpp"
 #include "ROM/ROM_method/ROM_Base.hpp"
 #include "helper/MemoryDebug.hpp"
 #include "helper/MyAlgebra.hpp"
@@ -25,14 +26,20 @@ namespace
     using Sparse = Eigen::SparseMatrix<double>;
     using Triplet = Eigen::Triplet<double>;
 
-    std::pair<double, double> interp_region(const Region &region, double x)
+    const Material& element_material(const FEM& fem, int elem_id)
     {
-        const double Eeff = region.interp.elastic_interp
-                                ? region.interp.elastic_interp(region.mat_paras.E_inf, x)
-                                : RAMP(region.mat_paras.E_inf, x, region.interp.p_E_elastic);
-        const double rhoeff = region.interp.mass_density_interp
-                                  ? region.interp.mass_density_interp(region.mat_paras.rho, x)
-                                  : RAMP(region.mat_paras.rho, x, region.interp.p_rho);
+        const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
+        if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
+        return *element->material;
+    }
+
+    std::pair<double, double> interp_element(const Analysis& analysis, const FEM& fem, int elem_id, double x)
+    {
+        const Material& material = element_material(fem, elem_id);
+        if (!analysis.interp) throw std::runtime_error("Analysis interpolation is not initialized");
+        const int val_id = material.val_ids.empty() ? 0 : material.val_ids.front();
+        const double Eeff = analysis.interp->calculate(material.E_values, x, material.is_design(), val_id, analysis.interp->modulus_penalty());
+        const double rhoeff = analysis.interp->calculate(material.rho_values, x, material.is_design(), val_id, analysis.interp->mass_density_penalty());
         return {Eeff, rhoeff};
     }
 
@@ -67,15 +74,15 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
     k_triplets.reserve(reserve_nnz);
     m_triplets.reserve(reserve_nnz);
 
-    for (const Region &region : analysis.regions)
+    for (const Region &region : fem.Regions)
     {
-        const double region_nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
+        const double region_nu = element_material(fem, region.elem_ids.front()).nu();
         ElementMatrix uniform_em;
         if (fem.uniform_element_matrices)
         {
             if (region.elem_ids.empty())
                 throw std::runtime_error("eigen assemble_K_M: region has no elements");
-            uniform_em = fem.compute_element_matrices(region.elem_ids.front(), region_nu, fem.Thickness);
+            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.Thickness);
         }
         for (int elem_id : region.elem_ids)
         {
@@ -85,7 +92,7 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
             const ElementMatrix *em_ptr = &uniform_em;
             if (!fem.uniform_element_matrices)
             {
-                local_em = fem.compute_element_matrices(elem_id, region_nu, fem.Thickness);
+                local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.Thickness);
                 em_ptr = &local_em;
             }
             const ElementMatrix &em = *em_ptr;
@@ -148,9 +155,9 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
             .reserve(reserve_per_thread);
     }
 
-    for (const Region &region : analysis.regions)
+    for (const Region &region : fem.Regions)
     {
-        const double region_nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
+        const double region_nu = element_material(fem, region.elem_ids.front()).nu();
 
         ElementMatrix uniform_em;
 
@@ -161,7 +168,7 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
                 throw std::runtime_error( "eigen assemble_K_M: region has no elements");
             }
 
-            uniform_em = fem.compute_element_matrices(region.elem_ids.front(), region_nu, fem.Thickness);
+            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.Thickness);
         }
 
         /*
@@ -183,14 +190,14 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
                 const int elem_id = region.elem_ids[e];
 
                 const double x = y_elem(elem_id, 0);
-                const auto [Eeff, rhoeff] = interp_region(region, x);
+                const auto [Eeff, rhoeff] = interp_element(analysis, fem, elem_id, x);
 
                 ElementMatrix local_em;
                 const ElementMatrix *em_ptr = &uniform_em;
 
                 if (!fem.uniform_element_matrices)
                 {
-                    local_em = fem.compute_element_matrices(elem_id, region_nu, fem.Thickness);
+                    local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.Thickness);
                                                      
                     em_ptr = &local_em;
                 }

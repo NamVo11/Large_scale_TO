@@ -20,7 +20,16 @@ add_executable(stage2_dynamic_forward
   src/BounadryCondition/HMSetBoundaryCondition.cpp
   src/FEM/FEM.cpp
   src/FEM/Element/ElementBase.cpp
+  src/FEM/Element/Q4Element.cpp
+  src/FEM/Element/Tri3Element.cpp
+  src/FEM/Element/H8Element.cpp
+  src/FEM/Element/T4Element.cpp
+  src/FEM/Element/P6Element.cpp
   src/Input/Initialization.cpp
+  src/Region/Region.cpp
+  src/Optimization/Interpolation/RAM.cpp
+  src/Optimization/Interpolation/SIMP.cpp
+  src/Optimization/Interpolation/DMO.cpp
   src/Optimization/Filtering/Filtering.cpp
   src/Optimization/Optimization.cpp
   src/Optimization/Volume/VolumeFunctional.cpp
@@ -50,14 +59,14 @@ add_executable(stage2_dynamic_forward
   src/ROM/ROM_method/PetscFOM_iterative.cpp
   src/ROM/ROM_method/MyStrategy.cpp
   src/ROM/ROM_method/MyStrategy2.cpp
-  src/ROM/ROM_method/ROM_factory.cpp
+  src/ROM/ROM_method/InitilizeROM.cpp
   src/ROM/Error_Estimator/RelativeResidualEstimator.cpp
   src/ROM/Reduced_Basis_Algorithm/UpdateBase.cpp
   src/ROM/Reduced_Basis_Algorithm/MyPOD_SVD1.cpp
   src/ROM/Reduced_Basis_Algorithm/IncrementalSVD.cpp
   src/ROM/Reduced_Basis_Algorithm/MyIncrementalQR1.cpp
   src/third_party/mma/MMASolver.cpp
-  src/third_party/mma_matlab_port/MatlabMMA.cpp
+  src/Optimization/Algorithm/MatlabMMA.cpp
   src/third_party/mma_jdumas/JdumasMMASolver.cpp
 )
 
@@ -76,7 +85,6 @@ target_include_directories(stage2_dynamic_forward SYSTEM PRIVATE
   src/third_party/eigen
   src/third_party/json
   src/third_party/mma
-  src/third_party/mma_matlab_port
   src/third_party/mma_jdumas
 )
 target_include_directories(basis_update_benchmark SYSTEM PRIVATE

@@ -39,9 +39,12 @@ struct VolumeFractionConstraint : GroupFunctionalBase {
                         const Eigen::MatrixXd& x,
                         const std::vector<int>& x_label,
                         const Filtering& filtering,
-                        const FilteringState& filtering_state,
                         int Iter) override;
 
 private:
     void accumulate_terms();
 };
+
+inline std::unique_ptr<GroupFunctionalBase> InitializeVolumeGroupFunctional(const myjson::json& j) {
+    return std::make_unique<VolumeFractionConstraint>(j);
+}

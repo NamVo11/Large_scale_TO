@@ -284,11 +284,11 @@ function value = bc_value_sum_sim(istep, Tmax, Nstep, BC)
     dt = Tmax / Nstep;
     t  = istep * dt;
 
-    envelope = min(t / BC.rise_time, 1.0);
+    envelope = min(t / BC.rise_time, 1.0); 
 
     wave = sum(BC.scale .* sin(2*pi*(BC.freq_factor * BC.freq)*t + BC.phi));
 
     %value = BC.amp * envelope * wave;
 
-    value = BC.amp * wave;
+    value = BC.amp * wave; 
 end

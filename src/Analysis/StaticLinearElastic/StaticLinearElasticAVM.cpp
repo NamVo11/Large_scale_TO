@@ -31,7 +31,6 @@ Eigen::MatrixXd StaticLinearElasticAVM::AVM(const FEM&,
                                            const Eigen::MatrixXd&,
                                            const std::vector<int>&,
                                            const Filtering&,
-                                           const FilteringState&,
                                            int) {
     throw std::runtime_error("StaticLinearElasticAVM::AVM requires a backend derived object");
 }

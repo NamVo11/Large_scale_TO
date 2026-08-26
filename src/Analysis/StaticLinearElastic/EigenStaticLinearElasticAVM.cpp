@@ -1,6 +1,7 @@
 #include "Analysis/StaticLinearElastic/StaticLinearElasticAVM.hpp"
 
 #include "Analysis/Analysis.hpp"
+#include "FEM/Element/ElementBase.hpp"
 #include "ROM/ROM_method/ROM_Base.hpp"
 
 #include <petscsys.h>
@@ -18,10 +19,10 @@ int nvar_of(const Eigen::MatrixXd& x) {
     return static_cast<int>(x.cols());
 }
 
-double ramp_derivative(const std::vector<double>& para, double x, double p) {
-    const double denom = 1.0 + p * (1.0 - x);
-    const double dg = (1.0 + p) / (denom * denom);
-    return (para[1] - para[0]) * dg;
+const Material& element_material(const FEM& fem, int elem_id) {
+    const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
+    if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
+    return *element->material;
 }
 
 void zero_fixed(Eigen::VectorXd& v, const std::vector<int>& fixed) {
@@ -61,16 +62,19 @@ Eigen::MatrixXd explicit_gradient_static(const FEM& fem,
     Eigen::MatrixXd df_dx = Eigen::MatrixXd::Zero(fem.NElem, nvar);
     const Eigen::VectorXd u = analysis.results.U.col(analysis.Nstep);
 
-    for (const Region& region : analysis.regions) {
+    for (const Region& region : fem.Regions) {
         if (region.status != "design_val") continue;
-        if (region.mat_paras.val_ids.empty()) throw std::runtime_error("explicit_gradient_static: no val_ids");
-        if (region.mat_paras.E_inf.empty()) throw std::runtime_error("explicit_gradient_static: no elastic parameters");
+        if (region.elem_ids.empty()) continue;
+        const Material& region_material = element_material(fem, region.elem_ids.front());
+        if (region_material.val_ids.empty()) throw std::runtime_error("explicit_gradient_static: no val_ids");
+        if (region_material.E_values.empty()) throw std::runtime_error("explicit_gradient_static: no elastic parameters");
+        if (!analysis.interp) throw std::runtime_error("Analysis interpolation is not initialized");
 
-        const double region_nu = region.mat_paras.nu.empty() ? fem.nu : region.mat_paras.nu.back();
+        const double region_nu = region_material.nu();
         ElementMatrix uniform_em;
         if (fem.uniform_element_matrices) {
             if (region.elem_ids.empty()) throw std::runtime_error("explicit_gradient_static: region has no elements");
-            uniform_em = fem.compute_element_matrices(region.elem_ids.front(), region_nu, fem.Thickness);
+            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.Thickness);
         }
 
         const int region_nelem = static_cast<int>(region.elem_ids.size());
@@ -80,7 +84,7 @@ Eigen::MatrixXd explicit_gradient_static(const FEM& fem,
             ElementMatrix local_em;
             const ElementMatrix* em_ptr = &uniform_em;
             if (!fem.uniform_element_matrices) {
-                local_em = fem.compute_element_matrices(elem_id, region_nu, fem.Thickness);
+                local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.Thickness);
                 em_ptr = &local_em;
             }
             const ElementMatrix& em = *em_ptr;
@@ -100,10 +104,11 @@ Eigen::MatrixXd explicit_gradient_static(const FEM& fem,
             Ku_elem.noalias() = em.ke * u_elem;
             const double lambda_dot_Ku = lambda_elem.dot(Ku_elem);
 
-            for (int val_id : region.mat_paras.val_ids) {
+            const Material& material = element_material(fem, elem_id);
+            for (int val_id : material.val_ids) {
                 if (val_id <= 0 || val_id > nvar) throw std::runtime_error("explicit_gradient_static: val_id outside xPhys");
                 const double x = xPhys(elem_id, val_id - 1);
-                const double dE = ramp_derivative(region.mat_paras.E_inf, x, region.interp.p_E_elastic);
+                const double dE = analysis.interp->sensitivity(material.E_values, x, material.is_design(), val_id, analysis.interp->modulus_penalty());
                 df_dx(elem_id, val_id - 1) -= dE * lambda_dot_Ku;
             }
         }
@@ -120,7 +125,6 @@ Eigen::MatrixXd static_elastic_base_full_impl(const FEM& fem,
                                               Analysis& analysis,
                                               StaticLinearElasticAVM& object,
                                               const Filtering& filtering,
-                                              const FilteringState& filtering_state,
                                               int Iter) {
     if (!object.ROM) throw std::runtime_error("StaticLinearElasticAVM requires ROM initialized");
     const auto& K = analysis.results.K_inf_eigen;
@@ -138,8 +142,7 @@ Eigen::MatrixXd static_elastic_base_full_impl(const FEM& fem,
     const SolveStats stats = object.ROM->main(K, rhs, lambda, make_adjoint_context(analysis, Iter));
     object.ROM->set_factorized_solver(K, nullptr);
     (void)stats;
-    return filtering.sensitivity(explicit_gradient_static(fem, analysis, filtering_state.xPhys, object, lambda),
-                                 filtering_state);
+    return filtering.sensitivity(explicit_gradient_static(fem, analysis, filtering.xPhys, object, lambda));
 }
 
 } // namespace
@@ -149,9 +152,8 @@ Eigen::MatrixXd EigenStaticLinearElasticAVM::AVM(const FEM& fem,
                                                 const Eigen::MatrixXd&,
                                                 const std::vector<int>& x_label,
                                                 const Filtering& filtering,
-                                                const FilteringState& filtering_state,
                                                 int Iter) {
-    Eigen::MatrixXd out = static_elastic_base_full_impl(fem, analysis, *this, filtering, filtering_state, Iter);
+    Eigen::MatrixXd out = static_elastic_base_full_impl(fem, analysis, *this, filtering, Iter);
     for (Eigen::Index e = 0; e < out.rows(); ++e) {
         if (x_label[static_cast<std::size_t>(e)] != 0) out.row(e).setZero();
     }
@@ -163,9 +165,8 @@ Eigen::MatrixXd PetscStaticLinearElasticAVM::AVM(const FEM& fem,
                                                 const Eigen::MatrixXd&,
                                                 const std::vector<int>& x_label,
                                                 const Filtering& filtering,
-                                                const FilteringState& filtering_state,
                                                 int Iter) {
-    Eigen::MatrixXd out = static_elastic_base_full_impl(fem, analysis, *this, filtering, filtering_state, Iter);
+    Eigen::MatrixXd out = static_elastic_base_full_impl(fem, analysis, *this, filtering, Iter);
     for (Eigen::Index e = 0; e < out.rows(); ++e) {
         if (x_label[static_cast<std::size_t>(e)] != 0) out.row(e).setZero();
     }
