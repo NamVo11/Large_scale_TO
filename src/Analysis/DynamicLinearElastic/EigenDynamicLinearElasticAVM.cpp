@@ -75,7 +75,7 @@ ROMContext make_adjoint_context(const Analysis& analysis, int Iter, int time_ste
 }
 
 Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
-                                          const Analysis& analysis,
+                                          const DynamicLinearElastic& analysis,
                                           const Eigen::MatrixXd& xPhys,
                                           const DynamicLinearElasticAVM& object,
                                           const Eigen::MatrixXd& lambda_all) {
@@ -95,13 +95,13 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
     const int nvar = nvar_of(xPhys);
 
     if (xPhys.rows() != fem.NElem) throw std::runtime_error("explicit_gradient_dynamic: xPhys row mismatch");
-    if (analysis.results.U.cols() < nstep + 1 ||
-        analysis.results.A.cols() < nstep + 1 ||
+    if (analysis.U.cols() < nstep + 1 ||
+        analysis.A.cols() < nstep + 1 ||
         lambda_all.cols() < nstep + 1) {
         throw std::runtime_error("explicit_gradient_dynamic: insufficient time-step columns");
     }
-    if (analysis.results.U.rows() != analysis.results.A.rows() ||
-        analysis.results.U.rows() != lambda_all.rows()) {
+    if (analysis.U.rows() != analysis.A.rows() ||
+        analysis.U.rows() != lambda_all.rows()) {
         throw std::runtime_error("explicit_gradient_dynamic: U, A and lambda_all row mismatch");
     }
 
@@ -129,7 +129,8 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
 
     const auto t0 = Clock::now();
 
-    for (const Region& region : fem.Regions) {
+    for (const auto& region_ptr : fem.Regions) {
+        const Region& region = *region_ptr;
         if (region.status != "design_val") continue;
         if (region.elem_ids.empty()) continue;
         const Material& region_material = element_material(fem, region.elem_ids.front());
@@ -151,7 +152,7 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
         const double region_nu = region_material.nu();
         ElementMatrix uniform_em;
         if (fem.uniform_element_matrices) {
-            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.Thickness);
+            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
             if (uniform_em.ndof > 24) throw std::runtime_error("explicit_gradient_dynamic: uniform element ndof > 24");
         }
 
@@ -163,7 +164,7 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
             ElementMatrix local_em;
             const ElementMatrix* em_ptr = &uniform_em;
             if (!fem.uniform_element_matrices) {
-                local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.Thickness);
+                local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
                 em_ptr = &local_em;
             }
 
@@ -180,8 +181,8 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
             double sum_lambda_dot_Ma = 0.0;
 
             for (int k = 0; k <= nstep; ++k) {
-                const auto u = analysis.results.U.col(k);
-                const auto acc = analysis.results.A.col(k);
+                const auto u = analysis.U.col(k);
+                const auto acc = analysis.A.col(k);
                 const auto lambda = lambda_all.col(k);
 
                 for (int i = 0; i < em.ndof; ++i) {
@@ -235,15 +236,15 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
 }
 
 Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
-                                               Analysis& analysis,
+                                               Analysis& analysis_base,
                                                DynamicLinearElasticAVM& object,
                                                const Filtering& filtering,
                                                int Iter) {
-    auto& dynamic = dynamic_cast<DynamicLinearElastic&>(analysis);
+    auto& analysis = dynamic_cast<EigenDynamicLinearElastic&>(analysis_base);
     const int nstep = analysis.Nstep;
     const double beta = 0.25;
     const double gamma = 0.5;
-    const double dt = dynamic.dt;
+    const double dt = analysis.dt;
     const double a0c = 1.0 / (beta * dt * dt);
     const double dHdu = a0c;
     const double dLdu = gamma / (beta * dt);
@@ -254,17 +255,17 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     const double dLdv_new = 1.0 - gamma / beta;
     const double dLdu_new = -gamma / (beta * dt);
 
-    const auto& K0 = analysis.results.K_inf_eigen;
-    const auto& Keff = analysis.results.K_eff_eigen;
-    const auto& M = analysis.results.M_eigen;
+    const auto& K0 = analysis.K_inf;
+    const auto& Keff = analysis.K_eff;
+    const auto& M = analysis.M;
     if (K0.rows() == 0 || Keff.rows() == 0 || M.rows() == 0) {
         throw std::runtime_error("eigen_backend sensitivity requires Eigen forward matrices");
     }
     if (!object.ROM) throw std::runtime_error("EigenDynamicLinearElasticAVM requires ROM initialized");
 
     std::shared_ptr<ROMBase>& rom = object.ROM;
-    if (analysis.results.factorized_K_eff_eigen) {
-        rom->set_factorized_solver(Keff, analysis.results.factorized_K_eff_eigen);
+    if (analysis.factorized_K_eff) {
+        rom->set_factorized_solver(Keff, analysis.factorized_K_eff);
     }
 
     const int ndof = fem.ndof;
@@ -283,7 +284,7 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     set_from_column(eta, object.d_explicit_dfdv_all, k);
     set_from_column(rhs, object.d_explicit_dfdu_all, k, -1.0);
     rhs.noalias() += -dHdu * mu - dLdu * eta;
-    set_fixed_from_column(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
+    set_fixed_from_column(rhs, analysis.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
     rom->main(Keff, rhs, lambda, make_adjoint_context(analysis, Iter, k));
     lambda_all.col(k) = lambda;
 
@@ -297,22 +298,22 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
         mu.noalias() += -(0.5 / beta - 1.0) * Mlambda + dHda_new * mu_new + dLda_new * eta_new;
         set_from_column(eta, object.d_explicit_dfdv_all, k);
         eta.noalias() += -(1.0 / (beta * dt)) * Mlambda + dHdv_new * mu_new + dLdv_new * eta_new;
-        zero_fixed(mu, analysis.results.SPCdofs);
-        zero_fixed(eta, analysis.results.SPCdofs);
+        zero_fixed(mu, analysis.SPCdofs);
+        zero_fixed(eta, analysis.SPCdofs);
 
         set_from_column(rhs, object.d_explicit_dfdu_all, k, -1.0);
         rhs.noalias() += a0c * Mlambda - dHdu_new * mu_new - dLdu_new * eta_new;
         if (k != 0) rhs.noalias() += -dHdu * mu - dLdu * eta;
-        set_fixed_from_column(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
+        set_fixed_from_column(rhs, analysis.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
         if (k == 0) {
             rom->set_factorized_solver(Keff, nullptr);
-            analysis.results.factorized_K_eff_eigen.reset();
-            if (analysis.results.factorized_K_initial_eigen) {
-                rom->set_factorized_solver(K0, analysis.results.factorized_K_initial_eigen);
+            analysis.factorized_K_eff.reset();
+            if (analysis.factorized_K_initial) {
+                rom->set_factorized_solver(K0, analysis.factorized_K_initial);
             }
             rom->main(K0, rhs, lambda, make_adjoint_context(analysis, Iter, k));
             rom->set_factorized_solver(K0, nullptr);
-            analysis.results.factorized_K_initial_eigen.reset();
+            analysis.factorized_K_initial.reset();
         } else {
             rom->main(Keff, rhs, lambda, make_adjoint_context(analysis, Iter, k));
         }

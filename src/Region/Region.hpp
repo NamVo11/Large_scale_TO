@@ -30,7 +30,7 @@ struct Region {
         if (j.contains("mat_ids")) j.at("mat_ids").get_to(mat_ids);
     }
 
-    void finalize_assignment(const FEM& fem, std::vector<int>& assigned);
+    void check_assignment(const FEM& fem, std::vector<int>& assigned);
 };
 
 struct RangeRegion : Region {
@@ -39,7 +39,7 @@ struct RangeRegion : Region {
     std::vector<std::array<double, 2>> y_range;
     std::vector<std::array<double, 2>> z_range;
 
-    RangeRegion(const FEM& fem, const myjson::json& j, const std::vector<int>& assigned)
+    RangeRegion(const FEM& fem, const myjson::json& j, std::vector<int>& assigned)
         : Region(j) {
         range_type = myjson::string_value(j, "range_type", range_type);
         if (j.contains("x_range")) j.at("x_range").get_to(x_range);
@@ -48,20 +48,18 @@ struct RangeRegion : Region {
         assign_elements(fem, assigned);
     }
 
-    void assign_elements(const FEM& fem, const std::vector<int>& assigned);
+    void assign_elements(const FEM& fem, std::vector<int>& assigned);
     bool contains_element_center(const FEM& fem, int elem_id) const;
 };
 
 struct HMSetRegion : Region {
     std::string hmset_name;
 
-    HMSetRegion(const FEM& fem, const myjson::json& j)
+    HMSetRegion(const FEM& fem, const myjson::json& j, std::vector<int>& assigned)
         : Region(j) {
         hmset_name = myjson::string_value(j, "hmset_name", hmset_name);
-        assign_elements(fem);
+        assign_elements(fem, assigned);
     }
 
-    void assign_elements(const FEM& fem);
+    void assign_elements(const FEM& fem, std::vector<int>& assigned);
 };
-
-std::vector<Region> InitializeRegions(const myjson::json& regions_json, const FEM& fem);

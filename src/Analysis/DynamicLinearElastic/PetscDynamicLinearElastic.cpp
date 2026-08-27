@@ -52,7 +52,6 @@ int omp_threads_from_env() {
     if (end == value || n < 1) return 1;
     return static_cast<int>(n);
 }
-
 } // namespace
 
 void PetscDynamicLinearElastic::assemble_K_M(const FEM& fem,
@@ -71,12 +70,13 @@ void PetscDynamicLinearElastic::assemble_K_M(const FEM& fem,
         const int num_threads = omp_threads_from_env();
         std::vector<std::vector<ElementContribution>> thread_contribs(static_cast<std::size_t>(num_threads));
 
-        for (const Region& region : fem.Regions) {
+        for (const auto& region_ptr : fem.Regions) {
+            const Region& region = *region_ptr;
             const double region_nu = element_material(fem, region.elem_ids.front()).nu();
             ElementMatrix uniform_em;
             if (fem.uniform_element_matrices) {
                 if (region.elem_ids.empty()) throw std::runtime_error("assemble_K_M: region has no elements");
-                uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.Thickness);
+                uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
             }
 
                 #pragma omp parallel num_threads(num_threads)
@@ -94,7 +94,7 @@ void PetscDynamicLinearElastic::assemble_K_M(const FEM& fem,
                     ElementMatrix local_em;
                     const ElementMatrix* em_ptr = &uniform_em;
                     if (!fem.uniform_element_matrices) {
-                        local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.Thickness);
+                        local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
                         em_ptr = &local_em;
                     }
 
@@ -130,12 +130,13 @@ void PetscDynamicLinearElastic::assemble_K_M(const FEM& fem,
         return;
     }
 
-    for (const Region& region : fem.Regions) {
+    for (const auto& region_ptr : fem.Regions) {
+        const Region& region = *region_ptr;
         const double region_nu = element_material(fem, region.elem_ids.front()).nu();
         ElementMatrix uniform_em;
         if (fem.uniform_element_matrices) {
             if (region.elem_ids.empty()) throw std::runtime_error("assemble_K_M: region has no elements");
-            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.Thickness);
+            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
         }
 
         for (int elem_id : region.elem_ids) {
@@ -145,7 +146,7 @@ void PetscDynamicLinearElastic::assemble_K_M(const FEM& fem,
             ElementMatrix local_em;
             const ElementMatrix* em_ptr = &uniform_em;
             if (!fem.uniform_element_matrices) {
-                local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.Thickness);
+                local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
                 em_ptr = &local_em;
             }
             const ElementMatrix& em = *em_ptr;
@@ -164,14 +165,13 @@ void PetscDynamicLinearElastic::assemble_K_M(const FEM& fem,
 
 namespace {
 
-void clear_stored_petsc(Analysis& analysis) {
+void clear_stored_petsc(PetscDynamicLinearElastic& analysis) {
     if (analysis.ROM) analysis.ROM->set_petsc_factorized_solver(nullptr, nullptr);
-    AnalysisResult& r = analysis.results;
-    if (r.K_inf) MatDestroy(&r.K_inf);
-    if (r.M) MatDestroy(&r.M);
-    if (r.K_eff) MatDestroy(&r.K_eff);
-    if (r.factorized_K_initial) KSPDestroy(&r.factorized_K_initial);
-    if (r.factorized_K_eff) KSPDestroy(&r.factorized_K_eff);
+    if (analysis.K_inf) MatDestroy(&analysis.K_inf);
+    if (analysis.M) MatDestroy(&analysis.M);
+    if (analysis.K_eff) MatDestroy(&analysis.K_eff);
+    if (analysis.factorized_K_initial) KSPDestroy(&analysis.factorized_K_initial);
+    if (analysis.factorized_K_eff) KSPDestroy(&analysis.factorized_K_eff);
 }
 
 void store_factorized_solver(KSP& target, KSP source) {
@@ -310,7 +310,7 @@ SolveStats solve_with_common_rom(ROMBase& rom,
 
 void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_elem,int Iter)
 {
-    DynamicLinearElastic& analysis = *this;
+    PetscDynamicLinearElastic& analysis = *this;
     if (!analysis.ROM) throw std::runtime_error("PetscDynamicLinearElastic::solver requires analysis.ROM initialized");
     if (analysis.Nstep < 0 || analysis.dt <= 0.0) throw std::runtime_error("Invalid time data");
 
@@ -346,21 +346,21 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     MemoryDebug::print("forward_begin");
 
     const PetscInt d_nz = fem.dim == 2 ? 64 : 192; // approximate nonzeros per row
-    MatCreateAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, ndof, ndof, d_nz, nullptr, d_nz, nullptr, &analysis.results.K_inf);
+    MatCreateAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, ndof, ndof, d_nz, nullptr, d_nz, nullptr, &analysis.K_inf);
 
-    MatCreateAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, ndof, ndof,d_nz, nullptr, d_nz, nullptr, &analysis.results.M);
+    MatCreateAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, ndof, ndof,d_nz, nullptr, d_nz, nullptr, &analysis.M);
 
-    // Memory-saving flow: results.K_inf is assembled as raw K first. After
-    // results.K_eff is formed, K_inf is converted in-place to K_initial with SPC.
-    Mat K = analysis.results.K_inf;
-    Mat M = analysis.results.M;
+    // Memory-saving flow: K_inf is assembled as raw K first. After K_eff is
+    // formed, K_inf is converted in-place to K_initial with SPC.
+    Mat K = analysis.K_inf;
+    Mat M = analysis.M;
     assemble_K_M(fem, y_elem, K, M);
     MemoryDebug::print("forward_after_assemble_K_M");
     PetscTime(&t1);
-    analysis.results.assembly_time = t1 - t0;
+    analysis.assembly_time = t1 - t0;
     if (rank == 0) {
         std::cout << "  assembly[s]: forward K/M = "
-                  << analysis.results.assembly_time << "\n";
+                  << analysis.assembly_time << "\n";
     }
 
     PetscTime(&ts0);
@@ -371,9 +371,9 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     const double a0c = 1.0 / (beta * analysis.dt * analysis.dt);
 
     PetscTime(&ts0);
-    MatDuplicate(K, MAT_COPY_VALUES, &analysis.results.K_eff);
-    MatAXPY(analysis.results.K_eff, a0c, M, SAME_NONZERO_PATTERN);
-    Mat K_eff = analysis.results.K_eff;
+    MatDuplicate(K, MAT_COPY_VALUES, &analysis.K_eff);
+    MatAXPY(analysis.K_eff, a0c, M, SAME_NONZERO_PATTERN);
+    Mat K_eff = analysis.K_eff;
     MemoryDebug::print("forward_after_prepare_Keff");
     PetscTime(&ts1);
     timing_keff_prepare += static_cast<double>(ts1 - ts0);
@@ -428,10 +428,10 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     timing_solve_wall += timing_initial_solve;
 
     if (analysis.save_factorized_K_initial) {
-        store_factorized_solver(analysis.results.factorized_K_initial, analysis.ROM->get_petsc_factorized_solver(K));
+        store_factorized_solver(analysis.factorized_K_initial, analysis.ROM->get_petsc_factorized_solver(K));
     } else {
         analysis.ROM->set_petsc_factorized_solver(nullptr, nullptr);
-        if (analysis.results.factorized_K_initial) KSPDestroy(&analysis.results.factorized_K_initial);
+        if (analysis.factorized_K_initial) KSPDestroy(&analysis.factorized_K_initial);
     }
 
     MemoryDebug::print("forward_after_initial_solve_store_factor");
@@ -444,22 +444,22 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     }
 
     const std::size_t nstore = static_cast<std::size_t>(analysis.Nstep + 1);
-    analysis.results.U.resize(ndof, static_cast<int>(nstore));
-    analysis.results.V.resize(0, 0);
-    analysis.results.A.resize(ndof, static_cast<int>(nstore));
-    analysis.results.F_ext.resize(ndof, static_cast<int>(nstore));
+    analysis.U.resize(ndof, static_cast<int>(nstore));
+    analysis.V.resize(0, 0);
+    analysis.A.resize(ndof, static_cast<int>(nstore));
+    analysis.F_ext.resize(ndof, static_cast<int>(nstore));
     MemoryDebug::print("forward_after_history_alloc");
-    analysis.results.ksp_iterations.clear();
-    analysis.results.ksp_residuals.clear();
-    analysis.results.SPCdofs = SPCdofs;
-    analysis.results.free = analysis.free_dofs(static_cast<int>(ndof));
+    analysis.ksp_iterations.clear();
+    analysis.ksp_residuals.clear();
+    analysis.SPCdofs = SPCdofs;
+    analysis.free = analysis.free_dofs(static_cast<int>(ndof));
     PetscTime(&ts0);
-    gather_vec_to_all_into_column(u, analysis.results.U, 0);
+    gather_vec_to_all_into_column(u, analysis.U, 0);
     // Velocity history is not used by the current objective/sensitivity flow.
-    // Keep results.V empty in this memory-saving version.
-    // gather_vec_to_all_into_column(v, analysis.results.V, 0);
-    gather_vec_to_all_into_column(acc, analysis.results.A, 0);
-    gather_vec_to_all_into_column(f_ext, analysis.results.F_ext, 0);
+    // Keep V empty in this memory-saving version.
+    // gather_vec_to_all_into_column(v, analysis.V, 0);
+    gather_vec_to_all_into_column(acc, analysis.A, 0);
+    gather_vec_to_all_into_column(f_ext, analysis.F_ext, 0);
     PetscTime(&ts1);
     timing_history_store += static_cast<double>(ts1 - ts0);
 
@@ -511,8 +511,8 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
         PetscTime(&ts1);
         timing_solve_wall += static_cast<double>(ts1 - ts0);
 
-        if (!analysis.results.factorized_K_eff) {
-            store_factorized_solver(analysis.results.factorized_K_eff,
+        if (!analysis.factorized_K_eff) {
+            store_factorized_solver(analysis.factorized_K_eff,
                                     analysis.ROM->get_petsc_factorized_solver(K_eff));
         }
 
@@ -520,8 +520,8 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
             MemoryDebug::print("forward_after_step_" + std::to_string(istep));
         }
       
-        analysis.results.ksp_iterations.push_back(stats.ksp_iterations);
-        analysis.results.ksp_residuals.push_back(stats.residual_norm);
+        analysis.ksp_iterations.push_back(stats.ksp_iterations);
+        analysis.ksp_residuals.push_back(stats.residual_norm);
         const double step_residual = stats.residual_norm;
 
         PetscTime(&ts0);
@@ -544,16 +544,16 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
 
         const std::size_t store_id = static_cast<std::size_t>(istep);
         PetscTime(&ts0);
-        gather_vec_to_all_into_column(u, analysis.results.U, static_cast<int>(store_id));
+        gather_vec_to_all_into_column(u, analysis.U, static_cast<int>(store_id));
         // Velocity history is intentionally not stored in this memory-saving flow.
-        // gather_vec_to_all_into_column(v, analysis.results.V, static_cast<int>(store_id));
-        gather_vec_to_all_into_column(acc, analysis.results.A, static_cast<int>(store_id));
-        gather_vec_to_all_into_column(f_ext, analysis.results.F_ext, static_cast<int>(store_id));
+        // gather_vec_to_all_into_column(v, analysis.V, static_cast<int>(store_id));
+        gather_vec_to_all_into_column(acc, analysis.A, static_cast<int>(store_id));
+        gather_vec_to_all_into_column(f_ext, analysis.F_ext, static_cast<int>(store_id));
         PetscTime(&ts1);
         timing_history_store += static_cast<double>(ts1 - ts0);
     }
     PetscTime(&t1);
-    analysis.results.solve_time = t1 - t0;
+    analysis.solve_time = t1 - t0;
 
     MemoryDebug::print("forward_after_store_matrices");
 

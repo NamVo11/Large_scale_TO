@@ -50,7 +50,8 @@ void Optimization::init_design_variables(const FEM& fem, double x0) {
     x = Eigen::MatrixXd::Zero(fem.NElem, nvar);
     x_label.assign(static_cast<std::size_t>(fem.NElem), 0);
 
-    for (const auto& region : fem.Regions) {
+    for (const auto& region_ptr : fem.Regions) {
+        const Region& region = *region_ptr;
         if (region.elem_ids.empty()) continue;
         const auto material = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->material;
         if (!material) throw std::runtime_error("init_design_variables: element material is not initialized");

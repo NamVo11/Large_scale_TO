@@ -150,7 +150,7 @@ void solve_adjoint_full(ROMBase& rom,
 }
 
 Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
-                                          const Analysis& analysis,
+                                          const DynamicLinearElastic& analysis,
                                           const Eigen::MatrixXd& xPhys,
                                           const DynamicLinearElasticAVM& object,
                                           const Eigen::MatrixXd& lambda_all) {
@@ -174,13 +174,13 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
     if (xPhys.rows() != fem.NElem) {
         throw std::runtime_error("explicit_gradient_dynamic: xPhys row count does not match fem.NElem");
     }
-    if (analysis.results.U.cols() < nstep + 1 ||
-        analysis.results.A.cols() < nstep + 1 ||
+    if (analysis.U.cols() < nstep + 1 ||
+        analysis.A.cols() < nstep + 1 ||
         lambda_all.cols() < nstep + 1) {
         throw std::runtime_error("explicit_gradient_dynamic: insufficient time-step columns");
     }
-    if (analysis.results.U.rows() != analysis.results.A.rows() ||
-        analysis.results.U.rows() != lambda_all.rows()) {
+    if (analysis.U.rows() != analysis.A.rows() ||
+        analysis.U.rows() != lambda_all.rows()) {
         throw std::runtime_error("explicit_gradient_dynamic: U, A and lambda_all row mismatch");
     }
 
@@ -210,7 +210,8 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
     const double timing_alloc_gradient = elapsed(t0, t1);
 
     t0 = Clock::now();
-    for (const Region& region : fem.Regions) {
+    for (const auto& region_ptr : fem.Regions) {
+        const Region& region = *region_ptr;
         if (region.status != "design_val") continue;
         if (region.elem_ids.empty()) continue;
         const Material& region_material = element_material(fem, region.elem_ids.front());
@@ -245,7 +246,7 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
         const double region_nu = region_material.nu();
         ElementMatrix uniform_em;
         if (fem.uniform_element_matrices) {
-            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.Thickness);
+            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
             if (uniform_em.ndof > 24) {
                 throw std::runtime_error("explicit_gradient_dynamic: uniform element ndof > 24");
             }
@@ -260,7 +261,7 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
             ElementMatrix local_em;
             const ElementMatrix* em_ptr = &uniform_em;
             if (!fem.uniform_element_matrices) {
-                local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.Thickness);
+                local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
                 em_ptr = &local_em;
             }
 
@@ -277,8 +278,8 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
             double sum_lambda_dot_Ma = 0.0;
 
             for (int k = 0; k <= nstep; ++k) {
-                const auto u = analysis.results.U.col(k);
-                const auto acc = analysis.results.A.col(k);
+                const auto u = analysis.U.col(k);
+                const auto acc = analysis.A.col(k);
                 const auto lambda = lambda_all.col(k);
 
                 for (int i = 0; i < em.ndof; ++i) {
@@ -359,15 +360,15 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
 }
 
 Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
-                                               Analysis& analysis,
+                                               Analysis& analysis_base,
                                                DynamicLinearElasticAVM& object,
                                                const Filtering& filtering,
                                                int Iter) {
-    auto& dynamic = dynamic_cast<DynamicLinearElastic&>(analysis);
+    auto& analysis = dynamic_cast<PetscDynamicLinearElastic&>(analysis_base);
     const int nstep = analysis.Nstep;
     const double beta = 0.25;
     const double gamma = 0.5;
-    const double dt = dynamic.dt;
+    const double dt = analysis.dt;
     const double a0c = 1.0 / (beta * dt * dt);
     const double dHdu = a0c;
     const double dLdu = gamma / (beta * dt);
@@ -381,9 +382,9 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     if (!object.ROM) throw std::runtime_error("PetscDynamicLinearElasticAVM requires ROM initialized");
     MemoryDebug::print("petsc_sens_begin");
 
-    Mat K0 = analysis.results.K_inf;
+    Mat K0 = analysis.K_inf;
     MemoryDebug::print("petsc_sens_after_get_K0");
-    Mat Keff = analysis.results.K_eff;
+    Mat Keff = analysis.K_eff;
     MemoryDebug::print("petsc_sens_after_get_Keff");
 
     Eigen::SparseMatrix<double> K0_eigen_cache;
@@ -410,7 +411,7 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     Eigen::MatrixXd lambda_all(fem.ndof, nstep + 1);
     MemoryDebug::print("petsc_sens_after_lambda_all_alloc");
 
-    object.ROM->set_petsc_factorized_solver(Keff, analysis.results.factorized_K_eff);
+    object.ROM->set_petsc_factorized_solver(Keff, analysis.factorized_K_eff);
 
     int k = nstep;
     set_vec_from_column_root(mu, object.d_explicit_dfda_all, k);
@@ -418,7 +419,7 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     set_vec_from_column_root(rhs, object.d_explicit_dfdu_all, k, -1.0);
     VecAXPY(rhs, -dHdu, mu);
     VecAXPY(rhs, -dLdu, eta);
-    set_vec_fixed_from_column_root(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
+    set_vec_fixed_from_column_root(rhs, analysis.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
     solve_adjoint_full(*object.ROM, Keff, rhs, lambda, analysis, Iter, k, &Keff_eigen_cache);
     lambda_all.col(k) = gather_vec_to_all_local(lambda);
     MemoryDebug::print("petsc_sens_after_step_end");
@@ -427,7 +428,7 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
         VecCopy(lambda, lambda_new);
         VecCopy(mu, mu_new);
         VecCopy(eta, eta_new);
-        MatMult(analysis.results.M, lambda_new, Mlambda);
+        MatMult(analysis.M, lambda_new, Mlambda);
 
         set_vec_from_column_root(mu, object.d_explicit_dfda_all, k);
         VecAXPY(mu, -(0.5 / beta - 1.0), Mlambda);
@@ -437,8 +438,8 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
         VecAXPY(eta, -(1.0 / (beta * dt)), Mlambda);
         VecAXPY(eta, dHdv_new, mu_new);
         VecAXPY(eta, dLdv_new, eta_new);
-        zero_fixed(mu, analysis.results.SPCdofs);
-        zero_fixed(eta, analysis.results.SPCdofs);
+        zero_fixed(mu, analysis.SPCdofs);
+        zero_fixed(eta, analysis.SPCdofs);
 
         set_vec_from_column_root(rhs, object.d_explicit_dfdu_all, k, -1.0);
         VecAXPY(rhs, a0c, Mlambda);
@@ -448,17 +449,17 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
             VecAXPY(rhs, -dHdu, mu);
             VecAXPY(rhs, -dLdu, eta);
         }
-        set_vec_fixed_from_column_root(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
+        set_vec_fixed_from_column_root(rhs, analysis.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
 
         if (k == 0) {
             object.ROM->set_petsc_factorized_solver(nullptr, nullptr);
-            if (analysis.results.factorized_K_eff) KSPDestroy(&analysis.results.factorized_K_eff);
+            if (analysis.factorized_K_eff) KSPDestroy(&analysis.factorized_K_eff);
 
-            object.ROM->set_petsc_factorized_solver(K0, analysis.results.factorized_K_initial);
+            object.ROM->set_petsc_factorized_solver(K0, analysis.factorized_K_initial);
             solve_adjoint_full(*object.ROM, K0, rhs, lambda, analysis, Iter, k, &K0_eigen_cache);
 
             object.ROM->set_petsc_factorized_solver(nullptr, nullptr);
-            if (analysis.results.factorized_K_initial) KSPDestroy(&analysis.results.factorized_K_initial);
+            if (analysis.factorized_K_initial) KSPDestroy(&analysis.factorized_K_initial);
         } else {
             solve_adjoint_full(*object.ROM, Keff, rhs, lambda, analysis, Iter, k, &Keff_eigen_cache);
         }

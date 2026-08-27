@@ -1,4 +1,4 @@
-#include "ROM/ROM_method/FOM_direct.hpp"
+#include "ROM/ROM_method/FOM.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -15,7 +15,7 @@
 
 namespace {
 
-double now_time() {
+double wall_time() {
     using Clock = std::chrono::steady_clock;
     static const auto t0 = Clock::now();
     return std::chrono::duration<double>(Clock::now() - t0).count();
@@ -63,16 +63,16 @@ private:
 
 } // namespace
 
-FOM_direct::FOM_direct() {
-    name = "FOM_direct";
+EigenFOM_direct::EigenFOM_direct() {
+    name = "EigenFOM_direct";
     use_mor = false;
 }
 
-SolveStats FOM_direct::main(const Eigen::SparseMatrix<double>& lhs,
-                            const Eigen::VectorXd& rhs,
-                            Eigen::VectorXd& u,
-                            const ROMContext& context) {
-    const double t0 = now_time();
+SolveStats EigenFOM_direct::main(const Eigen::SparseMatrix<double>& lhs,
+                                 const Eigen::VectorXd& rhs,
+                                 Eigen::VectorXd& u,
+                                 const ROMContext& context) {
+    const double t0 = wall_time();
     const SolveStats stats = FOM_main(lhs, rhs, u, context);
     ROMInfo info;
     info.name = name;
@@ -82,13 +82,13 @@ SolveStats FOM_direct::main(const Eigen::SparseMatrix<double>& lhs,
     info.residual_norm = stats.residual_norm;
     info.timing_fom_factorization = stats.factorization_time;
     info.timing_fom_solve = stats.solve_time;
-    info.timing_total = now_time() - t0;
+    info.timing_total = wall_time() - t0;
     store_info(info, context);
     return stats;
 }
 
-void FOM_direct::set_factorization(const Eigen::SparseMatrix<double>& lhs) {
-    const double tf = now_time();
+void EigenFOM_direct::set_factorization(const Eigen::SparseMatrix<double>& lhs) {
+    const double tf = wall_time();
     const int requested_factor_threads = env_int_or_default("FACTOR_NUM_THREADS", env_int_or_default("MKL_NUM_THREADS", 1));
     const int requested_runtime_threads = env_int_or_default("MKL_NUM_THREADS", 1);
     MKLThreadGuard mkl_threads(requested_factor_threads, requested_runtime_threads);
@@ -109,30 +109,30 @@ void FOM_direct::set_factorization(const Eigen::SparseMatrix<double>& lhs) {
     solver_->solver.pardisoParameterArray()[7] = 0;
 #endif
     solver_->solver.compute(lhs);
-    last_factorization_time_ = now_time() - tf;
+    last_factorization_time_ = wall_time() - tf;
     if (solver_->solver.info() != Eigen::Success) {
         solver_.reset();
         factor_ = nullptr;
-        throw std::runtime_error("Eigen FOM_direct factorization failed");
+        throw std::runtime_error("EigenFOM_direct factorization failed");
     }
     factor_ = &lhs;
 }
 
-std::shared_ptr<FactorizedSolver> FOM_direct::get_factorized_solver(const Eigen::SparseMatrix<double>& lhs) const {
+std::shared_ptr<FactorizedSolver> EigenFOM_direct::get_factorized_solver(const Eigen::SparseMatrix<double>& lhs) const {
     if (factor_ == &lhs && solver_) return solver_;
     return nullptr;
 }
 
-void FOM_direct::set_factorized_solver(const Eigen::SparseMatrix<double>& lhs,
-                                       std::shared_ptr<FactorizedSolver> solver) {
+void EigenFOM_direct::set_factorized_solver(const Eigen::SparseMatrix<double>& lhs,
+                                            std::shared_ptr<FactorizedSolver> solver) {
     solver_ = std::move(solver);
     factor_ = solver_ ? &lhs : nullptr;
 }
 
-SolveStats FOM_direct::FOM_main(const Eigen::SparseMatrix<double>& lhs,
-                                const Eigen::VectorXd& rhs,
-                                Eigen::VectorXd& u,
-                                const ROMContext& context) {
+SolveStats EigenFOM_direct::FOM_main(const Eigen::SparseMatrix<double>& lhs,
+                                     const Eigen::VectorXd& rhs,
+                                     Eigen::VectorXd& u,
+                                     const ROMContext& context) {
     SolveStats stats;
     if (rhs.norm() < 1e-30) {
         u = Eigen::VectorXd::Zero(rhs.size());
@@ -148,17 +148,17 @@ SolveStats FOM_direct::FOM_main(const Eigen::SparseMatrix<double>& lhs,
                   << stats.factorization_time << "\n";
     }
 
-    const double ts = now_time();
+    const double ts = wall_time();
     u = solver_->solver.solve(rhs);
-    stats.solve_time = now_time() - ts;
-    if (solver_->solver.info() != Eigen::Success) throw std::runtime_error("Eigen FOM_direct solve failed");
+    stats.solve_time = wall_time() - ts;
+    if (solver_->solver.info() != Eigen::Success) throw std::runtime_error("EigenFOM_direct solve failed");
 
     stats.ksp_iterations = 1;
     if (env_flag_or_default("STAGE2_EIGEN_CHECK_FOM_RESIDUAL", false)) {
-        const double tr = now_time();
+        const double tr = wall_time();
         stats.residual_norm = relative_residual(lhs, rhs, u);
         std::cout << "  eigen_fom_residual_check[s]: "
-                  << now_time() - tr << "\n";
+                  << wall_time() - tr << "\n";
     } else {
         stats.residual_norm = 0.0;
     }

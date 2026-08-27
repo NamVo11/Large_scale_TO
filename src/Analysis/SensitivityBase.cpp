@@ -1,7 +1,11 @@
 #include "Analysis/SensitivityBase.hpp"
 
 #include "Analysis/Analysis.hpp"
+#include "Analysis/DynamicLinearElastic/DynamicLinearElasticAVM.hpp"
+#include "Analysis/StaticLinearElastic/StaticLinearElasticAVM.hpp"
+#include "Optimization/Volume/VolumeFractionConstraint.hpp"
 #include "Output/OutputData.hpp"
+#include "ROM/ROM_method/ROM_Base.hpp"
 
 #include <petscsys.h>
 
@@ -11,6 +15,7 @@
 #include <fstream>
 #include <set>
 #include <stdexcept>
+#include <string>
 
 namespace {
 
@@ -24,6 +29,58 @@ void add_scaled(Eigen::MatrixXd& dst, const Eigen::MatrixXd& src, double scale) 
 }
 
 } // namespace
+
+std::string group_function_key(const myjson::json& j) {
+    const std::string sens_function = myjson::lower_ascii(myjson::string_value(j, "sens_function"));
+    if (!sens_function.empty()) return sens_function;
+    std::string function_name = myjson::lower_ascii(myjson::string_value(j, "function_name"));
+    if (function_name.empty() && j.contains("terms") && j.at("terms").is_array() && !j.at("terms").empty()) {
+        function_name = myjson::lower_ascii(myjson::string_value(j.at("terms").front(), "function_name"));
+    }
+    return function_name;
+}
+
+myjson::json group_analysis_json_by_id(const myjson::json& analysis_all_json, int analysis_id) {
+    for (const auto& analysis_json : analysis_all_json) {
+        if (analysis_json.at("id").get<int>() == analysis_id) return analysis_json;
+    }
+    throw std::runtime_error("Analysis id not found in JSON: " + std::to_string(analysis_id));
+}
+
+std::unique_ptr<GroupFunctionalBase> InitializeGroupFunctional(const myjson::json& j,
+                                                              const std::string& linear_backend,
+                                                              const myjson::json& analysis_all_json,
+                                                              const myjson::json& run_json) {
+    const std::string key = group_function_key(j);
+    const std::string backend = myjson::lower_ascii(linear_backend.empty() ? "petsc" : linear_backend);
+
+    std::unique_ptr<GroupFunctionalBase> group;
+    if (key == "dynamic_elastic_base" ||
+        key == "dynamic_compliance_avm" ||
+        key == "dynamic_linear_elastic_avm") {
+        if (backend == "eigen") {
+            group = std::make_unique<EigenDynamicLinearElasticAVM>(j);
+        } else {
+            group = std::make_unique<PetscDynamicLinearElasticAVM>(j);
+        }
+    } else if (key == "static_elastic_base" ||
+               key == "static_compliance_avm" ||
+               key == "static_linear_elastic_avm") {
+        if (backend == "eigen") {
+            group = std::make_unique<EigenStaticLinearElasticAVM>(j);
+        } else {
+            group = std::make_unique<PetscStaticLinearElasticAVM>(j);
+        }
+    } else if (key == "volume_fraction" || key == "volume_sens_base") {
+        group = std::make_unique<VolumeFractionConstraint>(j);
+    } else {
+        throw std::runtime_error("Unknown group functional: " + key);
+    }
+
+    const myjson::json target_analysis = group_analysis_json_by_id(analysis_all_json, group->analysis_id);
+    group->ROM = InitializeROM(target_analysis.at("ROM"), run_json);
+    return group;
+}
 
 void GroupFunctionalBase::debug_FDM(const FEM& fem,
                                     Analysis& analysis,

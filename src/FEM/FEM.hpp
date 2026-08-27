@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -62,12 +63,12 @@ struct ElementMatrix {
 
 struct FEM {
     std::string fem_type = "plane_stress";
-    double Thickness = 1.0;
+    double thickness = 1.0;
 
     std::vector<std::array<double, 3>> Node;
     std::vector<std::vector<int>> Element;
     std::vector<std::shared_ptr<ElementBase>> ElementObjects;
-    std::vector<Region> Regions;
+    std::vector<std::shared_ptr<Region>> Regions;
     std::vector<ElementType> ElementTypes;
     std::vector<std::vector<PetscInt>> ElementDofs;
     std::vector<std::array<double, 3>> elem_center;
@@ -89,6 +90,7 @@ struct FEM {
     int nelz = 0;
 
     virtual ~FEM() = default;
+    void InitializeRegions(const myjson::json& regions_json);
     void InitializeMaterials(const myjson::json& materials_json);
     void precompute_elements();
     void debug_check_element_orientation() const;
@@ -97,10 +99,9 @@ struct FEM {
 struct StructuredMesh : FEM {
     Geometry geometry;
 
-    explicit StructuredMesh(const myjson::json& fem_json)
-        : geometry(fem_json.at("Geom")) {
+    explicit StructuredMesh(const myjson::json& fem_json) : geometry(fem_json.at("Geom")) {
         fem_type = myjson::lower_ascii(fem_json.at("fem_type").get<std::string>());
-        Thickness = myjson::double_value(fem_json, "Thickness", 1.0);
+        thickness = myjson::double_value(fem_json, "thickness", 1.0);
         uniform_element_matrices = myjson::bool_value(fem_json, "uniform_element_matrices", true);
         build_from_geometry(geometry);
         precompute_elements();
@@ -118,10 +119,15 @@ struct UnstructuredMesh : FEM {
                      double thickness_in,
                      bool uniform_element_matrices_in) {
         fem_type = myjson::lower_ascii(fem_type_in);
-        Thickness = thickness_in;
+        thickness = thickness_in;
         uniform_element_matrices = uniform_element_matrices_in;
         read_hypermesh_fem(fem_file);
         precompute_elements();
+
+        if (uniform_element_matrices) {
+            std::cout << "====================NOTE===================\n";
+            std::cout << "UnstructuredMesh but uniform element\n";
+        }
     }
 
     const HMSet& hmset_by_name(const std::string& name) const;
@@ -131,7 +137,7 @@ struct UnstructuredMesh : FEM {
 inline std::unique_ptr<FEM> InitializeFEM(const myjson::json& fem_json) {
     const std::string mesh_type = myjson::lower_ascii(fem_json.at("mesh_type").get<std::string>());
     const std::string fem_type = myjson::lower_ascii(fem_json.at("fem_type").get<std::string>());
-    const double thickness = myjson::double_value(fem_json, "Thickness", 1.0);
+    const double thickness = myjson::double_value(fem_json, "thickness", 1.0);
     const bool uniform = myjson::bool_value(fem_json, "uniform_element_matrices", mesh_type == "structured");
 
     if (mesh_type == "hypermesh" || mesh_type == "unstructured") {

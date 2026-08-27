@@ -23,7 +23,7 @@ const HMSet& find_hmset_by_name(const FEM& fem, const std::string& name) {
 
 } // namespace
 
-void Region::finalize_assignment(const FEM& fem, std::vector<int>& assigned) {
+void Region::check_assignment(const FEM& fem, std::vector<int>& assigned) {
     std::sort(elem_ids.begin(), elem_ids.end());
     elem_ids.erase(std::unique(elem_ids.begin(), elem_ids.end()), elem_ids.end());
     if (elem_ids.empty()) throw std::runtime_error("Region selects no elements: " + name);
@@ -58,7 +58,7 @@ bool RangeRegion::contains_element_center(const FEM& fem, int elem_id) const {
     return false;
 }
 
-void RangeRegion::assign_elements(const FEM& fem, const std::vector<int>& assigned) {
+void RangeRegion::assign_elements(const FEM& fem, std::vector<int>& assigned) {
     elem_ids.clear();
     const std::string type = myjson::lower_ascii(range_type.empty() ? "all" : range_type);
     if (type == "all") {
@@ -75,37 +75,13 @@ void RangeRegion::assign_elements(const FEM& fem, const std::vector<int>& assign
     } else {
         throw std::runtime_error("Unknown Region.range_type: " + type);
     }
+    check_assignment(fem, assigned);
 }
 
-void HMSetRegion::assign_elements(const FEM& fem) {
+void HMSetRegion::assign_elements(const FEM& fem, std::vector<int>& assigned) {
     const std::string set_name = !hmset_name.empty() ? hmset_name : status;
     const HMSet& set = find_hmset_by_name(fem, set_name);
     if (set.kind != 2) throw std::runtime_error("HMSET is not an element set: " + set_name);
     elem_ids = set.local_ids;
-}
-
-std::vector<Region> InitializeRegions(const myjson::json& regions_json, const FEM& fem) {
-    if (!regions_json.is_array() || regions_json.empty()) throw std::runtime_error("JSON Regions is empty");
-
-    std::vector<Region> regions;
-    std::vector<int> assigned(static_cast<std::size_t>(fem.NElem), 0);
-    for (const auto& item : regions_json) {
-        const std::string source = myjson::lower_ascii(myjson::string_value(item, "source", "range"));
-        if (source == "hmset") {
-            HMSetRegion region(fem, item);
-            region.finalize_assignment(fem, assigned);
-            regions.push_back(static_cast<Region&&>(std::move(region)));
-        } else if (source == "range") {
-            RangeRegion region(fem, item, assigned);
-            region.finalize_assignment(fem, assigned);
-            regions.push_back(static_cast<Region&&>(std::move(region)));
-        } else {
-            throw std::runtime_error("Unknown Region.source: " + source);
-        }
-    }
-
-    if (std::any_of(assigned.begin(), assigned.end(), [](int v) { return v == 0; })) {
-        throw std::runtime_error("Some elements are not assigned to any region");
-    }
-    return regions;
+    check_assignment(fem, assigned);
 }

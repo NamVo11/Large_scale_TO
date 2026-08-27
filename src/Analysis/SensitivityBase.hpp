@@ -71,46 +71,7 @@ protected:
                                const Eigen::MatrixXd& df_dx);
 };
 
-inline std::string group_function_key(const myjson::json& j) {
-    const std::string sens_function = myjson::lower_ascii(myjson::string_value(j, "sens_function"));
-    if (!sens_function.empty()) return sens_function;
-    std::string function_name = myjson::lower_ascii(myjson::string_value(j, "function_name"));
-    if (function_name.empty() && j.contains("terms") && j.at("terms").is_array() && !j.at("terms").empty()) {
-        function_name = myjson::lower_ascii(myjson::string_value(j.at("terms").front(), "function_name"));
-    }
-    return function_name;
-}
-
-std::unique_ptr<GroupFunctionalBase> InitializeDynamicLinearElasticGroupFunctional(const myjson::json& j,
-                                                                                  const std::string& backend);
-std::unique_ptr<GroupFunctionalBase> InitializeStaticLinearElasticGroupFunctional(const myjson::json& j,
-                                                                                 const std::string& backend);
-std::unique_ptr<GroupFunctionalBase> InitializeVolumeGroupFunctional(const myjson::json& j);
-
-inline std::unique_ptr<GroupFunctionalBase> InitializeGroupFunctional(const myjson::json& j,
-                                                                     const std::string& linear_backend) {
-    const std::string key = group_function_key(j);
-    const std::string backend = myjson::lower_ascii(linear_backend.empty() ? "petsc" : linear_backend);
-
-    if (key == "dynamic_elastic_base" ||
-        key == "dynamic_compliance_avm" ||
-        key == "dynamic_linear_elastic_avm") {
-        return InitializeDynamicLinearElasticGroupFunctional(j, backend);
-    }
-
-    if (key == "static_elastic_base" ||
-        key == "static_compliance_avm" ||
-        key == "static_linear_elastic_avm") {
-        return InitializeStaticLinearElasticGroupFunctional(j, backend);
-    }
-
-    if (key == "volume_fraction" || key == "volume_sens_base") {
-        return InitializeVolumeGroupFunctional(j);
-    }
-
-    throw std::runtime_error("Unknown group functional: " + key);
-}
-
-inline double constraint_limit_from_json(const myjson::json& j) {
-    return j.at("limit").get<double>();
-}
+std::unique_ptr<GroupFunctionalBase> InitializeGroupFunctional(const myjson::json& j,
+                                                              const std::string& linear_backend,
+                                                              const myjson::json& analysis_all_json,
+                                                              const myjson::json& run_json);

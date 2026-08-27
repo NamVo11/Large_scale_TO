@@ -74,13 +74,10 @@ ROMContext make_context(const Analysis& analysis, int Iter) {
     return ctx;
 }
 
-void clear_stored_eigen(Analysis& analysis) {
-    if (analysis.ROM) analysis.ROM->set_factorized_solver(analysis.results.K_inf_eigen, nullptr);
-    analysis.results.K_inf_eigen.resize(0, 0);
-    analysis.results.M_eigen.resize(0, 0);
-    analysis.results.K_eff_eigen.resize(0, 0);
-    analysis.results.factorized_K_initial_eigen.reset();
-    analysis.results.factorized_K_eff_eigen.reset();
+void clear_stored_eigen(EigenStaticLinearElastic& analysis) {
+    if (analysis.ROM) analysis.ROM->set_factorized_solver(analysis.K_inf, nullptr);
+    analysis.K_inf.resize(0, 0);
+    analysis.factorized_K_initial.reset();
 }
 
 } // namespace
@@ -97,12 +94,13 @@ void EigenStaticLinearElastic::assemble_K(const FEM& fem,
     const std::size_t reserve_per_thread = reserve_nnz / static_cast<std::size_t>(num_threads) + 1;
     for (auto& triplets : thread_triplets) triplets.reserve(reserve_per_thread);
 
-    for (const Region& region : fem.Regions) {
+    for (const auto& region_ptr : fem.Regions) {
+        const Region& region = *region_ptr;
         const double region_nu = element_material(fem, region.elem_ids.front()).nu();
         ElementMatrix uniform_em;
         if (fem.uniform_element_matrices) {
             if (region.elem_ids.empty()) throw std::runtime_error("eigen assemble_K: region has no elements");
-            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.Thickness);
+            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
         }
 
         #pragma omp parallel num_threads(num_threads)
@@ -117,7 +115,7 @@ void EigenStaticLinearElastic::assemble_K(const FEM& fem,
                 ElementMatrix local_em;
                 const ElementMatrix* em_ptr = &uniform_em;
                 if (!fem.uniform_element_matrices) {
-                    local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.Thickness);
+                    local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
                     em_ptr = &local_em;
                 }
                 const ElementMatrix& em = *em_ptr;
@@ -155,10 +153,10 @@ void EigenStaticLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_e
     using Clock = std::chrono::steady_clock;
     const auto t0 = Clock::now();
     MemoryDebug::print("static_forward_begin");
-    Sparse& K = results.K_inf_eigen;
+    Sparse& K = K_inf;
     assemble_K(fem, y_elem, K);
-    results.assembly_time = std::chrono::duration<double>(Clock::now() - t0).count();
-    std::cout << "  assembly[s]: eigen static K = " << results.assembly_time << "\n";
+    assembly_time = std::chrono::duration<double>(Clock::now() - t0).count();
+    std::cout << "  assembly[s]: eigen static K = " << assembly_time << "\n";
 
     const std::vector<int> fixed = SPC();
     MyAlgebra::EigenOps::apply_dirichlet_to_matrix(K, fixed, 1.0);
@@ -173,25 +171,23 @@ void EigenStaticLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_e
 
     const auto ts = Clock::now();
     const SolveStats stats = ROM->main(K, rhs, u, make_context(*this, Iter));
-    results.solve_time = std::chrono::duration<double>(Clock::now() - ts).count();
+    solve_time = std::chrono::duration<double>(Clock::now() - ts).count();
     if (save_factorized_K_initial) {
-        results.factorized_K_initial_eigen = ROM->get_factorized_solver(K);
+        factorized_K_initial = ROM->get_factorized_solver(K);
     } else {
-        results.factorized_K_initial_eigen.reset();
+        factorized_K_initial.reset();
     }
 
-    results.U = Eigen::MatrixXd::Zero(ndof, Nstep + 1);
-    results.V.resize(0, 0);
-    results.A.resize(0, 0);
-    results.F_ext = Eigen::MatrixXd::Zero(ndof, Nstep + 1);
-    results.ksp_iterations.clear();
-    results.ksp_residuals.clear();
-    results.ksp_iterations.push_back(stats.ksp_iterations);
-    results.ksp_residuals.push_back(stats.residual_norm);
-    results.SPCdofs = fixed;
-    results.free = free_dofs(ndof);
-    results.U.col(Nstep) = u;
-    results.F_ext.col(Nstep) = f_ext;
+    U = Eigen::MatrixXd::Zero(ndof, Nstep + 1);
+    F_ext = Eigen::MatrixXd::Zero(ndof, Nstep + 1);
+    ksp_iterations.clear();
+    ksp_residuals.clear();
+    ksp_iterations.push_back(stats.ksp_iterations);
+    ksp_residuals.push_back(stats.residual_norm);
+    SPCdofs = fixed;
+    free = free_dofs(ndof);
+    U.col(Nstep) = u;
+    F_ext.col(Nstep) = f_ext;
     std::cout << "static solve_res = " << stats.residual_norm
               << ", ksp_it = " << stats.ksp_iterations << "\n";
 }

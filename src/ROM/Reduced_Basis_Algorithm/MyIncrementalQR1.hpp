@@ -13,5 +13,11 @@ public:
 
     void reset() override;
     void update(const Eigen::VectorXd& solution, const ROMContext& context) override;
+    bool update_reduced_cache_incremental(const Eigen::SparseMatrix<double>& A,
+                                          const Eigen::MatrixXd& V,
+                                          Eigen::MatrixXd& A_r_cache,
+                                          Eigen::LLT<Eigen::MatrixXd>& factorized_A_r,
+                                          Eigen::MatrixXd& AV_cache,
+                                          int& A_r_rank_cache,
+                                          ROMInfo& info) const override;
 };
-

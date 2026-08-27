@@ -1,4 +1,4 @@
-#include "ROM/ROM_method/PetscFOM_iterative.hpp"
+#include "ROM/ROM_method/FOM.hpp"
 
 #include "helper/PetscEigenBridge.hpp"
 
@@ -12,7 +12,7 @@ constexpr PetscReal kZeroRhsTol = 1e-14;
 
 PetscFOM_iterative::PetscFOM_iterative(std::string method_in)
     : ROMBase({}), method(std::move(method_in)) {
-    name = "FOM_iterative";
+    name = "PetscFOM_iterative";
     use_mor = false;
 }
 

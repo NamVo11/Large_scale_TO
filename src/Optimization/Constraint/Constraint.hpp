@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 struct Constraint {
@@ -14,11 +15,19 @@ struct Constraint {
 
     Constraint() = default;
 
-    void add_group(std::unique_ptr<GroupFunctionalBase> group, double limit) {
-        groups.push_back(std::move(group));
-        limits.push_back(limit);
-        values.push_back(0.0);
-        sensitivity.emplace_back();
+    Constraint(const myjson::json& constraints_json,
+               const std::string& linear_backend,
+               const myjson::json& analysis_all_json,
+               const myjson::json& run_json) {
+        for (const auto& constraint_json : constraints_json) {
+            groups.push_back(InitializeGroupFunctional(constraint_json,
+                                                       linear_backend,
+                                                       analysis_all_json,
+                                                       run_json));
+            limits.push_back(constraint_json.at("limit").get<double>());
+            values.push_back(0.0);
+            sensitivity.emplace_back();
+        }
     }
 
     void calculate(const FEM& fem,

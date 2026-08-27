@@ -3,7 +3,18 @@
 #include <Eigen/Dense>
 
 #include <algorithm>
+#include <chrono>
 #include <limits>
+
+namespace {
+
+double wall_time() {
+    using Clock = std::chrono::steady_clock;
+    static const auto t0 = Clock::now();
+    return std::chrono::duration<double>(Clock::now() - t0).count();
+}
+
+} // namespace
 
 MyIncrementalQR1::MyIncrementalQR1(double e_rb_in, int max_rank_in)
     : UpdateBase(max_rank_in), e_rb(e_rb_in)
@@ -146,4 +157,79 @@ void MyIncrementalQR1::update(const Eigen::VectorXd &solution,
 
     setBasis(std::move(V_new), std::move(s_new));
     update_flag = true;
+}
+
+bool MyIncrementalQR1::update_reduced_cache_incremental(const Eigen::SparseMatrix<double>& A,
+                                                        const Eigen::MatrixXd& V_runtime,
+                                                        Eigen::MatrixXd& A_r_cache,
+                                                        Eigen::LLT<Eigen::MatrixXd>& factorized_A_r,
+                                                        Eigen::MatrixXd& AV_cache,
+                                                        int& A_r_rank_cache,
+                                                        ROMInfo& info) const {
+    const int rank = static_cast<int>(V_runtime.cols());
+    const int old_rank = A_r_rank_cache;
+    if (rank <= 0 || A_r_cache.rows() != old_rank || AV_cache.cols() != old_rank) return false;
+
+    const int drop_index = base_rank;
+    const double t0 = wall_time();
+
+    auto append_column = [&](const Eigen::MatrixXd& A_r_base,
+                             const Eigen::MatrixXd& AV_base,
+                             const Eigen::VectorXd& v_new,
+                             int new_rank) {
+        const Eigen::VectorXd Av_new = A * v_new;
+        Eigen::MatrixXd A_r_new(new_rank, new_rank);
+        if (new_rank > 1) {
+            A_r_new.topLeftCorner(new_rank - 1, new_rank - 1) = A_r_base;
+            A_r_new.topRightCorner(new_rank - 1, 1) = V_runtime.leftCols(new_rank - 1).transpose() * Av_new;
+            A_r_new.bottomLeftCorner(1, new_rank - 1) = v_new.transpose() * AV_base;
+        }
+        A_r_new(new_rank - 1, new_rank - 1) = v_new.dot(Av_new);
+
+        Eigen::MatrixXd AV_new(AV_base.rows(), new_rank);
+        if (new_rank > 1) AV_new.leftCols(new_rank - 1) = AV_base;
+        AV_new.col(new_rank - 1) = Av_new;
+        A_r_cache = std::move(A_r_new);
+        factorized_A_r.compute(A_r_cache);
+        AV_cache = std::move(AV_new);
+    };
+
+    if (rank == old_rank + 1) {
+        append_column(A_r_cache, AV_cache, V_runtime.col(rank - 1), rank);
+        info.timing_projection += wall_time() - t0;
+        A_r_rank_cache = rank;
+        return true;
+    }
+
+    if (drop_index >= 0 && drop_index < old_rank &&
+        (rank == old_rank || rank == old_rank - 1)) {
+        const int kept_rank = old_rank - 1;
+        Eigen::MatrixXd A_r_kept(kept_rank, kept_rank);
+        Eigen::MatrixXd AV_kept(AV_cache.rows(), kept_rank);
+        int ii = 0;
+        for (int i = 0; i < old_rank; ++i) {
+            if (i == drop_index) continue;
+            AV_kept.col(ii) = AV_cache.col(i);
+            int jj = 0;
+            for (int j = 0; j < old_rank; ++j) {
+                if (j == drop_index) continue;
+                A_r_kept(ii, jj) = A_r_cache(i, j);
+                ++jj;
+            }
+            ++ii;
+        }
+
+        if (rank == kept_rank) {
+            A_r_cache = std::move(A_r_kept);
+            factorized_A_r.compute(A_r_cache);
+            AV_cache = std::move(AV_kept);
+        } else {
+            append_column(A_r_kept, AV_kept, V_runtime.col(rank - 1), rank);
+        }
+        info.timing_projection += wall_time() - t0;
+        A_r_rank_cache = rank;
+        return true;
+    }
+
+    return false;
 }

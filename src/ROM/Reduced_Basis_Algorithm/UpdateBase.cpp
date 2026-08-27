@@ -3,8 +3,6 @@
 #include <stdexcept>
 #include <utility>
 
-UpdateBase::UpdateBase(int max_rank_in) : max_rank(max_rank_in) {}
-
 const Eigen::MatrixXd& UpdateBase::getBasis(const ROMContext&) const {
     return V;
 }
@@ -38,6 +36,16 @@ void UpdateBase::addSnapshot(const Eigen::VectorXd& solution, const ROMContext&)
 
 void UpdateBase::clearSnapshots() {
     snapshots.resize(0, 0);
+}
+
+bool UpdateBase::update_reduced_cache_incremental(const Eigen::SparseMatrix<double>&,
+                                                  const Eigen::MatrixXd&,
+                                                  Eigen::MatrixXd&,
+                                                  Eigen::LLT<Eigen::MatrixXd>&,
+                                                  Eigen::MatrixXd&,
+                                                  int&,
+                                                  ROMInfo&) const {
+    return false;
 }
 
 void UpdateBase::reset() {

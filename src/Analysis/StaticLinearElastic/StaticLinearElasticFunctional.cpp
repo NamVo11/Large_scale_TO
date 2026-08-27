@@ -25,15 +25,15 @@ void Compliance::calculate(const FEM& fem,
     dfdFext_all = Eigen::MatrixXd::Zero(ndof, ncols);
     df_dx.resize(0, 0);
 
-    const auto u = analysis.results.U.col(response_col);
-    const auto f = analysis.results.F_ext.col(response_col);
+    const auto u = analysis.U.col(response_col);
+    const auto f = analysis.F_ext.col(response_col);
     value = f.dot(u);
     dfdu_all.col(response_col) = f;
     dfdFext_all.col(response_col) = u;
-    for (int d : analysis.results.SPCdofs) {
+    for (int d : analysis.SPCdofs) {
         dfdu_all(d, response_col) = 0.0;
     }
-    for (int d : analysis.results.free) {
+    for (int d : analysis.free) {
         dfdFext_all(d, response_col) = 0.0;
     }
 }

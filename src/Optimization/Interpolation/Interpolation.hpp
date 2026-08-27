@@ -97,18 +97,21 @@ struct DMO : Interpolation {
                        double p) const override;
 };
 
-inline std::shared_ptr<Interpolation> InitializeInterpolation(const myjson::json& j) {
-    const std::string type = myjson::lower_ascii(j.at("type").get<std::string>());
-    if (type == "ramp" || type == "ram") return std::make_shared<RAMP>(j);
-    if (type == "simp") return std::make_shared<SIMP>(j);
-    if (type == "dmo") return std::make_shared<DMO>(j);
-    throw std::runtime_error("Unknown Interpolation.type: " + type);
-}
-
 inline std::vector<std::shared_ptr<Interpolation>> InitializeInterpolations(const myjson::json& j) {
     if (!j.is_array() || j.empty()) throw std::runtime_error("Interp must be a non-empty array");
     std::vector<std::shared_ptr<Interpolation>> interps;
     interps.reserve(j.size());
-    for (const auto& item : j) interps.push_back(InitializeInterpolation(item));
+    for (const auto& item : j) {
+        const std::string type = myjson::lower_ascii(item.at("type").get<std::string>());
+        if (type == "ramp" || type == "ram") {
+            interps.push_back(std::make_shared<RAMP>(item));
+        } else if (type == "simp") {
+            interps.push_back(std::make_shared<SIMP>(item));
+        } else if (type == "dmo") {
+            interps.push_back(std::make_shared<DMO>(item));
+        } else {
+            throw std::runtime_error("Unknown Interpolation.type: " + type);
+        }
+    }
     return interps;
 }

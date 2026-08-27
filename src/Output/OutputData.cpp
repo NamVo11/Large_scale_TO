@@ -227,7 +227,7 @@ void OutputData::export_response_vtk(const FEM& fem,
     (void)Iter;
     PetscMPIInt rank = 0;
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-    if (rank != 0 || outDir_vtk.empty() || analysis.results.U.size() == 0) return;
+    if (rank != 0 || outDir_vtk.empty() || analysis.U.size() == 0) return;
     initialize_vtk_cache(fem);
     std::filesystem::create_directories(outDir_vtk);
 
@@ -258,10 +258,13 @@ void OutputData::export_response_vtk(const FEM& fem,
             }
         };
 
-        write_vector_field("displacement", analysis.results.U);
-        write_vector_field("velocity", analysis.results.V);
-        write_vector_field("acceleration", analysis.results.A);
-        write_vector_field("Reaction_force", analysis.results.F_ext);
+        write_vector_field("displacement", analysis.U);
+        if (analysis.type == "dynamic") {
+            const auto& dynamic = dynamic_cast<const DynamicLinearElastic&>(analysis);
+            write_vector_field("velocity", dynamic.V);
+            write_vector_field("acceleration", dynamic.A);
+        }
+        write_vector_field("Reaction_force", analysis.F_ext);
 
         if (xPhys.rows() == fem.NElem && xPhys.cols() > 0) {
             out << "CELL_DATA " << fem.NElem << "\n";

@@ -1,4 +1,4 @@
-#include "ROM/ROM_method/FOM_iterative.hpp"
+#include "ROM/ROM_method/FOM.hpp"
 
 #include <Eigen/IterativeLinearSolvers>
 
@@ -8,7 +8,7 @@
 
 namespace {
 
-double now_time() {
+double wall_time() {
     using Clock = std::chrono::steady_clock;
     static const auto t0 = Clock::now();
     return std::chrono::duration<double>(Clock::now() - t0).count();
@@ -23,16 +23,16 @@ double relative_residual(const Eigen::SparseMatrix<double>& A,
 
 } // namespace
 
-FOM_iterative::FOM_iterative(std::string method_in) : method(std::move(method_in)) {
-    name = "FOM_iterative";
+EigenFOM_iterative::EigenFOM_iterative(std::string method_in) : method(std::move(method_in)) {
+    name = "EigenFOM_iterative";
     use_mor = false;
 }
 
-SolveStats FOM_iterative::main(const Eigen::SparseMatrix<double>& lhs,
-                               const Eigen::VectorXd& rhs,
-                               Eigen::VectorXd& u,
-                               const ROMContext& context) {
-    const double t0 = now_time();
+SolveStats EigenFOM_iterative::main(const Eigen::SparseMatrix<double>& lhs,
+                                    const Eigen::VectorXd& rhs,
+                                    Eigen::VectorXd& u,
+                                    const ROMContext& context) {
+    const double t0 = wall_time();
     const SolveStats stats = FOM_main(lhs, rhs, u, context);
     ROMInfo info;
     info.name = name;
@@ -42,15 +42,15 @@ SolveStats FOM_iterative::main(const Eigen::SparseMatrix<double>& lhs,
     info.residual_norm = stats.residual_norm;
     info.timing_fom_factorization = stats.factorization_time;
     info.timing_fom_solve = stats.solve_time;
-    info.timing_total = now_time() - t0;
+    info.timing_total = wall_time() - t0;
     store_info(info, context);
     return stats;
 }
 
-SolveStats FOM_iterative::FOM_main(const Eigen::SparseMatrix<double>& lhs,
-                                   const Eigen::VectorXd& rhs,
-                                   Eigen::VectorXd& u,
-                                   const ROMContext&) {
+SolveStats EigenFOM_iterative::FOM_main(const Eigen::SparseMatrix<double>& lhs,
+                                        const Eigen::VectorXd& rhs,
+                                        Eigen::VectorXd& u,
+                                        const ROMContext&) {
     SolveStats stats;
     if (rhs.norm() < 1e-30) {
         u = Eigen::VectorXd::Zero(rhs.size());
@@ -58,19 +58,18 @@ SolveStats FOM_iterative::FOM_main(const Eigen::SparseMatrix<double>& lhs,
         return stats;
     }
 
-    const double tf = now_time();
+    const double tf = wall_time();
     Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower | Eigen::Upper> solver;
     solver.setTolerance(pcg_tol);
     solver.setMaxIterations(pcg_maxit);
     solver.compute(lhs);
-    stats.factorization_time = now_time() - tf;
+    stats.factorization_time = wall_time() - tf;
 
-    const double ts = now_time();
+    const double ts = wall_time();
     u = solver.solve(rhs);
-    stats.solve_time = now_time() - ts;
+    stats.solve_time = wall_time() - ts;
 
     stats.ksp_iterations = static_cast<int>(solver.iterations());
     stats.residual_norm = relative_residual(lhs, rhs, u);
     return stats;
 }
-

@@ -24,62 +24,38 @@ class FactorizedSolver;
 struct Optimization;
 struct OutputData;
 
-struct AnalysisResult {
+struct Analysis {
+    int id;
+    std::vector<int> Dirich_id;
+    std::vector<int> Neum_id;
+    std::string type;
+    int Nstep;
+    bool save_factorized_K_initial;
+    int interp_id;
+
+    std::shared_ptr<ROMBase> ROM;
+    std::string solver_name;
+    std::shared_ptr<Interpolation> interp;
+    std::vector<std::shared_ptr<const BoundaryCondition>> Dirich;
+    std::vector<std::shared_ptr<const BoundaryCondition>> Neum;
     Eigen::MatrixXd U;
-    Eigen::MatrixXd V;
-    Eigen::MatrixXd A;
     Eigen::MatrixXd F_ext;
     std::vector<int> SPCdofs;
     std::vector<int> free;
     std::vector<int> ksp_iterations;
     std::vector<double> ksp_residuals;
-    Mat K_inf = nullptr;
-    Mat M = nullptr;
-    Mat K_eff = nullptr;
-    KSP factorized_K_initial = nullptr;
-    KSP factorized_K_eff = nullptr;
-    Eigen::SparseMatrix<double> K_inf_eigen;
-    Eigen::SparseMatrix<double> M_eigen;
-    Eigen::SparseMatrix<double> K_eff_eigen;
-    std::shared_ptr<FactorizedSolver> factorized_K_initial_eigen;
-    std::shared_ptr<FactorizedSolver> factorized_K_eff_eigen;
     double assembly_time = 0.0;
     double solve_time = 0.0;
-};
 
-struct Analysis {
-    int id = 1;
-    std::string mat_type = "elastic";
-    std::vector<int> Dirich_id;
-    std::vector<int> Neum_id;
-    std::string type = "dynamic";
-    std::string method = "linear";
-    int Nstep = 300;
-    bool save_factorized_K_initial = true;
-    int interp_id = 1;
-
-    std::shared_ptr<ROMBase> ROM;
-    std::string solver_name = "dynamic_elastic_linear";
-    std::shared_ptr<Interpolation> interp;
-    std::vector<std::shared_ptr<const BoundaryCondition>> Dirich;
-    std::vector<std::shared_ptr<const BoundaryCondition>> Neum;
-    AnalysisResult results;
-
-    Analysis() = default;
+    Analysis() = delete;
 
     explicit Analysis(const myjson::json& j) {
-        const std::string owner = "Analysis[" + std::to_string(myjson::int_value(j, "id", 0)) + "]";
-        id = myjson::required_int(j, "id", owner);
-        mat_type = myjson::required_string(j, "mat_type", owner);
-        myjson::require_key(j, "Dirich_id", owner);
-        myjson::require_key(j, "Neum_id", owner);
+        id = j.at("id").get<int>();
         j.at("Dirich_id").get_to(Dirich_id);
         j.at("Neum_id").get_to(Neum_id);
-        type = myjson::required_string(j, "type", owner);
-        method = myjson::required_string(j, "method", owner);
-        solver_name = myjson::required_string(j, "solver_name", owner);
-        interp_id = myjson::int_value(j, "interp_id", myjson::int_value(j, "InterpType", interp_id));
-        save_factorized_K_initial = myjson::bool_value(j, "save_factorized_K_initial", save_factorized_K_initial);
+        solver_name = j.at("solver_name").get<std::string>();
+        interp_id = j.at("interp_id").get<int>();
+        save_factorized_K_initial = j.at("save_factorized_K_initial").get<bool>();
     }
 
     virtual ~Analysis() = default;
@@ -111,29 +87,22 @@ struct Analysis {
 };
 
 struct DynamicLinearElastic : Analysis {
-    double Tmax = 0.12;
-    double dt = Tmax / static_cast<double>(Nstep);
+    double Tmax;
+    double dt;
+    Eigen::MatrixXd V;
+    Eigen::MatrixXd A;
 
-    DynamicLinearElastic() {
+    DynamicLinearElastic() = delete;
+
+    explicit DynamicLinearElastic(const myjson::json& j) : Analysis(j) {
         type = "dynamic";
-        method = "linear";
-        solver_name = "dynamic_elastic_linear";
-    }
-
-    explicit DynamicLinearElastic(const myjson::json& j)
-        : Analysis(j) {
-        const std::string owner = "Analysis[" + std::to_string(id) + "]";
-        if (myjson::lower_ascii(type) != "dynamic") {
-            throw std::runtime_error("dynamic_elastic_linear requires type=dynamic");
-        }
-        if (myjson::lower_ascii(method) != "linear") {
-            throw std::runtime_error("dynamic_elastic_linear requires method=linear");
-        }
         if (myjson::lower_ascii(solver_name) != "dynamic_elastic_linear") {
             throw std::runtime_error("DynamicLinearElastic requires solver_name=dynamic_elastic_linear");
         }
-        Tmax = myjson::required_double(j, "Tmax", owner);
-        Nstep = myjson::required_int(j, "Nstep", owner);
+
+        Tmax = j.at("Tmax").get<double>();
+        Nstep = j.at("Nstep").get<int>();
+
         if (!(Tmax > 0.0)) throw std::runtime_error("dynamic_elastic_linear requires Tmax > 0");
         if (Nstep <= 0) throw std::runtime_error("dynamic_elastic_linear requires Nstep > 0");
         dt = Tmax / static_cast<double>(Nstep);
@@ -141,17 +110,27 @@ struct DynamicLinearElastic : Analysis {
 };
 
 struct PetscDynamicLinearElastic : DynamicLinearElastic {
-    PetscDynamicLinearElastic() = default;
-    explicit PetscDynamicLinearElastic(const myjson::json& j)
-        : DynamicLinearElastic(j) {}
+    Mat K_inf = nullptr;
+    Mat M = nullptr;
+    Mat K_eff = nullptr;
+    KSP factorized_K_initial = nullptr;
+    KSP factorized_K_eff = nullptr;
+
+    PetscDynamicLinearElastic() = delete;
+    explicit PetscDynamicLinearElastic(const myjson::json& j) : DynamicLinearElastic(j) {}
     void assemble_K_M(const FEM& fem, const Eigen::MatrixXd& y_elem, Mat K, Mat M) const;
     void solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter = 0) override;
 };
 
 struct EigenDynamicLinearElastic : DynamicLinearElastic {
-    EigenDynamicLinearElastic() = default;
-    explicit EigenDynamicLinearElastic(const myjson::json& j)
-        : DynamicLinearElastic(j) {}
+    Eigen::SparseMatrix<double> K_inf;
+    Eigen::SparseMatrix<double> M;
+    Eigen::SparseMatrix<double> K_eff;
+    std::shared_ptr<FactorizedSolver> factorized_K_initial;
+    std::shared_ptr<FactorizedSolver> factorized_K_eff;
+
+    EigenDynamicLinearElastic() = delete;
+    explicit EigenDynamicLinearElastic(const myjson::json& j) : DynamicLinearElastic(j) {}
     void assemble_K_M(const FEM& fem,
                       const Eigen::MatrixXd& y_elem,
                       Eigen::SparseMatrix<double>& K,
@@ -160,21 +139,10 @@ struct EigenDynamicLinearElastic : DynamicLinearElastic {
 };
 
 struct StaticLinearElastic : Analysis {
-    StaticLinearElastic() {
-        type = "static";
-        method = "linear";
-        solver_name = "static_elastic_linear";
-        Nstep = 1;
-    }
+    StaticLinearElastic() = delete;
 
-    explicit StaticLinearElastic(const myjson::json& j)
-        : Analysis(j) {
-        if (myjson::lower_ascii(type) != "static") {
-            throw std::runtime_error("static_elastic_linear requires type=static");
-        }
-        if (myjson::lower_ascii(method) != "linear") {
-            throw std::runtime_error("static_elastic_linear requires method=linear");
-        }
+    explicit StaticLinearElastic(const myjson::json& j) : Analysis(j) {
+        type = "static";
         if (myjson::lower_ascii(solver_name) != "static_elastic_linear") {
             throw std::runtime_error("StaticLinearElastic requires solver_name=static_elastic_linear");
         }
@@ -183,7 +151,10 @@ struct StaticLinearElastic : Analysis {
 };
 
 struct PetscStaticLinearElastic : StaticLinearElastic {
-    PetscStaticLinearElastic() = default;
+    Mat K_inf = nullptr;
+    KSP factorized_K_initial = nullptr;
+
+    PetscStaticLinearElastic() = delete;
     explicit PetscStaticLinearElastic(const myjson::json& j)
         : StaticLinearElastic(j) {}
     void assemble_K(const FEM& fem, const Eigen::MatrixXd& y_elem, Mat K) const;
@@ -191,7 +162,10 @@ struct PetscStaticLinearElastic : StaticLinearElastic {
 };
 
 struct EigenStaticLinearElastic : StaticLinearElastic {
-    EigenStaticLinearElastic() = default;
+    Eigen::SparseMatrix<double> K_inf;
+    std::shared_ptr<FactorizedSolver> factorized_K_initial;
+
+    EigenStaticLinearElastic() = delete;
     explicit EigenStaticLinearElastic(const myjson::json& j)
         : StaticLinearElastic(j) {}
     void assemble_K(const FEM& fem,
@@ -206,28 +180,28 @@ inline std::unique_ptr<Analysis> InitializeAnalysis(const myjson::json& analysis
                                                     FEM&,
                                                     const std::vector<std::shared_ptr<BoundaryCondition>>& dirich,
                                                     const std::vector<std::shared_ptr<BoundaryCondition>>& neum) {
-    const std::string linear_backend = myjson::lower_ascii(myjson::string_value(run_json, "linear_backend", "petsc"));
-    const std::string owner = "Analysis[" + std::to_string(myjson::int_value(analysis_json, "id", 0)) + "]";
-    const std::string type = myjson::lower_ascii(myjson::required_string(analysis_json, "type", owner));
-    const std::string method = myjson::lower_ascii(myjson::required_string(analysis_json, "method", owner));
-    const std::string solver_name = myjson::lower_ascii(myjson::required_string(analysis_json, "solver_name", owner));
+
+    const std::string linear_backend = myjson::lower_ascii(run_json.at("linear_backend").get<std::string>());
+    const std::string solver_name = myjson::lower_ascii(analysis_json.at("solver_name").get<std::string>());
 
     std::unique_ptr<Analysis> analysis;
-    if (type == "dynamic" && method == "linear" && solver_name == "dynamic_elastic_linear") {
+    if (solver_name == "dynamic_elastic_linear") {
         if (linear_backend == "eigen") analysis = std::make_unique<EigenDynamicLinearElastic>(analysis_json);
         else analysis = std::make_unique<PetscDynamicLinearElastic>(analysis_json);
-    } else if (type == "static" && method == "linear" && solver_name == "static_elastic_linear") {
+
+    } else if (solver_name == "static_elastic_linear") {
         if (linear_backend == "eigen") analysis = std::make_unique<EigenStaticLinearElastic>(analysis_json);
         else analysis = std::make_unique<PetscStaticLinearElastic>(analysis_json);
-    } else if (type == "dynamic" && method == "linear" && solver_name == "dynamic_viscoelastic_linear") {
+
+    } else if (solver_name == "dynamic_viscoelastic_linear") {
         throw std::runtime_error("dynamic_viscoelastic_linear is recognized but the Analysis class is not implemented yet");
     } else {
-        throw std::runtime_error("Unsupported Analysis type/method/solver_name: " +
-                                 type + "/" + method + "/" + solver_name);
+        throw std::runtime_error("Unsupported Analysis.solver_name: " + solver_name);
     }
 
     analysis->ROM = InitializeROM(analysis_json.at("ROM"), run_json);
     analysis->init_interp(interps);
     analysis->attach_bcs_by_id(dirich, neum);
+
     return analysis;
 }

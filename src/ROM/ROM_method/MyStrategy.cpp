@@ -2,8 +2,18 @@
 
 #include "ROM/Reduced_Basis_Algorithm/UpdateBase.hpp"
 
+#include <cstdlib>
 #include <stdexcept>
 #include <utility>
+
+namespace {
+
+bool env_flag(const char* name) {
+    const char* value = std::getenv(name);
+    return value && *value && std::atoi(value) != 0;
+}
+
+} // namespace
 
 SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
                             const Eigen::VectorXd& rhs,
@@ -25,9 +35,31 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
     Eigen::VectorXd u_rom;
 
     if (!use_fom) {
-        const bool rebuild_projection = fom_flag || A_r_lhs_cache_ != &lhs || A_r_rank_cache_ != rank;
-        if (rebuild_projection) {
-            rebuild_reduced_cache(lhs, V, AV_cache_, A_r_lhs_cache_, A_r_rank_cache_, info);
+        const bool needs_projection = fom_flag ||
+                                      A_r_lhs_cache_ != &lhs ||
+                                      A_r_rank_cache_ != rank ||
+                                      A_r_cache.rows() != rank ||
+                                      A_r_cache.cols() != rank ||
+                                      AV_cache_.cols() != rank;
+        if (needs_projection) {
+            bool cache_ok = false;
+            const bool force_full_projection = env_flag("STAGE2_ROM_FULL_PROJECTION") ||
+                                               env_flag("STAGE2_MYSTRATEGY2_FULL_PROJECTION");
+            if (incremental_projection && !force_full_projection && A_r_lhs_cache_ == &lhs) {
+                cache_ok = basis_runtime.update_reduced_cache_incremental(lhs,
+                                                                          V,
+                                                                          A_r_cache,
+                                                                          factorized_A_r,
+                                                                          AV_cache_,
+                                                                          A_r_rank_cache_,
+                                                                          info);
+            }
+            if (cache_ok) {
+                A_r_lhs_cache_ = &lhs;
+                fom_flag = 0;
+            } else {
+                rebuild_reduced_cache(lhs, V, AV_cache_, A_r_lhs_cache_, A_r_rank_cache_, info);
+            }
         }
 
         const double tb = now_time();
@@ -38,12 +70,10 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
         Eigen::VectorXd coeff;
         if (A_r_cache.rows() == 0 || A_r_cache.cols() == 0) {
             use_fom = true;
-            fom_flag = 1;
         } else {
             coeff = factorized_A_r.solve(b_r);
             if (!coeff.allFinite()) {
                 use_fom = true;
-                fom_flag = 1;
             }
         }
         info.timing_reduced_solve += now_time() - ts;
@@ -67,7 +97,6 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
             append_decision_debug(context, rank, assessment.residual, assessment.threshold, assessment.accepted);
             stats.residual_norm = assessment.residual;
             use_fom = !info.accepted;
-            if (use_fom) fom_flag = 1;
         }
     }
 
@@ -83,7 +112,7 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
             //info.error = error_estimator->relative_solution_error(solution_e, u_rom);
             //info.basis_error = error_estimator->basis_error(V, solution_e);
         }
-        if (online) {
+        if (online_update) {
             const double tu = now_time();
             basis_list[1]->update(solution_e, context);
             append_basis_debug("online_update_basis2", context, 2, *basis_list[1]);
@@ -91,7 +120,7 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
             info.timing_online_basis_update += dt;
             info.timing_basis_update += dt;
         }
-        fom_flag = online ? (basis_list[1]->update_flag ? 1 : 0) : 0;
+        fom_flag = online_update ? (basis_list[1]->update_flag ? 1 : 0) : 0;
     } else {
         u = u_rom;
         solution_e = std::move(u_rom);
@@ -101,12 +130,14 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
         fom_flag = 0;
     }
 
-    const double tss = now_time();
-    basis_list[0]->addSnapshot(solution_e, context);
-    info.timing_snapshot += now_time() - tss;
+    if (offline_update) {
+        const double tss = now_time();
+        basis_list[0]->addSnapshot(solution_e, context);
+        info.timing_snapshot += now_time() - tss;
+    }
 
     if (context.is_end_of_analysis) {
-        if (basis_list[0]->max_rank != 0) {
+        if (offline_update) {
             const double tu = now_time();
             basis_list[0]->update(solution_e, context);
             append_basis_debug("offline_update_basis1", context, 1, *basis_list[0]);
@@ -119,15 +150,10 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
             basis_list[1]->setBasis(basis_list[0]->V, basis_list[0]->s);
             append_basis_debug("copy_basis1_to_basis2", context, 2, *basis_list[1]);
             info.timing_basis_copy_reset += now_time() - tc;
-        } else {
-            const double tc = now_time();
-            basis_list[1]->reset();
-            append_basis_debug("reset_basis2", context, 2, *basis_list[1]);
-            info.timing_basis_copy_reset += now_time() - tc;
         }
         const double tr = now_time();
         basis_list[1]->clearSnapshots();
-        basis_list[0]->reset();
+        if (offline_update) basis_list[0]->reset();
         fom_flag = 1;
         clear_reduced_cache(AV_cache_, A_r_lhs_cache_, A_r_rank_cache_);
         info.timing_basis_copy_reset += now_time() - tr;

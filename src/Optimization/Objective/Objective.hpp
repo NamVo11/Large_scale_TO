@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 struct Objective {
@@ -13,8 +14,16 @@ struct Objective {
 
     Objective() = default;
 
-    void add_group(std::unique_ptr<GroupFunctionalBase> group) {
-        groups.push_back(std::move(group));
+    Objective(const myjson::json& objective_groups_json,
+              const std::string& linear_backend,
+              const myjson::json& analysis_all_json,
+              const myjson::json& run_json) {
+        for (const auto& group_json : objective_groups_json) {
+            groups.push_back(InitializeGroupFunctional(group_json,
+                                                       linear_backend,
+                                                       analysis_all_json,
+                                                       run_json));
+        }
     }
 
     void initialize(const FEM& fem,

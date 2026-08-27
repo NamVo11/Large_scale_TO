@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #ifdef EIGEN_USE_LAPACKE
@@ -110,8 +111,25 @@ std::shared_ptr<ROMBase> InitializeDynamicROM(const std::string& method_name,
                                               double residual_tol,
                                               int rank1,
                                               int max_rank,
-                                              bool online,
+                                              const std::string& offline_update,
+                                              const std::string& online_update,
                                               const std::string& linear_backend = "eigen");
 
 std::shared_ptr<ROMBase> InitializeROM(const myjson::json& rom_json,
                                        const myjson::json& run_json);
+
+inline ROMBase::ROMBase(std::vector<std::shared_ptr<UpdateBase>> basis_list_in)
+    : basis_list(std::move(basis_list_in)) {}
+
+inline ROMBase::~ROMBase() {
+#ifdef EIGEN_USE_LAPACKE
+    clear_mkl_lhs_cache();
+#endif
+}
+
+inline SolveStats ROMBase::FOM_main(const Eigen::SparseMatrix<double>&,
+                                    const Eigen::VectorXd&,
+                                    Eigen::VectorXd&,
+                                    const ROMContext&) {
+    throw std::runtime_error("FOM_main is not implemented for " + name);
+}

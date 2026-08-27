@@ -64,9 +64,3 @@ struct PetscDynamicLinearElasticAVM : DynamicLinearElasticAVM {
                         const Filtering& filtering,
                         int Iter) override;
 };
-
-inline std::unique_ptr<GroupFunctionalBase> InitializeDynamicLinearElasticGroupFunctional(const myjson::json& j,
-                                                                                         const std::string& backend) {
-    if (backend == "eigen") return std::make_unique<EigenDynamicLinearElasticAVM>(j);
-    return std::make_unique<PetscDynamicLinearElasticAVM>(j);
-}

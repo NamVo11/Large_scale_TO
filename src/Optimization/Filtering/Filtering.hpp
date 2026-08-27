@@ -15,8 +15,8 @@ struct Filtering {
     std::string type;
     double rmin = 3.0;
     double beta = 1.0;
-    int beta_loop = 50;
-    double beta_max = 8.0;
+    int beta_loop = 1000;
+    double beta_max = 1.0;
     double T = 0.5;
     Eigen::MatrixXd xTilde;
     Eigen::MatrixXd xPhys;
@@ -31,10 +31,10 @@ struct Filtering {
     explicit Filtering(const myjson::json& j) {
         type = j.at("type").get<std::string>();
         rmin = j.at("rmin").get<double>();
-        beta = j.at("beta").get<double>();
-        beta_loop = j.at("beta_loop").get<int>();
-        beta_max = j.at("beta_max").get<double>();
-        T = j.at("T").get<double>();
+        beta = myjson::double_value(j, "beta", beta);
+        beta_loop = myjson::int_value(j, "beta_loop", beta_loop);
+        beta_max = myjson::double_value(j, "beta_max", beta_max);
+        T = myjson::double_value(j, "T", T);
     }
 
     virtual ~Filtering() = default;
@@ -45,8 +45,7 @@ struct Filtering {
 };
 
 struct DensityFiltering : Filtering {
-    explicit DensityFiltering(const myjson::json& j)
-        : Filtering(j) {}
+    explicit DensityFiltering(const myjson::json& j) : Filtering(j) {}
 
     void initialize(const FEM& fem) override;
     void calculate(const Eigen::MatrixXd& x,
@@ -55,8 +54,7 @@ struct DensityFiltering : Filtering {
 };
 
 struct SensitivityFiltering : Filtering {
-    explicit SensitivityFiltering(const myjson::json& j)
-        : Filtering(j) {}
+    explicit SensitivityFiltering(const myjson::json& j) : Filtering(j) {}
 
     void initialize(const FEM& fem) override;
     void calculate(const Eigen::MatrixXd& x,

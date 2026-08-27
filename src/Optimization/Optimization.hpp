@@ -14,6 +14,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 struct OptimizationHistory {
@@ -46,16 +47,35 @@ struct Optimization {
     Constraint constraint;
     OptimizationHistory history;
 
+    Optimization() = default;
+
+    Optimization(const myjson::json& optimization_json, const myjson::json& analysis_all_json,
+                 const myjson::json& output_json, const myjson::json& run_json,
+                 const std::string& input_json_path, const FEM& fem,
+                 std::vector<std::unique_ptr<Analysis>> analysis_all_in) {
+        if (analysis_all_in.empty()) throw std::runtime_error("Optimization: analysis_all is empty");
+        init_design_variables(fem, optimization_json.at("x0").get<double>());
+        MaxIter = optimization_json.at("MaxIter").get<int>();
+        Tol = optimization_json.at("Tol").get<double>();
+        filtering = InitializeFiltering(optimization_json.at("Filtering"));
+        algorithm_json = optimization_json.at("Algorithm");
+
+        const std::string linear_backend = run_json.at("linear_backend").get<std::string>();
+        objective = Objective(optimization_json.at("ObjectiveGroups"),
+                              linear_backend,
+                              analysis_all_json,
+                              run_json);
+        constraint = Constraint(optimization_json.at("Constraints"),
+                                linear_backend,
+                                analysis_all_json,
+                                run_json);
+        Output = OutputData(output_json, run_json, input_json_path);
+        analysis_all = std::move(analysis_all_in);
+    }
+
     void run(const FEM& fem);
     void init_design_variables(const FEM& fem, double x0);
 };
-
-inline myjson::json analysis_json_by_id(const myjson::json& analysis_all_json, int analysis_id) {
-    for (const auto& analysis_json : analysis_all_json) {
-        if (myjson::int_value(analysis_json, "id", 0) == analysis_id) return analysis_json;
-    }
-    throw std::runtime_error("Analysis id not found in JSON: " + std::to_string(analysis_id));
-}
 
 inline Optimization InitializeOptimization(const myjson::json& optimization_json,
                                            const myjson::json& analysis_all_json,
@@ -64,32 +84,11 @@ inline Optimization InitializeOptimization(const myjson::json& optimization_json
                                            const std::string& input_json_path,
                                            const FEM& fem,
                                            std::vector<std::unique_ptr<Analysis>> analysis_all) {
-    if (analysis_all.empty()) throw std::runtime_error("InitializeOptimization: analysis_all is empty");
-    Optimization opt;
-    opt.init_design_variables(fem, myjson::double_value(optimization_json, "x0", 0.5));
-    opt.MaxIter = myjson::int_value(optimization_json, "MaxIter", opt.MaxIter);
-    opt.Tol = myjson::double_value(optimization_json, "Tol", opt.Tol);
-    opt.filtering = InitializeFiltering(optimization_json.at("Filtering"));
-    opt.algorithm_json = optimization_json.at("Algorithm");
-
-    const std::string linear_backend = myjson::string_value(run_json, "linear_backend", "petsc");
-    for (const auto& group_json : optimization_json.value("ObjectiveGroups", myjson::json::array())) {
-        opt.objective.add_group(InitializeGroupFunctional(group_json, linear_backend));
-    }
-    for (const auto& constraint_json : optimization_json.value("Constraints", myjson::json::array())) {
-        opt.constraint.add_group(InitializeGroupFunctional(constraint_json, linear_backend),
-                                 constraint_limit_from_json(constraint_json));
-    }
-
-    opt.Output = InitializeOutput(output_json, run_json, input_json_path);
-    for (auto& group : opt.objective.groups) {
-        myjson::json target_analysis = analysis_all_json.empty() ? myjson::json::object() : analysis_json_by_id(analysis_all_json, group->analysis_id);
-        group->ROM = InitializeROM(target_analysis.at("ROM"), run_json);
-    }
-    for (auto& group : opt.constraint.groups) {
-        myjson::json target_analysis = analysis_all_json.empty() ? myjson::json::object() : analysis_json_by_id(analysis_all_json, group->analysis_id);
-        group->ROM = InitializeROM(target_analysis.at("ROM"), run_json);
-    }
-    opt.analysis_all = std::move(analysis_all);
-    return opt;
+    return Optimization(optimization_json,
+                        analysis_all_json,
+                        output_json,
+                        run_json,
+                        input_json_path,
+                        fem,
+                        std::move(analysis_all));
 }

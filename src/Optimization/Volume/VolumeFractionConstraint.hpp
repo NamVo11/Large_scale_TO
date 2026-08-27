@@ -44,7 +44,3 @@ struct VolumeFractionConstraint : GroupFunctionalBase {
 private:
     void accumulate_terms();
 };
-
-inline std::unique_ptr<GroupFunctionalBase> InitializeVolumeGroupFunctional(const myjson::json& j) {
-    return std::make_unique<VolumeFractionConstraint>(j);
-}

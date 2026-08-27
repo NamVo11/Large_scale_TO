@@ -14,8 +14,6 @@
 
 namespace {
 
-constexpr int kFEMPrecomputeThreads = 8;
-
 std::string lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
@@ -281,7 +279,6 @@ void UnstructuredMesh::read_hypermesh_fem(const std::string& fem_file) {
     } else {
         throw std::runtime_error("UnstructuredMesh: unsupported FEM.fem_type: " + fem_type);
     }
-    uniform_element_matrices = false;
 
     std::unordered_map<int, HMSet> raw_sets;
     bool all_2d = true;
@@ -429,16 +426,13 @@ void UnstructuredMesh::read_hypermesh_fem(const std::string& fem_file) {
         set.local_ids.erase(std::unique(set.local_ids.begin(), set.local_ids.end()), set.local_ids.end());
         hm_sets_by_id[set.id] = set;
         if (!set.name.empty()) {
-            hm_sets_by_name[set.name] = set;
             hm_sets_by_name[lower(set.name)] = set;
         }
     }
 }
 
 const HMSet& UnstructuredMesh::hmset_by_name(const std::string& name) const {
-    auto it = hm_sets_by_name.find(name);
-    if (it != hm_sets_by_name.end()) return it->second;
-    it = hm_sets_by_name.find(lower(name));
+    auto it = hm_sets_by_name.find(lower(name));
     if (it != hm_sets_by_name.end()) return it->second;
     throw std::runtime_error("HMSET not found: " + name);
 }
@@ -452,7 +446,7 @@ void FEM::precompute_elements() {
     nonpositive_detJ_element_ids.clear();
     std::vector<int> nonpositive_detJ_flags(static_cast<std::size_t>(NElem), 0);
 
-#pragma omp parallel for num_threads(kFEMPrecomputeThreads) schedule(static)
+    #pragma omp parallel for schedule(static)
 
     for (int e = 0; e < NElem; ++e) {
         const auto& elem = Element.at(static_cast<std::size_t>(e));
@@ -495,6 +489,29 @@ void FEM::precompute_elements() {
     }
 }
 
+void FEM::InitializeRegions(const myjson::json& regions_json) {
+    if (!regions_json.is_array() || regions_json.empty()) throw std::runtime_error("JSON Regions is empty");
+
+    Regions.clear();
+    Regions.reserve(regions_json.size());
+
+    std::vector<int> assigned(static_cast<std::size_t>(NElem), 0);
+    for (const auto& item : regions_json) {
+        const std::string source = myjson::lower_ascii(myjson::string_value(item, "source", "range"));
+        if (source == "hmset") {
+            Regions.push_back(std::make_shared<HMSetRegion>(*this, item, assigned));
+        } else if (source == "range") {
+            Regions.push_back(std::make_shared<RangeRegion>(*this, item, assigned));
+        } else {
+            throw std::runtime_error("Unknown Region.source: " + source);
+        }
+    }
+
+    if (std::any_of(assigned.begin(), assigned.end(), [](int v) { return v == 0; })) {
+        throw std::runtime_error("Some elements are not assigned to any region");
+    }
+}
+
 void FEM::InitializeMaterials(const myjson::json& materials_json) {
     if (!materials_json.is_array() || materials_json.empty()) {
         throw std::runtime_error("JSON Materials is empty");
@@ -502,7 +519,8 @@ void FEM::InitializeMaterials(const myjson::json& materials_json) {
     if (Regions.empty()) {
         throw std::runtime_error("FEM::InitializeMaterials requires FEM Regions initialized");
     }
-    for (const Region& region : Regions) {
+    for (const auto& region_ptr : Regions) {
+        const Region& region = *region_ptr;
         const auto material = InitializeMaterial(materials_json, region.mat_ids, region.status);
         for (int elem_id : region.elem_ids) {
             if (elem_id < 0 || elem_id >= static_cast<int>(ElementObjects.size())) {

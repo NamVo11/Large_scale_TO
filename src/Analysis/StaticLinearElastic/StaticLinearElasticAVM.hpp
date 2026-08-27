@@ -64,9 +64,3 @@ struct PetscStaticLinearElasticAVM : StaticLinearElasticAVM {
                         const Filtering& filtering,
                         int Iter) override;
 };
-
-inline std::unique_ptr<GroupFunctionalBase> InitializeStaticLinearElasticGroupFunctional(const myjson::json& j,
-                                                                                        const std::string& backend) {
-    if (backend == "eigen") return std::make_unique<EigenStaticLinearElasticAVM>(j);
-    return std::make_unique<PetscStaticLinearElasticAVM>(j);
-}

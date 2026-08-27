@@ -27,6 +27,3 @@ struct InitializationData {
     void apply_solver_options();
     void apply_runtime_environment();
 };
-
-json read_json_file(const std::string& path);
-std::string lower_ascii(std::string s);

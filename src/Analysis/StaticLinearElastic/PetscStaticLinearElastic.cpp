@@ -48,14 +48,10 @@ int omp_threads_from_env() {
     return static_cast<int>(n);
 }
 
-void clear_stored_petsc(Analysis& analysis) {
+void clear_stored_petsc(PetscStaticLinearElastic& analysis) {
     if (analysis.ROM) analysis.ROM->set_petsc_factorized_solver(nullptr, nullptr);
-    AnalysisResult& r = analysis.results;
-    if (r.K_inf) MatDestroy(&r.K_inf);
-    if (r.M) MatDestroy(&r.M);
-    if (r.K_eff) MatDestroy(&r.K_eff);
-    if (r.factorized_K_initial) KSPDestroy(&r.factorized_K_initial);
-    if (r.factorized_K_eff) KSPDestroy(&r.factorized_K_eff);
+    if (analysis.K_inf) MatDestroy(&analysis.K_inf);
+    if (analysis.factorized_K_initial) KSPDestroy(&analysis.factorized_K_initial);
 }
 
 void store_factorized_solver(KSP& target, KSP source) {
@@ -153,12 +149,13 @@ void PetscStaticLinearElastic::assemble_K(const FEM& fem,
         const int num_threads = omp_threads_from_env();
         std::vector<std::vector<ElementContribution>> thread_contribs(static_cast<std::size_t>(num_threads));
 
-        for (const Region& region : fem.Regions) {
+        for (const auto& region_ptr : fem.Regions) {
+            const Region& region = *region_ptr;
             const double region_nu = element_material(fem, region.elem_ids.front()).nu();
             ElementMatrix uniform_em;
             if (fem.uniform_element_matrices) {
                 if (region.elem_ids.empty()) throw std::runtime_error("petsc assemble_K: region has no elements");
-                uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.Thickness);
+                uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
             }
 
             #pragma omp parallel num_threads(num_threads)
@@ -173,7 +170,7 @@ void PetscStaticLinearElastic::assemble_K(const FEM& fem,
                     ElementMatrix local_em;
                     const ElementMatrix* em_ptr = &uniform_em;
                     if (!fem.uniform_element_matrices) {
-                        local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.Thickness);
+                        local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
                         em_ptr = &local_em;
                     }
                     const ElementMatrix& em = *em_ptr;
@@ -198,12 +195,13 @@ void PetscStaticLinearElastic::assemble_K(const FEM& fem,
             }
         }
     } else {
-        for (const Region& region : fem.Regions) {
+        for (const auto& region_ptr : fem.Regions) {
+            const Region& region = *region_ptr;
             const double region_nu = element_material(fem, region.elem_ids.front()).nu();
             ElementMatrix uniform_em;
             if (fem.uniform_element_matrices) {
                 if (region.elem_ids.empty()) throw std::runtime_error("petsc assemble_K: region has no elements");
-                uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.Thickness);
+                uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
             }
             for (int elem_id : region.elem_ids) {
                 if (elem_id < elem_start || elem_id >= elem_end) continue;
@@ -211,7 +209,7 @@ void PetscStaticLinearElastic::assemble_K(const FEM& fem,
                 ElementMatrix local_em;
                 const ElementMatrix* em_ptr = &uniform_em;
                 if (!fem.uniform_element_matrices) {
-                    local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.Thickness);
+                    local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
                     em_ptr = &local_em;
                 }
                 const ElementMatrix& em = *em_ptr;
@@ -241,12 +239,12 @@ void PetscStaticLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_e
     const PetscInt ndof = fem.ndof;
     const PetscInt d_nz = fem.dim == 2 ? 64 : 192;
     MatCreateAIJ(PETSC_COMM_WORLD, PETSC_DECIDE, PETSC_DECIDE, ndof, ndof,
-                 d_nz, nullptr, d_nz, nullptr, &results.K_inf);
-    Mat K = results.K_inf;
+                 d_nz, nullptr, d_nz, nullptr, &K_inf);
+    Mat K = K_inf;
     assemble_K(fem, y_elem, K);
     PetscTime(&t1);
-    results.assembly_time = t1 - t0;
-    if (rank == 0) std::cout << "  assembly[s]: petsc static K = " << results.assembly_time << "\n";
+    assembly_time = t1 - t0;
+    if (rank == 0) std::cout << "  assembly[s]: petsc static K = " << assembly_time << "\n";
 
     const auto fixed = SPC();
     MyAlgebra::Petsc::apply_dirichlet_to_matrix(K, fixed, 1.0);
@@ -265,24 +263,21 @@ void PetscStaticLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_e
     PetscTime(&t0);
     const SolveStats stats = solve_with_common_rom(*ROM, K, rhs, u, make_context(*this, Iter), &K_eigen_cache);
     PetscTime(&t1);
-    results.solve_time = t1 - t0;
-    results.K_inf_eigen = K_eigen_cache;
-    store_factorized_solver(results.factorized_K_initial, ROM->get_petsc_factorized_solver(K));
+    solve_time = t1 - t0;
+    store_factorized_solver(factorized_K_initial, ROM->get_petsc_factorized_solver(K));
 
-    results.U.resize(static_cast<int>(ndof), Nstep + 1);
-    results.V.resize(0, 0);
-    results.A.resize(0, 0);
-    results.F_ext.resize(static_cast<int>(ndof), Nstep + 1);
-    results.U.setZero();
-    results.F_ext.setZero();
-    results.ksp_iterations.clear();
-    results.ksp_residuals.clear();
-    results.ksp_iterations.push_back(stats.ksp_iterations);
-    results.ksp_residuals.push_back(stats.residual_norm);
-    results.SPCdofs = fixed;
-    results.free = free_dofs(static_cast<int>(ndof));
-    gather_vec_to_all_into_column(u, results.U, Nstep);
-    gather_vec_to_all_into_column(f_ext, results.F_ext, Nstep);
+    U.resize(static_cast<int>(ndof), Nstep + 1);
+    F_ext.resize(static_cast<int>(ndof), Nstep + 1);
+    U.setZero();
+    F_ext.setZero();
+    ksp_iterations.clear();
+    ksp_residuals.clear();
+    ksp_iterations.push_back(stats.ksp_iterations);
+    ksp_residuals.push_back(stats.residual_norm);
+    SPCdofs = fixed;
+    free = free_dofs(static_cast<int>(ndof));
+    gather_vec_to_all_into_column(u, U, Nstep);
+    gather_vec_to_all_into_column(f_ext, F_ext, Nstep);
     if (rank == 0) {
         std::cout << "static solve_res = " << stats.residual_norm
                   << ", ksp_it = " << stats.ksp_iterations << "\n";

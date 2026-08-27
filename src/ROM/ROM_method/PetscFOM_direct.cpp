@@ -1,4 +1,4 @@
-#include "ROM/ROM_method/PetscFOM_direct.hpp"
+#include "ROM/ROM_method/FOM.hpp"
 
 #include "helper/MemoryDebug.hpp"
 #include "helper/PetscEigenBridge.hpp"
@@ -63,7 +63,7 @@ private:
 } // namespace
 
 PetscFOM_direct::PetscFOM_direct() : ROMBase({}) {
-    name = "FOM_direct";
+    name = "PetscFOM_direct";
     use_mor = false;
 }
 

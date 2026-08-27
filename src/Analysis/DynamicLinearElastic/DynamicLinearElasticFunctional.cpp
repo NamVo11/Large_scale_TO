@@ -27,16 +27,16 @@ void L2ComplianceElastic::calculate(const FEM& fem,
     df_dx.resize(0, 0);
 
     for (int k = 0; k <= nstep; ++k) {
-        const auto u = analysis.results.U.col(k);
-        const auto f = analysis.results.F_ext.col(k);
+        const auto u = analysis.U.col(k);
+        const auto f = analysis.F_ext.col(k);
         const double s = f.dot(u);
         value += s * s;
         dfdu_all.col(k).noalias() = 2.0 * s * f;
         dfdFext_all.col(k).noalias() = 2.0 * s * u;
-        for (int d : analysis.results.SPCdofs) {
+        for (int d : analysis.SPCdofs) {
             dfdu_all(d, k) = 0.0;
         }
-        for (int d : analysis.results.free) {
+        for (int d : analysis.free) {
             dfdFext_all(d, k) = 0.0;
         }
     }

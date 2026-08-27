@@ -18,22 +18,6 @@
 #include <mkl_spblas.h>
 #endif
 
-ROMBase::ROMBase(std::vector<std::shared_ptr<UpdateBase>> basis_list_in)
-    : basis_list(std::move(basis_list_in)) {}
-
-ROMBase::~ROMBase() {
-#ifdef EIGEN_USE_LAPACKE
-    clear_mkl_lhs_cache();
-#endif
-}
-
-SolveStats ROMBase::FOM_main(const Eigen::SparseMatrix<double>&,
-                             const Eigen::VectorXd&,
-                             Eigen::VectorXd&,
-                             const ROMContext&) {
-    throw std::runtime_error("FOM_main is not implemented for " + name);
-}
-
 std::shared_ptr<FactorizedSolver> ROMBase::get_factorized_solver(const Eigen::SparseMatrix<double>& lhs) const {
     return fom_solver ? fom_solver->get_factorized_solver(lhs) : nullptr;
 }
