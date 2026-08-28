@@ -6,23 +6,83 @@
 void DynamicLinearElasticAVM::initialize_terms(const FEM& fem,
                                               Analysis& analysis,
                                               const Eigen::MatrixXd& xPhys) {
-    auto* dynamic_analysis = dynamic_cast<DynamicLinearElastic*>(&analysis);
-    if (!dynamic_analysis) throw std::runtime_error("DynamicLinearElasticAVM requires DynamicLinearElastic analysis");
+    auto& dynamic_analysis = static_cast<DynamicLinearElastic&>(analysis);
+    value = 0.0;
     for (auto& term : terms) {
-        term->initialize(fem, *dynamic_analysis, xPhys);
+        term->initialize(fem, dynamic_analysis, xPhys);
+        value += term->scale * term->value;
     }
-    accumulate_terms();
 }
 
 void DynamicLinearElasticAVM::calculate_terms(const FEM& fem,
                                              Analysis& analysis,
                                              const Eigen::MatrixXd& xPhys) {
-    auto* dynamic_analysis = dynamic_cast<DynamicLinearElastic*>(&analysis);
-    if (!dynamic_analysis) throw std::runtime_error("DynamicLinearElasticAVM requires DynamicLinearElastic analysis");
+    auto& dynamic_analysis = static_cast<DynamicLinearElastic&>(analysis);
+    value = 0.0;
     for (auto& term : terms) {
-        term->calculate(fem, *dynamic_analysis, xPhys);
+        term->calculate(fem, dynamic_analysis, xPhys);
+        value += term->scale * term->value;
     }
-    accumulate_terms();
+}
+
+Eigen::VectorXd DynamicLinearElasticAVM::dfdu(const FEM& fem,
+                                             Analysis& analysis,
+                                             const Eigen::MatrixXd& xPhys,
+                                             int istep) {
+    auto& dynamic_analysis = static_cast<DynamicLinearElastic&>(analysis);
+    Eigen::VectorXd out;
+    for (auto& term : terms) {
+        add_scaled(out, term->dfdu(fem, dynamic_analysis, xPhys, istep), term->scale);
+    }
+    return out;
+}
+
+Eigen::VectorXd DynamicLinearElasticAVM::dfdv(const FEM& fem,
+                                             Analysis& analysis,
+                                             const Eigen::MatrixXd& xPhys,
+                                             int istep) {
+    auto& dynamic_analysis = static_cast<DynamicLinearElastic&>(analysis);
+    Eigen::VectorXd out;
+    for (auto& term : terms) {
+        add_scaled(out, term->dfdv(fem, dynamic_analysis, xPhys, istep), term->scale);
+    }
+    return out;
+}
+
+Eigen::VectorXd DynamicLinearElasticAVM::dfda(const FEM& fem,
+                                             Analysis& analysis,
+                                             const Eigen::MatrixXd& xPhys,
+                                             int istep) {
+    auto& dynamic_analysis = static_cast<DynamicLinearElastic&>(analysis);
+    Eigen::VectorXd out;
+    for (auto& term : terms) {
+        add_scaled(out, term->dfda(fem, dynamic_analysis, xPhys, istep), term->scale);
+    }
+    return out;
+}
+
+Eigen::VectorXd DynamicLinearElasticAVM::dfdFext(const FEM& fem,
+                                                Analysis& analysis,
+                                                const Eigen::MatrixXd& xPhys,
+                                                int istep) {
+    auto& dynamic_analysis = static_cast<DynamicLinearElastic&>(analysis);
+    Eigen::VectorXd out;
+    for (auto& term : terms) {
+        add_scaled(out, term->dfdFext(fem, dynamic_analysis, xPhys, istep), term->scale);
+    }
+    return out;
+}
+
+Eigen::VectorXd DynamicLinearElasticAVM::dfdx(const FEM& fem,
+                                             Analysis& analysis,
+                                             const Eigen::MatrixXd& xPhys,
+                                             int val_id) {
+    auto& dynamic_analysis = static_cast<DynamicLinearElastic&>(analysis);
+    Eigen::VectorXd out;
+    for (auto& term : terms) {
+        add_scaled(out, term->dfdx(fem, dynamic_analysis, xPhys, val_id), term->scale);
+    }
+    return out;
 }
 
 Eigen::MatrixXd DynamicLinearElasticAVM::AVM(const FEM&,
@@ -32,21 +92,4 @@ Eigen::MatrixXd DynamicLinearElasticAVM::AVM(const FEM&,
                                             const Filtering&,
                                             int) {
     throw std::runtime_error("DynamicLinearElasticAVM::AVM backend implementation is not migrated yet");
-}
-
-void DynamicLinearElasticAVM::accumulate_terms() {
-    reset_accumulated_derivatives();
-    for (const auto& term : terms) {
-        if (term->initial_value == 0.0) {
-            throw std::runtime_error("DynamicLinearElastic functional has zero initial_value: " + term->function_name);
-        }
-        const double alpha = term->weight / term->initial_value;
-        add_term_contribution(alpha,
-                              term->value,
-                              term->dfdu_all,
-                              term->dfdv_all,
-                              term->dfda_all,
-                              term->dfdFext_all,
-                              term->df_dx);
-    }
 }

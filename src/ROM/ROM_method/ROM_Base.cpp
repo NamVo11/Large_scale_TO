@@ -1,5 +1,6 @@
 #include "ROM/ROM_method/ROM_Base.hpp"
 
+#include "Analysis/Analysis.hpp"
 #include "ROM/Reduced_Basis_Algorithm/UpdateBase.hpp"
 
 #include <algorithm>
@@ -39,7 +40,26 @@ void ROMBase::set_petsc_system(Mat lhs, Vec rhs, Vec u) {
     if (fom_solver) fom_solver->set_petsc_system(lhs, rhs, u);
 }
 
-void ROMBase::store_info(const ROMInfo& info, const ROMContext& context) {
+const ROMBase::ROMContext& ROMBase::InitializeROMContext(const Analysis& analysis,
+                                                int opt_iter,
+                                                int solve_step,
+                                                int time_step,
+                                                double time,
+                                                const std::string& role,
+                                                const std::string& system_type,
+                                                bool is_end_of_analysis) {
+    ctx.analysis_id = analysis.id;
+    ctx.opt_iter = opt_iter;
+    ctx.solve_step = solve_step;
+    ctx.time_step = time_step;
+    ctx.time = time;
+    ctx.role = role;
+    ctx.system_type = system_type;
+    ctx.is_end_of_analysis = is_end_of_analysis;
+    return ctx;
+}
+
+void ROMBase::store_info(const ROMInfo& info, const ROMBase::ROMContext& context) {
     const std::size_t iter = static_cast<std::size_t>(std::max(0, context.opt_iter));
     const std::size_t step = static_cast<std::size_t>(std::max(0, context.time_step));
     if (ROM_info.size() <= iter) ROM_info.resize(iter + 1);
@@ -239,7 +259,7 @@ void ROMBase::ensure_mkl_lhs_cache(const Eigen::SparseMatrix<double>& A) const {
 #endif
 
 void ROMBase::append_basis_debug(const char* phase,
-                                 const ROMContext& context,
+                                 const ROMBase::ROMContext& context,
                                  int basis_id,
                                  const UpdateBase& basis) const {
     const char* dir = std::getenv("STAGE2_ROM_DEBUG_DIR");
@@ -265,7 +285,7 @@ void ROMBase::append_basis_debug(const char* phase,
     out << '\n';
 }
 
-void ROMBase::append_decision_debug(const ROMContext& context,
+void ROMBase::append_decision_debug(const ROMBase::ROMContext& context,
                                     int rank,
                                     double residual,
                                     double threshold,

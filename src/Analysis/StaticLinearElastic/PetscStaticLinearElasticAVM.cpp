@@ -1,0 +1,205 @@
+#include "Analysis/StaticLinearElastic/StaticLinearElasticAVM.hpp"
+
+#include "Analysis/Analysis.hpp"
+#include "FEM/Element/ElementBase.hpp"
+#include "ROM/ROM_method/ROM_Base.hpp"
+#include "helper/PetscEigenBridge.hpp"
+#include "helper/PetscEigenHelper.hpp"
+
+#include <petscsys.h>
+
+#include <algorithm>
+#include <cstdlib>
+#include <iostream>
+#include <numeric>
+#include <stdexcept>
+
+#include <omp.h>
+
+namespace {
+
+int nvar_of(const Eigen::MatrixXd& x) {
+    return static_cast<int>(x.cols());
+}
+
+void set_vec_from_eigen_vector(Vec v, const Eigen::VectorXd& values, double scale = 1.0) {
+    if (values.size() == 0) {
+        VecSet(v, 0.0);
+        return;
+    }
+
+    PetscMPIInt size = 1;
+    MPI_Comm_size(PetscObjectComm(reinterpret_cast<PetscObject>(v)), &size);
+    if (size == 1) {
+        PetscInt n = 0;
+        VecGetLocalSize(v, &n);
+        if (values.size() != static_cast<Eigen::Index>(n)) {
+            throw std::runtime_error("set_vec_from_eigen_vector: vector size mismatch");
+        }
+        PetscScalar* a = nullptr;
+        VecGetArray(v, &a);
+        for (PetscInt i = 0; i < n; ++i) a[i] = scale * values(static_cast<Eigen::Index>(i));
+        VecRestoreArray(v, &a);
+        return;
+    }
+
+    PetscMPIInt rank = 0;
+    MPI_Comm_rank(PetscObjectComm(reinterpret_cast<PetscObject>(v)), &rank);
+    VecSet(v, 0.0);
+    if (rank == 0) {
+        std::vector<PetscInt> ids(static_cast<std::size_t>(values.size()));
+        std::vector<PetscScalar> vals(static_cast<std::size_t>(values.size()));
+        std::iota(ids.begin(), ids.end(), 0);
+        for (Eigen::Index i = 0; i < values.size(); ++i) {
+            vals[static_cast<std::size_t>(i)] = scale * values(i);
+        }
+        VecSetValues(v, static_cast<PetscInt>(ids.size()), ids.data(), vals.data(), INSERT_VALUES);
+    }
+    VecAssemblyBegin(v);
+    VecAssemblyEnd(v);
+}
+
+void zero_fixed(Vec v, const std::vector<int>& fixed) {
+    if (fixed.empty()) return;
+
+    PetscMPIInt rank = 0;
+    MPI_Comm_rank(PetscObjectComm(reinterpret_cast<PetscObject>(v)), &rank);
+    if (rank == 0) {
+        std::vector<PetscInt> ids(fixed.begin(), fixed.end());
+        std::vector<PetscScalar> vals(ids.size(), 0.0);
+        VecSetValues(v, static_cast<PetscInt>(ids.size()), ids.data(), vals.data(), INSERT_VALUES);
+    }
+    VecAssemblyBegin(v);
+    VecAssemblyEnd(v);
+}
+
+Eigen::MatrixXd explicit_gradient_static(const FEM& fem,
+                                         Analysis& analysis,
+                                         const Eigen::MatrixXd& xPhys,
+                                         StaticLinearElasticAVM& object,
+                                         const Eigen::VectorXd& lambda) {
+    PetscMPIInt rank = 0;
+    PetscMPIInt size = 1;
+    MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+    MPI_Comm_size(PETSC_COMM_WORLD, &size);
+
+    int sens_element_threads = 1;
+    if (const char* env = std::getenv("SENS_ELEMENT_THREADS")) {
+        sens_element_threads = std::max(1, std::atoi(env));
+    }
+    if (size != 1) sens_element_threads = 1;
+
+    const int nvar = nvar_of(xPhys);
+    Eigen::MatrixXd df_dx = Eigen::MatrixXd::Zero(fem.NElem, nvar);
+    const Eigen::VectorXd u = analysis.U.col(analysis.Nstep);
+
+    for (const auto& region_ptr : fem.Regions) {
+        const Region& region = *region_ptr;
+        if (region.status != "design_val") continue;
+        if (region.elem_ids.empty()) continue;
+        const auto& region_element = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()));
+        if (!region_element || !region_element->material) {
+            throw std::runtime_error("Element material is not initialized");
+        }
+        const Material& region_material = *region_element->material;
+        if (region_material.val_ids.empty()) throw std::runtime_error("explicit_gradient_static: no val_ids");
+        if (region_material.E_values.empty()) throw std::runtime_error("explicit_gradient_static: no elastic parameters");
+        if (!analysis.interp) throw std::runtime_error("Analysis interpolation is not initialized");
+
+        const double region_nu = region_material.nu();
+        ElementMatrix uniform_em;
+        if (fem.uniform_element_matrices) {
+            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
+        }
+
+        const int region_nelem = static_cast<int>(region.elem_ids.size());
+        #pragma omp parallel for schedule(static) num_threads(sens_element_threads) if(sens_element_threads > 1)
+        for (int local_e = 0; local_e < region_nelem; ++local_e) {
+            const int elem_id = region.elem_ids[static_cast<std::size_t>(local_e)];
+            ElementMatrix local_em;
+            const ElementMatrix* em_ptr = &uniform_em;
+            if (!fem.uniform_element_matrices) {
+                local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
+                em_ptr = &local_em;
+            }
+            const ElementMatrix& em = *em_ptr;
+            const auto& dofs = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
+
+            Eigen::Matrix<double, 24, 1> u_elem_buffer;
+            Eigen::Matrix<double, 24, 1> lambda_elem_buffer;
+            Eigen::Matrix<double, 24, 1> Ku_elem_buffer;
+            for (int i = 0; i < em.ndof; ++i) {
+                const int dof_i = static_cast<int>(dofs[static_cast<std::size_t>(i)]);
+                u_elem_buffer(i) = u(dof_i);
+                lambda_elem_buffer(i) = lambda(dof_i);
+            }
+            const auto u_elem = u_elem_buffer.head(em.ndof);
+            const auto lambda_elem = lambda_elem_buffer.head(em.ndof);
+            auto Ku_elem = Ku_elem_buffer.head(em.ndof);
+            Ku_elem.noalias() = em.ke * u_elem;
+            const double lambda_dot_Ku = lambda_elem.dot(Ku_elem);
+
+            const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
+            if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
+            const Material& material = *element->material;
+            for (int val_id : material.val_ids) {
+                if (val_id <= 0 || val_id > nvar) throw std::runtime_error("explicit_gradient_static: val_id outside xPhys");
+                const double x = xPhys(elem_id, val_id - 1);
+                const double dE = analysis.interp->sensitivity(material.E_values, x, material.is_design(), val_id, analysis.interp->modulus_penalty());
+                df_dx(elem_id, val_id - 1) -= dE * lambda_dot_Ku;
+            }
+        }
+    }
+
+    for (int val_id = 0; val_id < nvar; ++val_id) {
+        const Eigen::VectorXd explicit_dfdx = object.dfdx(fem, analysis, xPhys, val_id);
+        if (explicit_dfdx.size() == 0) continue;
+        if (explicit_dfdx.size() != df_dx.rows()) {
+            throw std::runtime_error("explicit_gradient_static: explicit dfdx size mismatch");
+        }
+        df_dx.col(val_id).noalias() += explicit_dfdx;
+    }
+    if (rank == 0) {
+        std::cout << "  explicit_gradient_static: threads=" << sens_element_threads << "\n";
+    }
+    return df_dx;
+}
+
+} // namespace
+
+Eigen::MatrixXd PetscStaticLinearElasticAVM::AVM(const FEM& fem,
+                                                Analysis& analysis_base,
+                                                const Eigen::MatrixXd&,
+                                                const std::vector<int>& x_label,
+                                                const Filtering& filtering,
+                                                int Iter) {
+    auto& analysis = dynamic_cast<PetscStaticLinearElastic&>(analysis_base);
+    if (!ROM) throw std::runtime_error("PetscStaticLinearElasticAVM requires ROM initialized");
+    Mat K = analysis.K_inf;
+    if (!K) throw std::runtime_error("PetscStaticLinearElasticAVM requires PETSc forward stiffness matrix");
+
+    Vec lambda = nullptr;
+    Vec rhs = nullptr;
+    MatCreateVecs(K, &lambda, &rhs);
+    set_vec_from_eigen_vector(rhs, dfdu(fem, analysis, filtering.xPhys, analysis.Nstep));
+    zero_fixed(rhs, analysis.SPCdofs);
+
+    if (analysis.factorized_K_initial) {
+        ROM->set_petsc_factorized_solver(K, analysis.factorized_K_initial);
+    }
+    ROM->InitializeROMContext(analysis, Iter, 1, analysis.Nstep, 1.0, "adjoint", "static_adjoint", true);
+    const SolveStats stats = solve_petsc_with_rom(*ROM, K, rhs, lambda);
+    ROM->set_petsc_factorized_solver(nullptr, nullptr);
+    (void)stats;
+
+    const Eigen::VectorXd lambda_e = gather_vec_to_all_local(lambda);
+    VecDestroy(&rhs);
+    VecDestroy(&lambda);
+
+    Eigen::MatrixXd out = filtering.sensitivity(
+        explicit_gradient_static(fem, analysis, filtering.xPhys, *this, lambda_e));
+    for (Eigen::Index e = 0; e < out.rows(); ++e) {
+        if (x_label[static_cast<std::size_t>(e)] != 0) out.row(e).setZero();
+    }
+    return out;
+}

@@ -68,21 +68,18 @@ InitializationData::InitializationData(const std::string& input_json_path) {
     neum = InitializeBoundaryConditions(bc_json.at("Neum"), *fem);
 
     analysis_all_json = cfg.at("Analysis");
-    std::vector<std::unique_ptr<Analysis>> analysis_all;
+    std::vector<std::shared_ptr<Analysis>> analysis_all;
     analysis_all.reserve(analysis_all_json.size());
     
     for (const auto& analysis_json : analysis_all_json) {
 
-        analysis_all.push_back(InitializeAnalysis(analysis_json,run_json, interps,*fem, dirich, neum));
+        analysis_all.push_back(InitializeAnalysis(analysis_json, run_json, interps, dirich, neum));
 
     }
     if (analysis_all.empty()) throw std::runtime_error("JSON Analysis is empty");
 
     optimization = InitializeOptimization(cfg.at("Optimization"),
-                                          analysis_all_json,
                                           cfg.value("Output", json::object()),
-                                          run_json,
-                                          input_json_path,
-                                          *fem,
-                                          std::move(analysis_all));
+                                          run_json, input_json_path, *fem,
+                                          analysis_all);
 }

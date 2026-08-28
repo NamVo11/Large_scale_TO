@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ROM/ROMTypes.hpp"
+#include "ROM/ROM_method/ROM_Base.hpp"
 
 #include <Eigen/Cholesky>
 #include <Eigen/Dense>
@@ -21,12 +21,12 @@ public:
     explicit UpdateBase(int max_rank_in = 50) : max_rank(max_rank_in) {}
     virtual ~UpdateBase() = default;
 
-    const Eigen::MatrixXd& getBasis(const ROMContext& context) const;
+    const Eigen::MatrixXd& getBasis(const ROMBase::ROMContext& context) const;
     void setBasis(const Eigen::MatrixXd& V_in, const Eigen::VectorXd& s_in = Eigen::VectorXd());
     void setBasis(Eigen::MatrixXd&& V_in, Eigen::VectorXd&& s_in);
-    void addSnapshot(const Eigen::VectorXd& solution, const ROMContext& context);
+    void addSnapshot(const Eigen::VectorXd& solution, const ROMBase::ROMContext& context);
     void clearSnapshots();
-    virtual void update(const Eigen::VectorXd& solution, const ROMContext& context) = 0;
+    virtual void update(const Eigen::VectorXd& solution, const ROMBase::ROMContext& context) = 0;
     virtual bool update_reduced_cache_incremental(const Eigen::SparseMatrix<double>& A,
                                                   const Eigen::MatrixXd& V,
                                                   Eigen::MatrixXd& A_r_cache,

@@ -15,20 +15,14 @@ struct VolumeFunctionalBase {
     std::string function_name;
     double weight = 1.0;
     double initial_value = 1.0;
+    double scale = 1.0;
     double value = 0.0;
-
-    Eigen::MatrixXd dfdu_all;
-    Eigen::MatrixXd dfdv_all;
-    Eigen::MatrixXd dfda_all;
-    Eigen::MatrixXd dfdFext_all;
-    Eigen::MatrixXd df_dx;
 
     VolumeFunctionalBase() = default;
     explicit VolumeFunctionalBase(const myjson::json& j) {
         function_name = myjson::string_value(j, "function_name", function_name);
         weight = myjson::double_value(j, "weight", weight);
-        initial_value = myjson::double_value(j, "value_initial", initial_value);
-        if (initial_value == 0.0) initial_value = 1.0;
+        scale = weight / initial_value;
     }
     virtual ~VolumeFunctionalBase() = default;
 
@@ -39,6 +33,21 @@ struct VolumeFunctionalBase {
     virtual void calculate(const FEM& fem,
                            Analysis& analysis,
                            const Eigen::MatrixXd& xPhys) = 0;
+
+    virtual Eigen::VectorXd dfdu(const FEM& fem,
+                                 Analysis& analysis,
+                                 const Eigen::MatrixXd& xPhys,
+                                 int istep) = 0;
+
+    virtual Eigen::VectorXd dfdFext(const FEM& fem,
+                                    Analysis& analysis,
+                                    const Eigen::MatrixXd& xPhys,
+                                    int istep) = 0;
+
+    virtual Eigen::VectorXd dfdx(const FEM& fem,
+                                 Analysis& analysis,
+                                 const Eigen::MatrixXd& xPhys,
+                                 int val_id) = 0;
 };
 
 struct VolumeFractionTerm : VolumeFunctionalBase {
@@ -52,6 +61,25 @@ struct VolumeFractionTerm : VolumeFunctionalBase {
     void calculate(const FEM& fem,
                    Analysis& analysis,
                    const Eigen::MatrixXd& xPhys) override;
+
+    Eigen::VectorXd dfdx(const FEM& fem,
+                         Analysis& analysis,
+                         const Eigen::MatrixXd& xPhys,
+                         int val_id) override;
+
+    Eigen::VectorXd dfdu(const FEM&,
+                         Analysis&,
+                         const Eigen::MatrixXd&,
+                         int) override {
+        return Eigen::VectorXd();
+    }
+
+    Eigen::VectorXd dfdFext(const FEM&,
+                            Analysis&,
+                            const Eigen::MatrixXd&,
+                            int) override {
+        return Eigen::VectorXd();
+    }
 };
 
 inline std::unique_ptr<VolumeFunctionalBase> InitializeVolumeFunctional(const myjson::json& j) {

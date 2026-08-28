@@ -27,7 +27,7 @@ public:
         name = "IncrementalSVD";
     }
 
-    void update(const Eigen::VectorXd& solution, const ROMContext& context) override;
+    void update(const Eigen::VectorXd& solution, const ROMBase::ROMContext& context) override;
     void reset() override;
 
 private:

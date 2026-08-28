@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <utility>
 
-const Eigen::MatrixXd& UpdateBase::getBasis(const ROMContext&) const {
+const Eigen::MatrixXd& UpdateBase::getBasis(const ROMBase::ROMContext&) const {
     return V;
 }
 
@@ -19,7 +19,7 @@ void UpdateBase::setBasis(Eigen::MatrixXd&& V_in, Eigen::VectorXd&& s_in) {
     update_flag = true;
 }
 
-void UpdateBase::addSnapshot(const Eigen::VectorXd& solution, const ROMContext&) {
+void UpdateBase::addSnapshot(const Eigen::VectorXd& solution, const ROMBase::ROMContext&) {
     if (solution.size() == 0) return;
     if (snapshots.size() == 0) {
         snapshots.resize(solution.size(), 1);

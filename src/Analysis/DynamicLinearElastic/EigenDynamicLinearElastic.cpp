@@ -22,27 +22,6 @@
 
 namespace
 {
-
-    using Sparse = Eigen::SparseMatrix<double>;
-    using Triplet = Eigen::Triplet<double>;
-
-    const Material& element_material(const FEM& fem, int elem_id)
-    {
-        const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
-        if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
-        return *element->material;
-    }
-
-    std::pair<double, double> interp_element(const Analysis& analysis, const FEM& fem, int elem_id, double x)
-    {
-        const Material& material = element_material(fem, elem_id);
-        if (!analysis.interp) throw std::runtime_error("Analysis interpolation is not initialized");
-        const int val_id = material.val_ids.empty() ? 0 : material.val_ids.front();
-        const double Eeff = analysis.interp->calculate(material.E_values, x, material.is_design(), val_id, analysis.interp->modulus_penalty());
-        const double rhoeff = analysis.interp->calculate(material.rho_values, x, material.is_design(), val_id, analysis.interp->mass_density_penalty());
-        return {Eeff, rhoeff};
-    }
-
     int omp_threads_from_env()
     {
         const char *value = std::getenv("OMP_NUM_THREADS");
@@ -54,70 +33,165 @@ namespace
         return static_cast<int>(n);
     }
 
-} // namespace
-
-
-// Serial reference version kept for checking the parallel assembly.
-/*
-void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
-                                             const Eigen::MatrixXd &y_elem,
-                                             Eigen::SparseMatrix<double> &K,
-                                             Eigen::SparseMatrix<double> &M) const
-{
-    const Analysis &analysis = *this;
-    std::vector<Triplet> k_triplets;
-    std::vector<Triplet> m_triplets;
-    const int ndofe_max = fem.dim == 2 ? 8 : 24;
-    const std::size_t reserve_nnz = static_cast<std::size_t>(fem.NElem) *
-                                    static_cast<std::size_t>(ndofe_max) *
-                                    static_cast<std::size_t>(ndofe_max);
-    k_triplets.reserve(reserve_nnz);
-    m_triplets.reserve(reserve_nnz);
-
-    for (const auto& region_ptr : fem.Regions)
+    void set_neum(const Analysis &analysis, Eigen::VectorXd &f, int istep)
     {
-        const Region& region = *region_ptr;
-        const double region_nu = element_material(fem, region.elem_ids.front()).nu();
-        ElementMatrix uniform_em;
-        if (fem.uniform_element_matrices)
+        f.setZero();
+        for (const auto &bc_ptr : analysis.Neum)
         {
-            if (region.elem_ids.empty())
-                throw std::runtime_error("eigen assemble_K_M: region has no elements");
-            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
-        }
-        for (int elem_id : region.elem_ids)
-        {
-            const double x = y_elem(elem_id, 0);
-            const auto [Eeff, rhoeff] = interp_region(region, x);
-            ElementMatrix local_em;
-            const ElementMatrix *em_ptr = &uniform_em;
-            if (!fem.uniform_element_matrices)
-            {
-                local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
-                em_ptr = &local_em;
-            }
-            const ElementMatrix &em = *em_ptr;
-            const auto &rows = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
-            for (int i = 0; i < em.ndof; ++i)
-            {
-                const int row = static_cast<int>(rows[static_cast<std::size_t>(i)]);
-                for (int j = 0; j < em.ndof; ++j)
-                {
-                    const int col = static_cast<int>(rows[static_cast<std::size_t>(j)]);
-                    k_triplets.emplace_back(row, col, Eeff * em.ke(i, j));
-                    m_triplets.emplace_back(row, col, rhoeff * em.me(i, j));
-                }
-            }
+            const BoundaryCondition& bc = *bc_ptr;
+            const double value = bc.value(analysis, istep, static_cast<double>(bc.nDof));
+            for (int dof : bc.dof_ids)
+                f(dof) += value;
         }
     }
-    K.resize(fem.ndof, fem.ndof);
-    M.resize(fem.ndof, fem.ndof);
-    K.setFromTriplets(k_triplets.begin(), k_triplets.end());
-    M.setFromTriplets(m_triplets.begin(), m_triplets.end());
-    K.makeCompressed();
-    M.makeCompressed();
+
+    void set_dirichlet_rhs(const Analysis &analysis, Eigen::VectorXd &rhs, int istep)
+    {
+        for (const auto &bc_ptr : analysis.Dirich)
+        {
+            const BoundaryCondition& bc = *bc_ptr;
+            const double value = bc.value(analysis, istep, 1.0);
+            for (int dof : bc.dof_ids)
+                rhs(dof) = value;
+        }
+    }
+
+    void clear_stored_eigen(EigenDynamicLinearElastic& analysis)
+    {
+        if (analysis.ROM) analysis.ROM->set_factorized_solver(analysis.K_inf, nullptr);
+        analysis.K_inf.resize(0, 0);
+        analysis.M.resize(0, 0);
+        analysis.K_eff.resize(0, 0);
+        analysis.factorized_K_initial.reset();
+        analysis.factorized_K_eff.reset();
+    }
+
+} // namespace
+
+void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_elem, int Iter)
+{
+    EigenDynamicLinearElastic &analysis = *this;
+    (void)Iter;
+    if (!analysis.ROM)
+        throw std::runtime_error("EigenDynamicLinearElastic::solver requires analysis.ROM initialized");
+    clear_stored_eigen(analysis);
+
+    const int ndof = fem.ndof;
+    using Clock = std::chrono::steady_clock;
+    auto t0 = Clock::now();
+    MemoryDebug::print("forward_begin");
+    // Memory-saving flow: K_inf is assembled as raw K first. After
+    // K_eff is formed, K_inf is converted in-place to K_initial with SPC.
+    MyAlgebra::Sparse& K = analysis.K_inf;
+    MyAlgebra::Sparse& M = analysis.M;
+    assemble_K_M(fem, y_elem, K, M);
+    MemoryDebug::print("forward_after_assemble_K_M");
+    analysis.assembly_time = std::chrono::duration<double>(Clock::now() - t0).count();
+    std::cout << "  assembly[s]: eigen K/M = " << analysis.assembly_time << "\n";
+
+    const std::vector<int> fixed = analysis.SPC();
+
+    const double beta = 0.25;
+    const double gamma = 0.5;
+    const double a0c = 1.0 / (beta * analysis.dt * analysis.dt);
+    analysis.K_eff = K + a0c * M;
+    MyAlgebra::Sparse& K_initial = analysis.K_inf;
+    MyAlgebra::Sparse& K_eff = analysis.K_eff;
+    MemoryDebug::print("forward_after_prepare_Keff");
+    // From here, K_initial stores the SPC-applied initial stiffness, not raw K.
+    MyAlgebra::EigenOps::apply_dirichlet_to_matrix(K_initial, fixed, 1.0);
+    MyAlgebra::EigenOps::apply_dirichlet_to_matrix(K_eff, fixed, 1.0);
+    MemoryDebug::print("forward_after_dirichlet_K_initial");
+
+    Eigen::VectorXd u = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd v = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd acc = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd u_pred = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd v_pred = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd rhs = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd f_ext = Eigen::VectorXd::Zero(ndof);
+    MemoryDebug::print("forward_after_vec_create");
+
+    std::shared_ptr<ROMBase> &rom = analysis.ROM;
+
+    set_neum(analysis, f_ext, 0);
+    rhs = f_ext;
+    set_dirichlet_rhs(analysis, rhs, 0);
+    rom->InitializeROMContext(analysis, Iter, 1, 0, 0.0, "primal", "initial_equilibrium", analysis.Nstep == 0);
+    const SolveStats initial = rom->main(K_initial, rhs, u);
+
+    if (analysis.save_factorized_K_initial) {
+        analysis.factorized_K_initial = rom->get_factorized_solver(K_initial);
+    } else {
+        rom->set_factorized_solver(K_initial, nullptr);
+        analysis.factorized_K_initial.reset();
+    }
+
+    MemoryDebug::print("forward_after_initial_solve_store_factor");
+    std::cout << "step   0: solve_res = " << initial.residual_norm << "\n";
+
+    const int nstore = analysis.Nstep + 1;
+    analysis.U.resize(ndof, nstore);
+    analysis.V.resize(0, 0); // save memory by not storing velocity history
+    analysis.A.resize(ndof, nstore);
+    analysis.F_ext.resize(ndof, nstore);
+    MemoryDebug::print("forward_after_history_alloc");
+    analysis.ksp_iterations.clear();
+    analysis.ksp_residuals.clear();
+    analysis.SPCdofs = fixed;
+    analysis.free = analysis.free_dofs(ndof);
+    analysis.U.col(0) = u;
+    // Velocity history is not used by the current objective/sensitivity flow.
+    // Keep V empty in this memory-saving version.
+    // analysis.V.col(0) = v;
+    analysis.A.col(0) = acc;
+    analysis.F_ext.col(0) = f_ext;
+
+    t0 = Clock::now();
+    for (int istep = 1; istep <= analysis.Nstep; ++istep)
+    {
+        u_pred = u + analysis.dt * v + analysis.dt * analysis.dt * (0.5 - beta) * acc;
+        v_pred = v + analysis.dt * (1.0 - gamma) * acc;
+
+        set_neum(analysis, f_ext, istep);
+        rhs.noalias() = f_ext + a0c * (M * u_pred);
+        set_dirichlet_rhs(analysis, rhs, istep);
+
+        rom->InitializeROMContext(analysis,
+                                  Iter,
+                                  istep + 1,
+                                  istep,
+                                  istep * analysis.dt,
+                                  "primal",
+                                  "newmark_effective",
+                                  istep == analysis.Nstep);
+        const SolveStats step = rom->main(K_eff, rhs, u);
+
+        if (!analysis.factorized_K_eff)
+            analysis.factorized_K_eff = rom->get_factorized_solver(K_eff);
+        if (istep == 1 || istep == analysis.Nstep) {
+            MemoryDebug::print("forward_after_step_" + std::to_string(istep));
+        }
+        analysis.ksp_iterations.push_back(step.ksp_iterations);
+        analysis.ksp_residuals.push_back(step.residual_norm);
+
+        acc = a0c * (u - u_pred);
+        v = v_pred + gamma * analysis.dt * acc;
+
+        std::cout << "step " << istep << ": solve_res = "
+                  << step.residual_norm << ", ksp_it = " << step.ksp_iterations
+                  << ", ksp_res = " << step.residual_norm << "\n";
+
+        analysis.U.col(istep) = u;
+        // Velocity history is intentionally not stored in this memory-saving flow.
+        // analysis.V.col(istep) = v;
+        analysis.A.col(istep) = acc;
+        analysis.F_ext.col(istep) = f_ext;
+    }
+    analysis.solve_time = std::chrono::duration<double>(Clock::now() - t0).count();
+    MemoryDebug::print("forward_after_store_matrices");
+    MemoryDebug::print("forward_after_destroy_temp");
 }
-*/
 
 // Parallel assembly version using OpenMP. Each thread has its own vector of triplets to avoid data races
 void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
@@ -138,10 +212,10 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
     const int num_threads = omp_threads_from_env();
 
     // Mỗi thread có vector riêng để tránh data race khi emplace_back().
-    std::vector<std::vector<Triplet>> thread_k_triplets(
+    std::vector<std::vector<MyAlgebra::Triplet>> thread_k_triplets(
         static_cast<std::size_t>(num_threads));
 
-    std::vector<std::vector<Triplet>> thread_m_triplets(
+    std::vector<std::vector<MyAlgebra::Triplet>> thread_m_triplets(
         static_cast<std::size_t>(num_threads));
 
     const std::size_t reserve_per_thread =
@@ -159,7 +233,11 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
     for (const auto& region_ptr : fem.Regions)
     {
         const Region& region = *region_ptr;
-        const double region_nu = element_material(fem, region.elem_ids.front()).nu();
+        const auto& region_element = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()));
+        if (!region_element || !region_element->material) {
+            throw std::runtime_error("Element material is not initialized");
+        }
+        const double region_nu = region_element->material->nu();
 
         ElementMatrix uniform_em;
 
@@ -192,7 +270,21 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
                 const int elem_id = region.elem_ids[e];
 
                 const double x = y_elem(elem_id, 0);
-                const auto [Eeff, rhoeff] = interp_element(analysis, fem, elem_id, x);
+                const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
+                if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
+                if (!analysis.interp) throw std::runtime_error("Analysis interpolation is not initialized");
+                const Material& material = *element->material;
+                const int val_id = material.val_ids.empty() ? 0 : material.val_ids.front();
+                const double Eeff = analysis.interp->calculate(material.E_values,
+                                                               x,
+                                                               material.is_design(),
+                                                               val_id,
+                                                               analysis.interp->modulus_penalty());
+                const double rhoeff = analysis.interp->calculate(material.rho_values,
+                                                                 x,
+                                                                 material.is_design(),
+                                                                 val_id,
+                                                                 analysis.interp->mass_density_penalty());
 
                 ElementMatrix local_em;
                 const ElementMatrix *em_ptr = &uniform_em;
@@ -239,8 +331,8 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
         total_m_triplets += thread_m_triplets[static_cast<std::size_t>(tid)].size();
     }
 
-    std::vector<Triplet> k_triplets;
-    std::vector<Triplet> m_triplets;
+    std::vector<MyAlgebra::Triplet> k_triplets;
+    std::vector<MyAlgebra::Triplet> m_triplets;
 
     k_triplets.reserve(total_k_triplets);
     m_triplets.reserve(total_m_triplets);
@@ -279,180 +371,4 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
 
     K.makeCompressed();
     M.makeCompressed();
-}
-
-namespace
-{
-
-    void set_neum(const Analysis &analysis, Eigen::VectorXd &f, int istep)
-    {
-        f.setZero();
-        for (const auto &bc_ptr : analysis.Neum)
-        {
-            const BoundaryCondition& bc = *bc_ptr;
-            const double value = bc.value(analysis, istep, static_cast<double>(bc.nDof));
-            for (int dof : bc.dof_ids)
-                f(dof) += value;
-        }
-    }
-
-    void set_dirichlet_rhs(const Analysis &analysis, Eigen::VectorXd &rhs, int istep)
-    {
-        for (const auto &bc_ptr : analysis.Dirich)
-        {
-            const BoundaryCondition& bc = *bc_ptr;
-            const double value = bc.value(analysis, istep, 1.0);
-            for (int dof : bc.dof_ids)
-                rhs(dof) = value;
-        }
-    }
-
-    ROMContext make_context(const Analysis &analysis,
-                            int Iter,
-                            int solve_step,
-                            int time_step,
-                            const std::string &system_type,
-                            bool is_end)
-    {
-        const auto& dynamic = dynamic_cast<const DynamicLinearElastic&>(analysis);
-        ROMContext ctx;
-        ctx.analysis_id = analysis.id;
-        ctx.opt_iter = Iter;
-        ctx.solve_step = solve_step;
-        ctx.time_step = time_step;
-        ctx.time = time_step * dynamic.dt;
-        ctx.role = "primal";
-        ctx.system_type = system_type;
-        ctx.is_end_of_analysis = is_end;
-        return ctx;
-    }
-
-    void clear_stored_eigen(EigenDynamicLinearElastic& analysis)
-    {
-        if (analysis.ROM) analysis.ROM->set_factorized_solver(analysis.K_inf, nullptr);
-        analysis.K_inf.resize(0, 0);
-        analysis.M.resize(0, 0);
-        analysis.K_eff.resize(0, 0);
-        analysis.factorized_K_initial.reset();
-        analysis.factorized_K_eff.reset();
-    }
-
-} // namespace
-
-void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_elem, int Iter)
-{
-    EigenDynamicLinearElastic &analysis = *this;
-    (void)Iter;
-    if (!analysis.ROM)
-        throw std::runtime_error("EigenDynamicLinearElastic::solver requires analysis.ROM initialized");
-    clear_stored_eigen(analysis);
-
-    const int ndof = fem.ndof;
-    using Clock = std::chrono::steady_clock;
-    auto t0 = Clock::now();
-    MemoryDebug::print("forward_begin");
-    // Memory-saving flow: K_inf is assembled as raw K first. After
-    // K_eff is formed, K_inf is converted in-place to K_initial with SPC.
-    Sparse& K = analysis.K_inf;
-    Sparse& M = analysis.M;
-    assemble_K_M(fem, y_elem, K, M);
-    MemoryDebug::print("forward_after_assemble_K_M");
-    analysis.assembly_time = std::chrono::duration<double>(Clock::now() - t0).count();
-    std::cout << "  assembly[s]: eigen K/M = " << analysis.assembly_time << "\n";
-
-    const std::vector<int> fixed = analysis.SPC();
-
-    const double beta = 0.25;
-    const double gamma = 0.5;
-    const double a0c = 1.0 / (beta * analysis.dt * analysis.dt);
-    analysis.K_eff = K + a0c * M;
-    Sparse& K_initial = analysis.K_inf;
-    Sparse& K_eff = analysis.K_eff;
-    MemoryDebug::print("forward_after_prepare_Keff");
-    // From here, K_initial stores the SPC-applied initial stiffness, not raw K.
-    MyAlgebra::EigenOps::apply_dirichlet_to_matrix(K_initial, fixed, 1.0);
-    MyAlgebra::EigenOps::apply_dirichlet_to_matrix(K_eff, fixed, 1.0);
-    MemoryDebug::print("forward_after_dirichlet_K_initial");
-
-    Eigen::VectorXd u = Eigen::VectorXd::Zero(ndof);
-    Eigen::VectorXd v = Eigen::VectorXd::Zero(ndof);
-    Eigen::VectorXd acc = Eigen::VectorXd::Zero(ndof);
-    Eigen::VectorXd u_pred = Eigen::VectorXd::Zero(ndof);
-    Eigen::VectorXd v_pred = Eigen::VectorXd::Zero(ndof);
-    Eigen::VectorXd rhs = Eigen::VectorXd::Zero(ndof);
-    Eigen::VectorXd f_ext = Eigen::VectorXd::Zero(ndof);
-    MemoryDebug::print("forward_after_vec_create");
-
-    std::shared_ptr<ROMBase> &rom = analysis.ROM;
-
-    set_neum(analysis, f_ext, 0);
-    rhs = f_ext;
-    set_dirichlet_rhs(analysis, rhs, 0);
-    const SolveStats initial = rom->main(
-        K_initial, rhs, u, make_context(analysis, Iter, 1, 0, "initial_equilibrium", analysis.Nstep == 0));
-
-    if (analysis.save_factorized_K_initial) {
-        analysis.factorized_K_initial = rom->get_factorized_solver(K_initial);
-    } else {
-        rom->set_factorized_solver(K_initial, nullptr);
-        analysis.factorized_K_initial.reset();
-    }
-
-    MemoryDebug::print("forward_after_initial_solve_store_factor");
-    std::cout << "step   0: solve_res = " << initial.residual_norm << "\n";
-
-    const int nstore = analysis.Nstep + 1;
-    analysis.U.resize(ndof, nstore);
-    analysis.V.resize(0, 0); // save memory by not storing velocity history
-    analysis.A.resize(ndof, nstore);
-    analysis.F_ext.resize(ndof, nstore);
-    MemoryDebug::print("forward_after_history_alloc");
-    analysis.ksp_iterations.clear();
-    analysis.ksp_residuals.clear();
-    analysis.SPCdofs = fixed;
-    analysis.free = analysis.free_dofs(ndof);
-    analysis.U.col(0) = u;
-    // Velocity history is not used by the current objective/sensitivity flow.
-    // Keep V empty in this memory-saving version.
-    // analysis.V.col(0) = v;
-    analysis.A.col(0) = acc;
-    analysis.F_ext.col(0) = f_ext;
-
-    t0 = Clock::now();
-    for (int istep = 1; istep <= analysis.Nstep; ++istep)
-    {
-        u_pred = u + analysis.dt * v + analysis.dt * analysis.dt * (0.5 - beta) * acc;
-        v_pred = v + analysis.dt * (1.0 - gamma) * acc;
-
-        set_neum(analysis, f_ext, istep);
-        rhs.noalias() = f_ext + a0c * (M * u_pred);
-        set_dirichlet_rhs(analysis, rhs, istep);
-
-        const SolveStats step = rom->main(
-            K_eff, rhs, u, make_context(analysis, Iter, istep + 1, istep, "newmark_effective", istep == analysis.Nstep));
-
-        if (!analysis.factorized_K_eff)
-            analysis.factorized_K_eff = rom->get_factorized_solver(K_eff);
-        if (istep == 1 || istep == analysis.Nstep) {
-            MemoryDebug::print("forward_after_step_" + std::to_string(istep));
-        }
-        analysis.ksp_iterations.push_back(step.ksp_iterations);
-        analysis.ksp_residuals.push_back(step.residual_norm);
-
-        acc = a0c * (u - u_pred);
-        v = v_pred + gamma * analysis.dt * acc;
-
-        std::cout << "step " << istep << ": solve_res = "
-                  << step.residual_norm << ", ksp_it = " << step.ksp_iterations
-                  << ", ksp_res = " << step.residual_norm << "\n";
-
-        analysis.U.col(istep) = u;
-        // Velocity history is intentionally not stored in this memory-saving flow.
-        // analysis.V.col(istep) = v;
-        analysis.A.col(istep) = acc;
-        analysis.F_ext.col(istep) = f_ext;
-    }
-    analysis.solve_time = std::chrono::duration<double>(Clock::now() - t0).count();
-    MemoryDebug::print("forward_after_store_matrices");
-    MemoryDebug::print("forward_after_destroy_temp");
 }

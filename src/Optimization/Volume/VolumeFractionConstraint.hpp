@@ -10,19 +10,12 @@
 struct VolumeFractionConstraint : GroupFunctionalBase {
     std::vector<std::unique_ptr<VolumeFunctionalBase>> terms;
 
-    explicit VolumeFractionConstraint(const myjson::json& j) {
-        analysis_id = myjson::int_value(j, "analysis_id", analysis_id);
-        sens_type = myjson::string_value(j, "sens_type", sens_type);
-        sens_function = myjson::string_value(j, "sens_function", sens_function);
-        type = myjson::string_value(j, "type", type);
-        sensitivity_method = InitializeSensitivityMethod(sens_type);
-        const myjson::json terms_json = j.value("terms", myjson::json::array());
-        if (terms_json.empty()) {
-            terms.push_back(InitializeVolumeFunctional(j));
-        } else {
-            for (const auto& term_json : terms_json) {
-                terms.push_back(InitializeVolumeFunctional(term_json));
-            }
+    VolumeFractionConstraint(const myjson::json& j,
+                             const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                             const myjson::json& run_json)
+        : GroupFunctionalBase(j, analysis_all, run_json) {
+        for (const auto& term_json : j.at("terms")) {
+            terms.push_back(InitializeVolumeFunctional(term_json));
         }
     }
 
@@ -34,6 +27,21 @@ struct VolumeFractionConstraint : GroupFunctionalBase {
                          Analysis& analysis,
                          const Eigen::MatrixXd& xPhys) override;
 
+    Eigen::VectorXd dfdu(const FEM& fem,
+                         Analysis& analysis,
+                         const Eigen::MatrixXd& xPhys,
+                         int istep) override;
+
+    Eigen::VectorXd dfdFext(const FEM& fem,
+                            Analysis& analysis,
+                            const Eigen::MatrixXd& xPhys,
+                            int istep) override;
+
+    Eigen::VectorXd dfdx(const FEM& fem,
+                         Analysis& analysis,
+                         const Eigen::MatrixXd& xPhys,
+                         int val_id) override;
+
     Eigen::MatrixXd AVM(const FEM& fem,
                         Analysis& analysis,
                         const Eigen::MatrixXd& x,
@@ -41,6 +49,4 @@ struct VolumeFractionConstraint : GroupFunctionalBase {
                         const Filtering& filtering,
                         int Iter) override;
 
-private:
-    void accumulate_terms();
 };

@@ -31,7 +31,7 @@ void MyIncrementalQR1::reset()
 }
 
 void MyIncrementalQR1::update(const Eigen::VectorXd &solution,
-                              const ROMContext &context)
+                              const ROMBase::ROMContext &context)
 {
     update_flag = false;
     const Eigen::MatrixXd &V_old = getBasis(context);

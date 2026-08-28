@@ -23,7 +23,7 @@ double wall_seconds() {
 ErrorAssessment RelativeResidualEstimator::assess(const Eigen::SparseMatrix<double>& lhs,
                                                   const Eigen::VectorXd& rhs,
                                                   const Eigen::VectorXd& solution,
-                                                  const ROMContext&,
+                                                  const ROMBase::ROMContext&,
                                                   MklSparseMatrixHandle lhs_mkl) {
     const double rel_res = relative_residual(lhs, rhs, solution, lhs_mkl);
     ErrorAssessment assessment;

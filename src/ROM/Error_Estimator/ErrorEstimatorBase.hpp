@@ -1,18 +1,11 @@
 #pragma once
 
-#include "ROM/ROMTypes.hpp"
+#include "ROM/ROM_method/ROM_Base.hpp"
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
 #include <string>
-
-#ifdef EIGEN_USE_LAPACKE
-#include <mkl_spblas.h>
-using MklSparseMatrixHandle = sparse_matrix_t;
-#else
-using MklSparseMatrixHandle = void*;
-#endif
 
 struct ErrorAssessment {
     std::string estimator_name;
@@ -31,7 +24,7 @@ public:
     virtual ErrorAssessment assess(const Eigen::SparseMatrix<double>& lhs,
                                    const Eigen::VectorXd& rhs,
                                    const Eigen::VectorXd& solution,
-                                   const ROMContext& context,
+                                   const ROMBase::ROMContext& context,
                                    MklSparseMatrixHandle lhs_mkl = nullptr) = 0;
 
     virtual double relative_residual(const Eigen::SparseMatrix<double>& lhs,

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ROM/Error_Estimator/ErrorEstimatorBase.hpp"
 #include "ROM/ROMTypes.hpp"
 #include "myjson.hpp"
 
@@ -22,9 +21,22 @@
 
 class UpdateBase;
 class FactorizedSolver;
+class ErrorEstimatorBase;
+struct Analysis;
 
 class ROMBase {
 public:
+    struct ROMContext {
+        int analysis_id = 0;
+        int opt_iter = 0;
+        int solve_step = 0;
+        int time_step = 0;
+        double time = 0.0;
+        std::string role = "primal";
+        std::string system_type;
+        bool is_end_of_analysis = false;
+    };
+
     bool use_mor = true;
     std::vector<std::shared_ptr<UpdateBase>> basis_list;
     std::string name = "ROM_Base";
@@ -37,24 +49,32 @@ public:
     Eigen::LLT<Eigen::MatrixXd> factorized_A_r;
     int fom_flag = 1;
     bool online = true;
+    ROMContext ctx;
 
     explicit ROMBase(std::vector<std::shared_ptr<UpdateBase>> basis_list_in = {});
     virtual ~ROMBase();
 
     virtual SolveStats main(const Eigen::SparseMatrix<double>& lhs,
                             const Eigen::VectorXd& rhs,
-                            Eigen::VectorXd& u,
-                            const ROMContext& context) = 0;
+                            Eigen::VectorXd& u) = 0;
     virtual SolveStats FOM_main(const Eigen::SparseMatrix<double>& lhs,
                                 const Eigen::VectorXd& rhs,
-                                Eigen::VectorXd& u,
-                                const ROMContext& context);
+                                Eigen::VectorXd& u);
     virtual std::shared_ptr<FactorizedSolver> get_factorized_solver(const Eigen::SparseMatrix<double>& lhs) const;
     virtual void set_factorized_solver(const Eigen::SparseMatrix<double>& lhs,
                                        std::shared_ptr<FactorizedSolver> solver);
     virtual KSP get_petsc_factorized_solver(Mat lhs) const;
     virtual void set_petsc_factorized_solver(Mat lhs, KSP ksp);
     virtual void set_petsc_system(Mat lhs, Vec rhs, Vec u);
+
+    const ROMContext& InitializeROMContext(const Analysis& analysis,
+                                           int opt_iter,
+                                           int solve_step,
+                                           int time_step,
+                                           double time,
+                                           const std::string& role,
+                                           const std::string& system_type,
+                                           bool is_end_of_analysis);
 
     static double now_time();
     void store_info(const ROMInfo& info, const ROMContext& context);
@@ -129,7 +149,6 @@ inline ROMBase::~ROMBase() {
 
 inline SolveStats ROMBase::FOM_main(const Eigen::SparseMatrix<double>&,
                                     const Eigen::VectorXd&,
-                                    Eigen::VectorXd&,
-                                    const ROMContext&) {
+                                    Eigen::VectorXd&) {
     throw std::runtime_error("FOM_main is not implemented for " + name);
 }

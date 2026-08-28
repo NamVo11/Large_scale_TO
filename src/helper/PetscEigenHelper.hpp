@@ -1,6 +1,9 @@
 #pragma once
 
+#include "ROM/ROM_method/ROM_Base.hpp"
+
 #include <Eigen/Dense>
+#include <Eigen/Sparse>
 #include <petscksp.h>
 
 #include <vector>
@@ -24,3 +27,8 @@ void set_vec_fixed_from_eigen_column(Vec v,
                                      int col,
                                      double scale = 1.0);
 
+SolveStats solve_petsc_with_rom(ROMBase& rom,
+                                Mat lhs,
+                                Vec rhs,
+                                Vec solution,
+                                Eigen::SparseMatrix<double>* lhs_e_cache = nullptr);

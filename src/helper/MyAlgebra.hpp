@@ -10,6 +10,9 @@
 
 namespace MyAlgebra {
 
+using Sparse = Eigen::SparseMatrix<double>;
+using Triplet = Eigen::Triplet<double>;
+
 std::vector<int> to_ints(const std::vector<PetscInt>& in);
 
 namespace Petsc {

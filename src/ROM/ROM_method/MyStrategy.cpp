@@ -1,5 +1,6 @@
 #include "ROM/ROM_method/MyStrategy.hpp"
 
+#include "ROM/Error_Estimator/ErrorEstimatorBase.hpp"
 #include "ROM/Reduced_Basis_Algorithm/UpdateBase.hpp"
 
 #include <cstdlib>
@@ -17,9 +18,9 @@ bool env_flag(const char* name) {
 
 SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
                             const Eigen::VectorXd& rhs,
-                            Eigen::VectorXd& u,
-                            const ROMContext& context) {
+                            Eigen::VectorXd& u) {
     check_strategy_ready("MyStrategy");
+    const ROMContext& context = ctx;
 
     const double total_t0 = now_time();
     ROMInfo info;
@@ -102,7 +103,8 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
 
     Eigen::VectorXd solution_e;
     if (use_fom) {
-        stats = fom_solver->FOM_main(lhs, rhs, u, context);
+        fom_solver->ctx = context;
+        stats = fom_solver->FOM_main(lhs, rhs, u);
         solution_e = u;
         info.fom_used = true;
         info.ksp_iterations = stats.ksp_iterations;

@@ -10,14 +10,15 @@
 struct DynamicLinearElasticAVM : GroupFunctionalBase {
     std::vector<std::unique_ptr<DynamicLinearElasticFunctionalBase>> terms;
 
-    explicit DynamicLinearElasticAVM(const myjson::json& j) {
-        analysis_id = myjson::int_value(j, "analysis_id", analysis_id);
-        sens_type = myjson::string_value(j, "sens_type", sens_type);
-        sens_function = myjson::string_value(j, "sens_function", sens_function);
-        type = myjson::string_value(j, "type", type);
-        sensitivity_method = InitializeSensitivityMethod(sens_type);
-
-        for (const auto& term_json : j.value("terms", myjson::json::array())) {
+    DynamicLinearElasticAVM(const myjson::json& j,
+                            const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                            const myjson::json& run_json)
+        : GroupFunctionalBase(j, analysis_all, run_json) {
+        if (!std::dynamic_pointer_cast<DynamicLinearElastic>(analysis)) {
+            throw std::runtime_error("DynamicLinearElasticAVM requires dynamic_elastic_linear analysis, id: " +
+                                     std::to_string(analysis_id));
+        }
+        for (const auto& term_json : j.at("terms")) {
             terms.push_back(InitializeDynamicLinearElasticFunctional(term_json));
         }
     }
@@ -30,6 +31,31 @@ struct DynamicLinearElasticAVM : GroupFunctionalBase {
                          Analysis& analysis,
                          const Eigen::MatrixXd& xPhys) override;
 
+    Eigen::VectorXd dfdu(const FEM& fem,
+                         Analysis& analysis,
+                         const Eigen::MatrixXd& xPhys,
+                         int istep) override;
+
+    Eigen::VectorXd dfdv(const FEM& fem,
+                         Analysis& analysis,
+                         const Eigen::MatrixXd& xPhys,
+                         int istep);
+
+    Eigen::VectorXd dfda(const FEM& fem,
+                         Analysis& analysis,
+                         const Eigen::MatrixXd& xPhys,
+                         int istep);
+
+    Eigen::VectorXd dfdFext(const FEM& fem,
+                            Analysis& analysis,
+                            const Eigen::MatrixXd& xPhys,
+                            int istep) override;
+
+    Eigen::VectorXd dfdx(const FEM& fem,
+                         Analysis& analysis,
+                         const Eigen::MatrixXd& xPhys,
+                         int val_id) override;
+
     Eigen::MatrixXd AVM(const FEM& fem,
                         Analysis& analysis,
                         const Eigen::MatrixXd& x,
@@ -37,13 +63,18 @@ struct DynamicLinearElasticAVM : GroupFunctionalBase {
                         const Filtering& filtering,
                         int Iter) override;
 
-private:
-    void accumulate_terms();
 };
 
 struct EigenDynamicLinearElasticAVM : DynamicLinearElasticAVM {
-    explicit EigenDynamicLinearElasticAVM(const myjson::json& j)
-        : DynamicLinearElasticAVM(j) {}
+    EigenDynamicLinearElasticAVM(const myjson::json& j,
+                                 const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                                 const myjson::json& run_json)
+        : DynamicLinearElasticAVM(j, analysis_all, run_json) {
+        if (!std::dynamic_pointer_cast<EigenDynamicLinearElastic>(analysis)) {
+            throw std::runtime_error("EigenDynamicLinearElasticAVM requires EigenDynamicLinearElastic analysis, id: " +
+                                     std::to_string(analysis_id));
+        }
+    }
 
     Eigen::MatrixXd AVM(const FEM& fem,
                         Analysis& analysis,
@@ -54,8 +85,15 @@ struct EigenDynamicLinearElasticAVM : DynamicLinearElasticAVM {
 };
 
 struct PetscDynamicLinearElasticAVM : DynamicLinearElasticAVM {
-    explicit PetscDynamicLinearElasticAVM(const myjson::json& j)
-        : DynamicLinearElasticAVM(j) {}
+    PetscDynamicLinearElasticAVM(const myjson::json& j,
+                                 const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                                 const myjson::json& run_json)
+        : DynamicLinearElasticAVM(j, analysis_all, run_json) {
+        if (!std::dynamic_pointer_cast<PetscDynamicLinearElastic>(analysis)) {
+            throw std::runtime_error("PetscDynamicLinearElasticAVM requires PetscDynamicLinearElastic analysis, id: " +
+                                     std::to_string(analysis_id));
+        }
+    }
 
     Eigen::MatrixXd AVM(const FEM& fem,
                         Analysis& analysis,

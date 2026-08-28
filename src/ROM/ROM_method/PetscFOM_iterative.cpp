@@ -62,8 +62,8 @@ void PetscFOM_iterative::set_petsc_factorized_solver(Mat lhs, KSP ksp) {
 
 SolveStats PetscFOM_iterative::FOM_main(const Eigen::SparseMatrix<double>&,
                                         const Eigen::VectorXd&,
-                                        Eigen::VectorXd& u,
-                                        const ROMContext& context) {
+                                        Eigen::VectorXd& u) {
+    const ROMContext& context = ctx;
     if (!current_lhs_ || !current_rhs_ || !current_u_) {
         throw std::runtime_error("PetscFOM_iterative needs set_petsc_system before FOM_main");
     }
@@ -111,12 +111,12 @@ SolveStats PetscFOM_iterative::FOM_main(const Eigen::SparseMatrix<double>&,
 
 SolveStats PetscFOM_iterative::main(const Eigen::SparseMatrix<double>& lhs,
                                     const Eigen::VectorXd& rhs,
-                                    Eigen::VectorXd& u,
-                                    const ROMContext& context) {
+                                    Eigen::VectorXd& u) {
+    const ROMContext& context = ctx;
     PetscLogDouble t0 = 0.0;
     PetscLogDouble t1 = 0.0;
     PetscTime(&t0);
-    const SolveStats stats = FOM_main(lhs, rhs, u, context);
+    const SolveStats stats = FOM_main(lhs, rhs, u);
     PetscTime(&t1);
     ROMInfo info;
     info.name = name;

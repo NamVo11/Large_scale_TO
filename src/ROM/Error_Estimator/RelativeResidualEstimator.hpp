@@ -16,7 +16,7 @@ public:
     ErrorAssessment assess(const Eigen::SparseMatrix<double>& lhs,
                            const Eigen::VectorXd& rhs,
                            const Eigen::VectorXd& solution,
-                           const ROMContext& context,
+                           const ROMBase::ROMContext& context,
                            MklSparseMatrixHandle lhs_mkl = nullptr) override;
 
     double relative_residual(const Eigen::SparseMatrix<double>& lhs,

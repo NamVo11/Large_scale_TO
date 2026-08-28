@@ -146,8 +146,8 @@ void Optimization::run(const FEM& fem) {
 
         t0 = Clock::now();
         MemoryDebug::print("before_objective_value");
-        if (Iter == 0) objective.initialize(fem, analysis_all, filtering->xPhys);
-        else objective.calculate(fem, analysis_all, filtering->xPhys);
+        if (Iter == 0) objective.initialize(fem, filtering->xPhys);
+        else objective.calculate(fem, filtering->xPhys);
         obj_value = objective.value;
         MemoryDebug::print("after_objective_value");
         t1 = Clock::now();
@@ -155,7 +155,7 @@ void Optimization::run(const FEM& fem) {
 
         t0 = Clock::now();
         MemoryDebug::print("before_constraint_value");
-        constraint.calculate(fem, analysis_all, filtering->xPhys);
+        constraint.calculate(fem, filtering->xPhys);
         constr_value_vec = constraint.values;
         MemoryDebug::print("after_constraint_value");
         t1 = Clock::now();
@@ -174,7 +174,7 @@ void Optimization::run(const FEM& fem) {
         dObj_dx_mat = Eigen::MatrixXd::Zero(nelem, nvar);
         t0 = Clock::now();
         MemoryDebug::print("before_objective_sensitivity");
-        objective.calculate_sensitivity(fem, analysis_all, x, x_label, *filtering, Output, Iter);
+        objective.calculate_sensitivity(fem, x, x_label, *filtering, Output, Iter);
         dObj_dx_mat = objective.sensitivity;
         MemoryDebug::print("after_objective_sensitivity");
         t1 = Clock::now();
@@ -189,7 +189,7 @@ void Optimization::run(const FEM& fem) {
         dConstr_dx.clear();
         t0 = Clock::now();
         MemoryDebug::print("before_constraint_sensitivity");
-        constraint.calculate_sensitivity(fem, analysis_all, x, x_label, *filtering, Output, Iter);
+        constraint.calculate_sensitivity(fem, x, x_label, *filtering, Output, Iter);
         for (const auto& dc : constraint.sensitivity) {
             std::vector<double> flat = flatten(dc);
             dConstr_dx.insert(dConstr_dx.end(), flat.begin(), flat.end());

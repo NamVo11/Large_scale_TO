@@ -3,8 +3,6 @@
 #include "Analysis/Analysis.hpp"
 #include "FEM/Element/ElementBase.hpp"
 #include "ROM/ROM_method/ROM_Base.hpp"
-#include "helper/PetscEigenBridge.hpp"
-#include "helper/PetscEigenHelper.hpp"
 
 #include <petscsys.h>
 
@@ -21,70 +19,20 @@ int nvar_of(const Eigen::MatrixXd& x) {
     return static_cast<int>(x.cols());
 }
 
-const Material& element_material(const FEM& fem, int elem_id) {
-    const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
-    if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
-    return *element->material;
-}
-
 void zero_fixed(Eigen::VectorXd& v, const std::vector<int>& fixed) {
     for (int id : fixed) v(id) = 0.0;
 }
 
-void zero_fixed(Vec v, const std::vector<int>& fixed) {
-    if (fixed.empty()) return;
-
-    PetscMPIInt rank = 0;
-    MPI_Comm_rank(PetscObjectComm(reinterpret_cast<PetscObject>(v)), &rank);
-    if (rank == 0) {
-        std::vector<PetscInt> ids(fixed.begin(), fixed.end());
-        std::vector<PetscScalar> vals(ids.size(), 0.0);
-        VecSetValues(v, static_cast<PetscInt>(ids.size()), ids.data(), vals.data(), INSERT_VALUES);
-    }
-    VecAssemblyBegin(v);
-    VecAssemblyEnd(v);
-}
-
-ROMContext make_adjoint_context(const Analysis& analysis, int Iter) {
-    ROMContext ctx;
-    ctx.analysis_id = analysis.id;
-    ctx.opt_iter = Iter;
-    ctx.solve_step = 1;
-    ctx.time_step = analysis.Nstep;
-    ctx.time = 1.0;
-    ctx.role = "adjoint";
-    ctx.system_type = "static_adjoint";
-    ctx.is_end_of_analysis = true;
-    return ctx;
-}
-
-SolveStats solve_static_adjoint_petsc(ROMBase& rom,
-                                      Mat lhs,
-                                      Vec rhs,
-                                      Vec lambda,
-                                      const Analysis& analysis,
-                                      int Iter) {
-    const ROMContext ctx = make_adjoint_context(analysis, Iter);
-    rom.set_petsc_system(lhs, rhs, lambda);
-    if (!rom.use_mor) {
-        Eigen::SparseMatrix<double> empty_lhs;
-        Eigen::VectorXd empty_rhs;
-        Eigen::VectorXd empty_lambda;
-        return rom.main(empty_lhs, empty_rhs, empty_lambda, ctx);
-    }
-
-    const Eigen::SparseMatrix<double> lhs_e = petsc_mat_to_eigen(lhs);
-    const Eigen::VectorXd rhs_e = petsc_vec_to_eigen(rhs);
-    Eigen::VectorXd lambda_e = Eigen::VectorXd::Zero(rhs_e.size());
-    const SolveStats stats = rom.main(lhs_e, rhs_e, lambda_e, ctx);
-    eigen_to_petsc_vec(lambda_e, lambda);
-    return stats;
+Eigen::VectorXd sized_or_zero(const Eigen::VectorXd& values, int size, const std::string& label) {
+    if (values.size() == 0) return Eigen::VectorXd::Zero(size);
+    if (values.size() != size) throw std::runtime_error(label + ": vector size mismatch");
+    return values;
 }
 
 Eigen::MatrixXd explicit_gradient_static(const FEM& fem,
-                                         const Analysis& analysis,
+                                         Analysis& analysis,
                                          const Eigen::MatrixXd& xPhys,
-                                         const StaticLinearElasticAVM& object,
+                                         StaticLinearElasticAVM& object,
                                          const Eigen::VectorXd& lambda) {
     PetscMPIInt rank = 0;
     PetscMPIInt size = 1;
@@ -105,7 +53,11 @@ Eigen::MatrixXd explicit_gradient_static(const FEM& fem,
         const Region& region = *region_ptr;
         if (region.status != "design_val") continue;
         if (region.elem_ids.empty()) continue;
-        const Material& region_material = element_material(fem, region.elem_ids.front());
+        const auto& region_element = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()));
+        if (!region_element || !region_element->material) {
+            throw std::runtime_error("Element material is not initialized");
+        }
+        const Material& region_material = *region_element->material;
         if (region_material.val_ids.empty()) throw std::runtime_error("explicit_gradient_static: no val_ids");
         if (region_material.E_values.empty()) throw std::runtime_error("explicit_gradient_static: no elastic parameters");
         if (!analysis.interp) throw std::runtime_error("Analysis interpolation is not initialized");
@@ -144,7 +96,9 @@ Eigen::MatrixXd explicit_gradient_static(const FEM& fem,
             Ku_elem.noalias() = em.ke * u_elem;
             const double lambda_dot_Ku = lambda_elem.dot(Ku_elem);
 
-            const Material& material = element_material(fem, elem_id);
+            const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
+            if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
+            const Material& material = *element->material;
             for (int val_id : material.val_ids) {
                 if (val_id <= 0 || val_id > nvar) throw std::runtime_error("explicit_gradient_static: val_id outside xPhys");
                 const double x = xPhys(elem_id, val_id - 1);
@@ -154,93 +108,49 @@ Eigen::MatrixXd explicit_gradient_static(const FEM& fem,
         }
     }
 
-    if (object.d_explicit_df_dx.size() != 0) df_dx.noalias() += object.d_explicit_df_dx;
+    for (int val_id = 0; val_id < nvar; ++val_id) {
+        const Eigen::VectorXd explicit_dfdx = object.dfdx(fem, analysis, xPhys, val_id);
+        if (explicit_dfdx.size() == 0) continue;
+        if (explicit_dfdx.size() != df_dx.rows()) {
+            throw std::runtime_error("explicit_gradient_static: explicit dfdx size mismatch");
+        }
+        df_dx.col(val_id).noalias() += explicit_dfdx;
+    }
     if (rank == 0) {
         std::cout << "  explicit_gradient_static: threads=" << sens_element_threads << "\n";
     }
     return df_dx;
 }
 
-Eigen::MatrixXd static_elastic_base_full_impl(const FEM& fem,
-                                              Analysis& analysis,
-                                              StaticLinearElasticAVM& object,
-                                              const Eigen::SparseMatrix<double>& K,
-                                              const std::shared_ptr<FactorizedSolver>* factorized_K_initial,
-                                              const Filtering& filtering,
-                                              int Iter) {
-    if (!object.ROM) throw std::runtime_error("StaticLinearElasticAVM requires ROM initialized");
-    if (K.rows() == 0) throw std::runtime_error("StaticLinearElasticAVM requires Eigen forward stiffness matrix");
-    if (object.d_explicit_dfdu_all.cols() <= analysis.Nstep) {
-        throw std::runtime_error("StaticLinearElasticAVM: dfdu_all has insufficient columns");
-    }
-
-    Eigen::VectorXd rhs = object.d_explicit_dfdu_all.col(analysis.Nstep);
-    zero_fixed(rhs, analysis.SPCdofs);
-    Eigen::VectorXd lambda = Eigen::VectorXd::Zero(rhs.size());
-    if (factorized_K_initial && *factorized_K_initial) {
-        object.ROM->set_factorized_solver(K, *factorized_K_initial);
-    }
-    const SolveStats stats = object.ROM->main(K, rhs, lambda, make_adjoint_context(analysis, Iter));
-    object.ROM->set_factorized_solver(K, nullptr);
-    (void)stats;
-    return filtering.sensitivity(explicit_gradient_static(fem, analysis, filtering.xPhys, object, lambda));
-}
-
 } // namespace
 
 Eigen::MatrixXd EigenStaticLinearElasticAVM::AVM(const FEM& fem,
-                                                Analysis& analysis,
+                                                Analysis& analysis_base,
                                                 const Eigen::MatrixXd&,
                                                 const std::vector<int>& x_label,
                                                 const Filtering& filtering,
                                                 int Iter) {
-    auto& eigen_analysis = dynamic_cast<EigenStaticLinearElastic&>(analysis);
-    Eigen::MatrixXd out = static_elastic_base_full_impl(fem,
-                                                        eigen_analysis,
-                                                        *this,
-                                                        eigen_analysis.K_inf,
-                                                        &eigen_analysis.factorized_K_initial,
-                                                        filtering,
-                                                        Iter);
-    for (Eigen::Index e = 0; e < out.rows(); ++e) {
-        if (x_label[static_cast<std::size_t>(e)] != 0) out.row(e).setZero();
-    }
-    return out;
-}
-
-Eigen::MatrixXd PetscStaticLinearElasticAVM::AVM(const FEM& fem,
-                                                Analysis& analysis,
-                                                const Eigen::MatrixXd&,
-                                                const std::vector<int>& x_label,
-                                                const Filtering& filtering,
-                                                int Iter) {
-    auto& petsc_analysis = dynamic_cast<PetscStaticLinearElastic&>(analysis);
-    if (!ROM) throw std::runtime_error("PetscStaticLinearElasticAVM requires ROM initialized");
-    Mat K = petsc_analysis.K_inf;
-    if (!K) throw std::runtime_error("PetscStaticLinearElasticAVM requires PETSc forward stiffness matrix");
-    if (d_explicit_dfdu_all.cols() <= petsc_analysis.Nstep) {
-        throw std::runtime_error("PetscStaticLinearElasticAVM: dfdu_all has insufficient columns");
+    auto& analysis = dynamic_cast<EigenStaticLinearElastic&>(analysis_base);
+    if (!ROM) throw std::runtime_error("EigenStaticLinearElasticAVM requires ROM initialized");
+    if (analysis.K_inf.rows() == 0) {
+        throw std::runtime_error("EigenStaticLinearElasticAVM requires Eigen forward stiffness matrix");
     }
 
-    Vec lambda = nullptr;
-    Vec rhs = nullptr;
-    MatCreateVecs(K, &lambda, &rhs);
-    set_vec_from_eigen_column(rhs, d_explicit_dfdu_all, petsc_analysis.Nstep);
-    zero_fixed(rhs, petsc_analysis.SPCdofs);
-
-    if (petsc_analysis.factorized_K_initial) {
-        ROM->set_petsc_factorized_solver(K, petsc_analysis.factorized_K_initial);
+    Eigen::VectorXd rhs = sized_or_zero(dfdu(fem, analysis, filtering.xPhys, analysis.Nstep),
+                                        fem.ndof,
+                                        "EigenStaticLinearElasticAVM::dfdu");
+    zero_fixed(rhs, analysis.SPCdofs);
+    Eigen::VectorXd lambda = Eigen::VectorXd::Zero(rhs.size());
+    if (analysis.factorized_K_initial) {
+        ROM->set_factorized_solver(analysis.K_inf, analysis.factorized_K_initial);
     }
-    const SolveStats stats = solve_static_adjoint_petsc(*ROM, K, rhs, lambda, petsc_analysis, Iter);
-    ROM->set_petsc_factorized_solver(nullptr, nullptr);
+    ROM->InitializeROMContext(analysis, Iter, 1, analysis.Nstep, 1.0, "adjoint", "static_adjoint", true);
+    const SolveStats stats = ROM->main(analysis.K_inf, rhs, lambda);
+    ROM->set_factorized_solver(analysis.K_inf, nullptr);
     (void)stats;
 
-    const Eigen::VectorXd lambda_e = gather_vec_to_all_local(lambda);
-    VecDestroy(&rhs);
-    VecDestroy(&lambda);
-
     Eigen::MatrixXd out = filtering.sensitivity(
-        explicit_gradient_static(fem, petsc_analysis, filtering.xPhys, *this, lambda_e));
+        explicit_gradient_static(fem, analysis, filtering.xPhys, *this, lambda));
     for (Eigen::Index e = 0; e < out.rows(); ++e) {
         if (x_label[static_cast<std::size_t>(e)] != 0) out.row(e).setZero();
     }

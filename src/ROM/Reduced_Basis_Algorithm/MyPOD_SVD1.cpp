@@ -68,7 +68,7 @@ RecoveredBasis recover_energy_after_normalization(const MyAlgebra::PODResult& po
 
 } // namespace
 
-void MyPOD_SVD1::update(const Eigen::VectorXd&, const ROMContext&) {
+void MyPOD_SVD1::update(const Eigen::VectorXd&, const ROMBase::ROMContext&) {
     update_flag = false;
     V.resize(0, 0);
     s.resize(0);

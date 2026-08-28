@@ -24,5 +24,5 @@ public:
         name = "MyPOD_SVD_recover_energy_after_normalization";
     }
 
-    void update(const Eigen::VectorXd& solution, const ROMContext& context) override;
+    void update(const Eigen::VectorXd& solution, const ROMBase::ROMContext& context) override;
 };

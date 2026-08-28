@@ -39,8 +39,7 @@ public:
 
     SolveStats main(const Eigen::SparseMatrix<double>& lhs,
                     const Eigen::VectorXd& rhs,
-                    Eigen::VectorXd& u,
-                    const ROMContext& context) override;
+                    Eigen::VectorXd& u) override;
 
 private:
     const Eigen::SparseMatrix<double>* A_r_lhs_cache_ = nullptr;

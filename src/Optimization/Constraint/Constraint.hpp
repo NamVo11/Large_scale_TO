@@ -17,12 +17,12 @@ struct Constraint {
 
     Constraint(const myjson::json& constraints_json,
                const std::string& linear_backend,
-               const myjson::json& analysis_all_json,
+               const std::vector<std::shared_ptr<Analysis>>& analysis_all,
                const myjson::json& run_json) {
         for (const auto& constraint_json : constraints_json) {
             groups.push_back(InitializeGroupFunctional(constraint_json,
                                                        linear_backend,
-                                                       analysis_all_json,
+                                                       analysis_all,
                                                        run_json));
             limits.push_back(constraint_json.at("limit").get<double>());
             values.push_back(0.0);
@@ -31,18 +31,16 @@ struct Constraint {
     }
 
     void calculate(const FEM& fem,
-                   std::vector<std::unique_ptr<Analysis>>& analysis_all,
                    const Eigen::MatrixXd& xPhys) {
         for (std::size_t i = 0; i < groups.size(); ++i) {
             GroupFunctionalBase& group = *groups.at(i);
-            Analysis& analysis = *analysis_all.at(static_cast<std::size_t>(group.analysis_id - 1));
+            Analysis& analysis = *group.analysis;
             group.calculate_terms(fem, analysis, xPhys);
             values.at(i) = group.value - limits.at(i);
         }
     }
 
     void calculate_sensitivity(const FEM& fem,
-                               std::vector<std::unique_ptr<Analysis>>& analysis_all,
                                const Eigen::MatrixXd& x,
                                const std::vector<int>& x_label,
                                const Filtering& filtering,
@@ -52,10 +50,9 @@ struct Constraint {
         for (std::size_t i = 0; i < groups.size(); ++i) {
             auto& group = groups.at(i);
             if (!group->sensitivity_method) throw std::runtime_error("Constraint group has no sensitivity method");
-            Analysis& analysis = *analysis_all.at(static_cast<std::size_t>(group->analysis_id - 1));
+            Analysis& analysis = *group->analysis;
             sensitivity.at(i) = group->sensitivity_method->run(fem, analysis, x, x_label, *group,
-                                                               filtering, output,
-                                                               Iter);
+                                                               filtering, output, Iter);
         }
     }
 };

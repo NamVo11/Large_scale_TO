@@ -1,9 +1,21 @@
 #include "helper/PetscEigenHelper.hpp"
 
+#include "helper/PetscEigenBridge.hpp"
+
 #include <mpi.h>
 
 #include <numeric>
 #include <stdexcept>
+
+namespace {
+
+double petsc_wall_time() {
+    PetscLogDouble t = 0.0;
+    PetscTime(&t);
+    return static_cast<double>(t);
+}
+
+}
 
 Eigen::VectorXd gather_vec_to_all_local(Vec v) {
     PetscMPIInt size = 1;
@@ -128,3 +140,45 @@ void set_vec_fixed_from_eigen_column(Vec v,
     VecAssemblyEnd(v);
 }
 
+SolveStats solve_petsc_with_rom(ROMBase& rom,
+                                Mat lhs,
+                                Vec rhs,
+                                Vec solution,
+                                Eigen::SparseMatrix<double>* lhs_e_cache) {
+    rom.set_petsc_system(lhs, rhs, solution);
+    if (!rom.use_mor) {
+        Eigen::SparseMatrix<double> empty_lhs;
+        Eigen::VectorXd empty_rhs;
+        Eigen::VectorXd empty_solution;
+        return rom.main(empty_lhs, empty_rhs, empty_solution);
+    }
+
+    const double tm = petsc_wall_time();
+    Eigen::SparseMatrix<double> local_lhs_e;
+    const Eigen::SparseMatrix<double>* lhs_e_ptr = nullptr;
+    if (lhs_e_cache) {
+        if (lhs_e_cache->rows() == 0 || lhs_e_cache->cols() == 0) {
+            *lhs_e_cache = petsc_mat_to_eigen(lhs);
+        }
+        lhs_e_ptr = lhs_e_cache;
+    } else {
+        local_lhs_e = petsc_mat_to_eigen(lhs);
+        lhs_e_ptr = &local_lhs_e;
+    }
+    const double matrix_convert_time = petsc_wall_time() - tm;
+
+    const double tv = petsc_wall_time();
+    const Eigen::VectorXd rhs_e = petsc_vec_to_eigen(rhs);
+    const double vec_convert_time = petsc_wall_time() - tv;
+
+    Eigen::VectorXd solution_e = Eigen::VectorXd::Zero(rhs_e.size());
+    const SolveStats stats = rom.main(*lhs_e_ptr, rhs_e, solution_e);
+    eigen_to_petsc_vec(solution_e, solution);
+
+    if (!rom.ROM_info.empty() && !rom.ROM_info.back().empty()) {
+        ROMInfo& info = rom.ROM_info.back().back();
+        info.timing_petsc_to_eigen_mat += matrix_convert_time;
+        info.timing_petsc_to_eigen_vec += vec_convert_time;
+    }
+    return stats;
+}

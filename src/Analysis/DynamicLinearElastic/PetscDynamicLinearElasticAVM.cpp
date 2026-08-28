@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <numeric>
 #include <stdexcept>
 #include <vector>
 
@@ -30,31 +31,82 @@ Eigen::MatrixXd unflatten(const std::vector<double>& x, int nelem, int nvar) {
         x.data(), nelem, nvar);
 }
 
-void add_scaled(Eigen::MatrixXd& a, const Eigen::MatrixXd& b, double scale) {
-    if (b.size() == 0) return;
-    if (a.size() == 0) {
-        a = scale * b;
+void set_vec_from_eigen_vector(Vec v, const Eigen::VectorXd& values, double scale = 1.0) {
+    if (values.size() == 0) {
+        VecSet(v, 0.0);
         return;
     }
-    a.noalias() += scale * b;
+
+    PetscMPIInt size = 1;
+    MPI_Comm_size(PetscObjectComm(reinterpret_cast<PetscObject>(v)), &size);
+    if (size == 1) {
+        PetscInt n = 0;
+        VecGetLocalSize(v, &n);
+        if (values.size() != static_cast<Eigen::Index>(n)) {
+            throw std::runtime_error("set_vec_from_eigen_vector: vector size mismatch");
+        }
+        PetscScalar* a = nullptr;
+        VecGetArray(v, &a);
+        for (PetscInt i = 0; i < n; ++i) a[i] = scale * values(static_cast<Eigen::Index>(i));
+        VecRestoreArray(v, &a);
+        return;
+    }
+
+    PetscMPIInt rank = 0;
+    MPI_Comm_rank(PetscObjectComm(reinterpret_cast<PetscObject>(v)), &rank);
+    VecSet(v, 0.0);
+    if (rank == 0) {
+        std::vector<PetscInt> ids(static_cast<std::size_t>(values.size()));
+        std::vector<PetscScalar> vals(static_cast<std::size_t>(values.size()));
+        std::iota(ids.begin(), ids.end(), 0);
+        for (Eigen::Index i = 0; i < values.size(); ++i) {
+            vals[static_cast<std::size_t>(i)] = scale * values(i);
+        }
+        VecSetValues(v, static_cast<PetscInt>(ids.size()), ids.data(), vals.data(), INSERT_VALUES);
+    }
+    VecAssemblyBegin(v);
+    VecAssemblyEnd(v);
 }
 
-const Material& element_material(const FEM& fem, int elem_id) {
-    const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
-    if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
-    return *element->material;
-}
+void set_vec_fixed_from_eigen_vector(Vec v,
+                                     const std::vector<int>& fixed,
+                                     const Eigen::VectorXd& values,
+                                     double scale = 1.0) {
+    if (fixed.empty() || values.size() == 0) return;
 
-void set_vec_from_column_root(Vec v, const Eigen::MatrixXd& values, int k, double scale = 1.0) {
-    set_vec_from_eigen_column(v, values, k, scale);
-}
+    PetscMPIInt size = 1;
+    MPI_Comm_size(PetscObjectComm(reinterpret_cast<PetscObject>(v)), &size);
+    if (size == 1) {
+        PetscInt n = 0;
+        VecGetLocalSize(v, &n);
+        if (values.size() != static_cast<Eigen::Index>(n)) {
+            throw std::runtime_error("set_vec_fixed_from_eigen_vector: vector size mismatch");
+        }
+        PetscScalar* a = nullptr;
+        VecGetArray(v, &a);
+        for (int id : fixed) {
+            if (id < 0 || id >= n) {
+                VecRestoreArray(v, &a);
+                throw std::runtime_error("set_vec_fixed_from_eigen_vector: fixed dof out of range");
+            }
+            a[id] = scale * values(static_cast<Eigen::Index>(id));
+        }
+        VecRestoreArray(v, &a);
+        return;
+    }
 
-void set_vec_fixed_from_column_root(Vec v,
-                                    const std::vector<int>& fixed,
-                                    const Eigen::MatrixXd& values,
-                                    int k,
-                                    double scale = 1.0) {
-    set_vec_fixed_from_eigen_column(v, fixed, values, k, scale);
+    PetscMPIInt rank = 0;
+    MPI_Comm_rank(PetscObjectComm(reinterpret_cast<PetscObject>(v)), &rank);
+    if (rank == 0) {
+        std::vector<PetscInt> ids(fixed.begin(), fixed.end());
+        std::vector<PetscScalar> vals(fixed.size());
+        for (std::size_t i = 0; i < fixed.size(); ++i) {
+            vals[i] = scale * values(static_cast<Eigen::Index>(fixed[i]));
+        }
+        VecSetValues(v, static_cast<PetscInt>(ids.size()), ids.data(), vals.data(), INSERT_VALUES);
+    }
+    VecAssemblyBegin(v);
+    VecAssemblyEnd(v);
 }
 
 void zero_fixed(Vec v, const std::vector<int>& fixed) {
@@ -86,73 +138,10 @@ void zero_fixed(Vec v, const std::vector<int>& fixed) {
     VecAssemblyEnd(v);
 }
 
-double petsc_wall_time() {
-    PetscLogDouble t = 0.0;
-    PetscTime(&t);
-    return static_cast<double>(t);
-}
-
-void solve_adjoint_full(ROMBase& rom,
-                        Mat lhs,
-                        Vec rhs,
-                        Vec lambda,
-                        const Analysis& analysis,
-                        int Iter,
-                        int time_step,
-                        Eigen::SparseMatrix<double>* lhs_e_cache = nullptr) {
-    const auto& dynamic = dynamic_cast<const DynamicLinearElastic&>(analysis);
-    ROMContext ctx;
-    ctx.analysis_id = analysis.id;
-    ctx.opt_iter = Iter;
-    ctx.solve_step = time_step + 1;
-    ctx.time_step = time_step;
-    ctx.time = time_step * dynamic.dt;
-    ctx.role = "adjoint";
-    ctx.system_type = "newmark_adjoint_effective";
-    ctx.is_end_of_analysis = time_step == 0;
-
-    rom.set_petsc_system(lhs, rhs, lambda);
-    if (!rom.use_mor) {
-        Eigen::SparseMatrix<double> empty_lhs;
-        Eigen::VectorXd empty_rhs;
-        Eigen::VectorXd empty_lambda;
-        rom.main(empty_lhs, empty_rhs, empty_lambda, ctx);
-        return;
-    }
-
-    const double tm = petsc_wall_time();
-    Eigen::SparseMatrix<double> local_lhs_e;
-    const Eigen::SparseMatrix<double>* lhs_e_ptr = nullptr;
-    if (lhs_e_cache) {
-        if (lhs_e_cache->rows() == 0 || lhs_e_cache->cols() == 0) {
-            *lhs_e_cache = petsc_mat_to_eigen(lhs);
-        }
-        lhs_e_ptr = lhs_e_cache;
-    } else {
-        local_lhs_e = petsc_mat_to_eigen(lhs);
-        lhs_e_ptr = &local_lhs_e;
-    }
-    const double matrix_convert_time = petsc_wall_time() - tm;
-
-    const double tv = petsc_wall_time();
-    const Eigen::VectorXd rhs_e = petsc_vec_to_eigen(rhs);
-    const double vec_convert_time = petsc_wall_time() - tv;
-
-    Eigen::VectorXd lambda_e = Eigen::VectorXd::Zero(rhs_e.size());
-    rom.main(*lhs_e_ptr, rhs_e, lambda_e, ctx);
-    eigen_to_petsc_vec(lambda_e, lambda);
-
-    if (!rom.ROM_info.empty() && !rom.ROM_info.back().empty()) {
-        ROMInfo& info = rom.ROM_info.back().back();
-        info.timing_petsc_to_eigen_mat += matrix_convert_time;
-        info.timing_petsc_to_eigen_vec += vec_convert_time;
-    }
-}
-
 Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
-                                          const DynamicLinearElastic& analysis,
+                                          DynamicLinearElastic& analysis,
                                           const Eigen::MatrixXd& xPhys,
-                                          const DynamicLinearElasticAVM& object,
+                                          DynamicLinearElasticAVM& object,
                                           const Eigen::MatrixXd& lambda_all) {
     using Clock = std::chrono::steady_clock;
 
@@ -214,7 +203,11 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
         const Region& region = *region_ptr;
         if (region.status != "design_val") continue;
         if (region.elem_ids.empty()) continue;
-        const Material& region_material = element_material(fem, region.elem_ids.front());
+        const auto& region_element = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()));
+        if (!region_element || !region_element->material) {
+            throw std::runtime_error("Element material is not initialized");
+        }
+        const Material& region_material = *region_element->material;
         if (region_material.val_ids.empty()) {
             throw std::runtime_error("explicit_gradient_dynamic: design_val region has no val_ids");
         }
@@ -303,7 +296,9 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                 sum_lambda_dot_Ma += lambda_elem.dot(Ma_elem);
             }
 
-            const Material& material = element_material(fem, elem_id);
+            const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
+            if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
+            const Material& material = *element->material;
             for (int val_id : material.val_ids) {
                 const double x = xPhys(elem_id, val_id - 1);
                 const double dE = analysis.interp->sensitivity(material.E_values, x, material.is_design(), val_id, analysis.interp->modulus_penalty());
@@ -339,7 +334,14 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
 
     t0 = Clock::now();
     Eigen::MatrixXd df_dx = unflatten(global_flat, fem.NElem, nvar);
-    add_scaled(df_dx, object.d_explicit_df_dx, 1.0);
+    for (int val_id = 0; val_id < nvar; ++val_id) {
+        const Eigen::VectorXd explicit_dfdx = object.dfdx(fem, analysis, xPhys, val_id);
+        if (explicit_dfdx.size() == 0) continue;
+        if (explicit_dfdx.size() != df_dx.rows()) {
+            throw std::runtime_error("explicit_gradient_dynamic: explicit dfdx size mismatch");
+        }
+        df_dx.col(val_id).noalias() += explicit_dfdx;
+    }
     t1 = Clock::now();
     const double timing_unflatten_add = elapsed(t0, t1);
 
@@ -359,11 +361,14 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
     return df_dx;
 }
 
-Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
-                                               Analysis& analysis_base,
-                                               DynamicLinearElasticAVM& object,
-                                               const Filtering& filtering,
-                                               int Iter) {
+} // namespace
+
+Eigen::MatrixXd PetscDynamicLinearElasticAVM::AVM(const FEM& fem,
+                                                  Analysis& analysis_base,
+                                                  const Eigen::MatrixXd&,
+                                                  const std::vector<int>& x_label,
+                                                  const Filtering& filtering,
+                                                  int Iter) {
     auto& analysis = dynamic_cast<PetscDynamicLinearElastic&>(analysis_base);
     const int nstep = analysis.Nstep;
     const double beta = 0.25;
@@ -379,7 +384,7 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     const double dLdv_new = 1.0 - gamma / beta;
     const double dLdu_new = -gamma / (beta * dt);
 
-    if (!object.ROM) throw std::runtime_error("PetscDynamicLinearElasticAVM requires ROM initialized");
+    if (!ROM) throw std::runtime_error("PetscDynamicLinearElasticAVM requires ROM initialized");
     MemoryDebug::print("petsc_sens_begin");
 
     Mat K0 = analysis.K_inf;
@@ -411,16 +416,18 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     Eigen::MatrixXd lambda_all(fem.ndof, nstep + 1);
     MemoryDebug::print("petsc_sens_after_lambda_all_alloc");
 
-    object.ROM->set_petsc_factorized_solver(Keff, analysis.factorized_K_eff);
+    ROM->set_petsc_factorized_solver(Keff, analysis.factorized_K_eff);
 
     int k = nstep;
-    set_vec_from_column_root(mu, object.d_explicit_dfda_all, k);
-    set_vec_from_column_root(eta, object.d_explicit_dfdv_all, k);
-    set_vec_from_column_root(rhs, object.d_explicit_dfdu_all, k, -1.0);
+    set_vec_from_eigen_vector(mu, dfda(fem, analysis, filtering.xPhys, k));
+    set_vec_from_eigen_vector(eta, dfdv(fem, analysis, filtering.xPhys, k));
+    set_vec_from_eigen_vector(rhs, dfdu(fem, analysis, filtering.xPhys, k), -1.0);
     VecAXPY(rhs, -dHdu, mu);
     VecAXPY(rhs, -dLdu, eta);
-    set_vec_fixed_from_column_root(rhs, analysis.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
-    solve_adjoint_full(*object.ROM, Keff, rhs, lambda, analysis, Iter, k, &Keff_eigen_cache);
+    set_vec_fixed_from_eigen_vector(rhs, analysis.SPCdofs, dfdFext(fem, analysis, filtering.xPhys, k), -1.0);
+    ROM->InitializeROMContext(analysis, Iter, k + 1, k, k * analysis.dt,
+                            "adjoint", "newmark_adjoint_effective", k == 0);
+    solve_petsc_with_rom(*ROM, Keff, rhs, lambda, &Keff_eigen_cache);
     lambda_all.col(k) = gather_vec_to_all_local(lambda);
     MemoryDebug::print("petsc_sens_after_step_end");
 
@@ -430,18 +437,18 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
         VecCopy(eta, eta_new);
         MatMult(analysis.M, lambda_new, Mlambda);
 
-        set_vec_from_column_root(mu, object.d_explicit_dfda_all, k);
+        set_vec_from_eigen_vector(mu, dfda(fem, analysis, filtering.xPhys, k));
         VecAXPY(mu, -(0.5 / beta - 1.0), Mlambda);
         VecAXPY(mu, dHda_new, mu_new);
         VecAXPY(mu, dLda_new, eta_new);
-        set_vec_from_column_root(eta, object.d_explicit_dfdv_all, k);
+        set_vec_from_eigen_vector(eta, dfdv(fem, analysis, filtering.xPhys, k));
         VecAXPY(eta, -(1.0 / (beta * dt)), Mlambda);
         VecAXPY(eta, dHdv_new, mu_new);
         VecAXPY(eta, dLdv_new, eta_new);
         zero_fixed(mu, analysis.SPCdofs);
         zero_fixed(eta, analysis.SPCdofs);
 
-        set_vec_from_column_root(rhs, object.d_explicit_dfdu_all, k, -1.0);
+        set_vec_from_eigen_vector(rhs, dfdu(fem, analysis, filtering.xPhys, k), -1.0);
         VecAXPY(rhs, a0c, Mlambda);
         VecAXPY(rhs, -dHdu_new, mu_new);
         VecAXPY(rhs, -dLdu_new, eta_new);
@@ -449,19 +456,23 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
             VecAXPY(rhs, -dHdu, mu);
             VecAXPY(rhs, -dLdu, eta);
         }
-        set_vec_fixed_from_column_root(rhs, analysis.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
+        set_vec_fixed_from_eigen_vector(rhs, analysis.SPCdofs, dfdFext(fem, analysis, filtering.xPhys, k), -1.0);
 
         if (k == 0) {
-            object.ROM->set_petsc_factorized_solver(nullptr, nullptr);
+            ROM->set_petsc_factorized_solver(nullptr, nullptr);
             if (analysis.factorized_K_eff) KSPDestroy(&analysis.factorized_K_eff);
 
-            object.ROM->set_petsc_factorized_solver(K0, analysis.factorized_K_initial);
-            solve_adjoint_full(*object.ROM, K0, rhs, lambda, analysis, Iter, k, &K0_eigen_cache);
+            ROM->set_petsc_factorized_solver(K0, analysis.factorized_K_initial);
+            ROM->InitializeROMContext(analysis, Iter, k + 1, k, k * analysis.dt,
+                                    "adjoint", "newmark_adjoint_effective", k == 0);
+            solve_petsc_with_rom(*ROM, K0, rhs, lambda, &K0_eigen_cache);
 
-            object.ROM->set_petsc_factorized_solver(nullptr, nullptr);
+            ROM->set_petsc_factorized_solver(nullptr, nullptr);
             if (analysis.factorized_K_initial) KSPDestroy(&analysis.factorized_K_initial);
         } else {
-            solve_adjoint_full(*object.ROM, Keff, rhs, lambda, analysis, Iter, k, &Keff_eigen_cache);
+            ROM->InitializeROMContext(analysis, Iter, k + 1, k, k * analysis.dt,
+                                    "adjoint", "newmark_adjoint_effective", k == 0);
+            solve_petsc_with_rom(*ROM, Keff, rhs, lambda, &Keff_eigen_cache);
         }
 
         lambda_all.col(k) = gather_vec_to_all_local(lambda);
@@ -471,7 +482,7 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     }
 
     MemoryDebug::print("petsc_sens_before_explicit_gradient");
-    Eigen::MatrixXd dfdx_phys = explicit_gradient_dynamic(fem, analysis, filtering.xPhys, object, lambda_all);
+    Eigen::MatrixXd dfdx_phys = explicit_gradient_dynamic(fem, analysis, filtering.xPhys, *this, lambda_all);
     MemoryDebug::print("petsc_sens_after_explicit_gradient");
 
     VecDestroy(&lambda);
@@ -484,18 +495,7 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     VecDestroy(&Mlambda);
     MemoryDebug::print("petsc_sens_after_destroy_temp");
 
-    return filtering.sensitivity(dfdx_phys);
-}
-
-} // namespace
-
-Eigen::MatrixXd PetscDynamicLinearElasticAVM::AVM(const FEM& fem,
-                                                  Analysis& analysis,
-                                                  const Eigen::MatrixXd&,
-                                                  const std::vector<int>& x_label,
-                                                  const Filtering& filtering,
-                                                  int Iter) {
-    Eigen::MatrixXd out = dynamic_elastic_base_full_impl(fem, analysis, *this, filtering, Iter);
+    Eigen::MatrixXd out = filtering.sensitivity(dfdx_phys);
     for (Eigen::Index e = 0; e < out.rows(); ++e) {
         if (x_label[static_cast<std::size_t>(e)] != 0) out.row(e).setZero();
     }

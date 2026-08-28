@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
               << " max_rank=" << max_rank
               << " online_updates=" << online_updates << "\n";
 
-    ROMContext context;
+    ROMBase::ROMContext context;
     context.opt_iter = 0;
 
     MyPOD_SVD1 pod_snapshot(0.0, 1e-10, max_rank);

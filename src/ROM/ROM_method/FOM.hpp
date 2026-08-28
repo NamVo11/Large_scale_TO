@@ -26,12 +26,10 @@ public:
 
     SolveStats main(const Eigen::SparseMatrix<double>& lhs,
                     const Eigen::VectorXd& rhs,
-                    Eigen::VectorXd& u,
-                    const ROMContext& context) override;
+                    Eigen::VectorXd& u) override;
     SolveStats FOM_main(const Eigen::SparseMatrix<double>& lhs,
                         const Eigen::VectorXd& rhs,
-                        Eigen::VectorXd& u,
-                        const ROMContext& context) override;
+                        Eigen::VectorXd& u) override;
     std::shared_ptr<FactorizedSolver> get_factorized_solver(const Eigen::SparseMatrix<double>& lhs) const override;
     void set_factorized_solver(const Eigen::SparseMatrix<double>& lhs,
                                std::shared_ptr<FactorizedSolver> solver) override;
@@ -53,12 +51,10 @@ public:
 
     SolveStats main(const Eigen::SparseMatrix<double>& lhs,
                     const Eigen::VectorXd& rhs,
-                    Eigen::VectorXd& u,
-                    const ROMContext& context) override;
+                    Eigen::VectorXd& u) override;
     SolveStats FOM_main(const Eigen::SparseMatrix<double>& lhs,
                         const Eigen::VectorXd& rhs,
-                        Eigen::VectorXd& u,
-                        const ROMContext& context) override;
+                        Eigen::VectorXd& u) override;
 };
 
 class PetscFOM_direct final : public ROMBase {
@@ -70,12 +66,10 @@ public:
 
     SolveStats main(const Eigen::SparseMatrix<double>& lhs,
                     const Eigen::VectorXd& rhs,
-                    Eigen::VectorXd& u,
-                    const ROMContext& context) override;
+                    Eigen::VectorXd& u) override;
     SolveStats FOM_main(const Eigen::SparseMatrix<double>& lhs,
                         const Eigen::VectorXd& rhs,
-                        Eigen::VectorXd& u,
-                        const ROMContext& context) override;
+                        Eigen::VectorXd& u) override;
     KSP get_petsc_factorized_solver(Mat lhs) const override;
     void set_petsc_factorized_solver(Mat lhs, KSP ksp) override;
     void set_petsc_system(Mat lhs, Vec rhs, Vec u) override;
@@ -101,12 +95,10 @@ public:
 
     SolveStats main(const Eigen::SparseMatrix<double>& lhs,
                     const Eigen::VectorXd& rhs,
-                    Eigen::VectorXd& u,
-                    const ROMContext& context) override;
+                    Eigen::VectorXd& u) override;
     SolveStats FOM_main(const Eigen::SparseMatrix<double>& lhs,
                         const Eigen::VectorXd& rhs,
-                        Eigen::VectorXd& u,
-                        const ROMContext& context) override;
+                        Eigen::VectorXd& u) override;
     KSP get_petsc_factorized_solver(Mat lhs) const override;
     void set_petsc_factorized_solver(Mat lhs, KSP ksp) override;
     void set_petsc_system(Mat lhs, Vec rhs, Vec u) override;

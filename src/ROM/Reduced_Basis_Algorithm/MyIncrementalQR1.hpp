@@ -12,7 +12,7 @@ public:
     MyIncrementalQR1(double e_rb_in = 1e-20, int max_rank_in = 50);
 
     void reset() override;
-    void update(const Eigen::VectorXd& solution, const ROMContext& context) override;
+    void update(const Eigen::VectorXd& solution, const ROMBase::ROMContext& context) override;
     bool update_reduced_cache_incremental(const Eigen::SparseMatrix<double>& A,
                                           const Eigen::MatrixXd& V,
                                           Eigen::MatrixXd& A_r_cache,

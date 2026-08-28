@@ -70,10 +70,10 @@ EigenFOM_direct::EigenFOM_direct() {
 
 SolveStats EigenFOM_direct::main(const Eigen::SparseMatrix<double>& lhs,
                                  const Eigen::VectorXd& rhs,
-                                 Eigen::VectorXd& u,
-                                 const ROMContext& context) {
+                                 Eigen::VectorXd& u) {
+    const ROMContext& context = ctx;
     const double t0 = wall_time();
-    const SolveStats stats = FOM_main(lhs, rhs, u, context);
+    const SolveStats stats = FOM_main(lhs, rhs, u);
     ROMInfo info;
     info.name = name;
     info.fom_used = true;
@@ -131,8 +131,8 @@ void EigenFOM_direct::set_factorized_solver(const Eigen::SparseMatrix<double>& l
 
 SolveStats EigenFOM_direct::FOM_main(const Eigen::SparseMatrix<double>& lhs,
                                      const Eigen::VectorXd& rhs,
-                                     Eigen::VectorXd& u,
-                                     const ROMContext& context) {
+                                     Eigen::VectorXd& u) {
+    const ROMContext& context = ctx;
     SolveStats stats;
     if (rhs.norm() < 1e-30) {
         u = Eigen::VectorXd::Zero(rhs.size());

@@ -10,14 +10,15 @@
 struct StaticLinearElasticAVM : GroupFunctionalBase {
     std::vector<std::unique_ptr<StaticLinearElasticFunctionalBase>> terms;
 
-    explicit StaticLinearElasticAVM(const myjson::json& j) {
-        analysis_id = myjson::int_value(j, "analysis_id", analysis_id);
-        sens_type = myjson::string_value(j, "sens_type", sens_type);
-        sens_function = myjson::string_value(j, "sens_function", sens_function);
-        type = myjson::string_value(j, "type", type);
-        sensitivity_method = InitializeSensitivityMethod(sens_type);
-
-        for (const auto& term_json : j.value("terms", myjson::json::array())) {
+    StaticLinearElasticAVM(const myjson::json& j,
+                           const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                           const myjson::json& run_json)
+        : GroupFunctionalBase(j, analysis_all, run_json) {
+        if (!std::dynamic_pointer_cast<StaticLinearElastic>(analysis)) {
+            throw std::runtime_error("StaticLinearElasticAVM requires static_elastic_linear analysis, id: " +
+                                     std::to_string(analysis_id));
+        }
+        for (const auto& term_json : j.at("terms")) {
             terms.push_back(InitializeStaticLinearElasticFunctional(term_json));
         }
     }
@@ -30,6 +31,21 @@ struct StaticLinearElasticAVM : GroupFunctionalBase {
                          Analysis& analysis,
                          const Eigen::MatrixXd& xPhys) override;
 
+    Eigen::VectorXd dfdu(const FEM& fem,
+                         Analysis& analysis,
+                         const Eigen::MatrixXd& xPhys,
+                         int istep) override;
+
+    Eigen::VectorXd dfdFext(const FEM& fem,
+                            Analysis& analysis,
+                            const Eigen::MatrixXd& xPhys,
+                            int istep) override;
+
+    Eigen::VectorXd dfdx(const FEM& fem,
+                         Analysis& analysis,
+                         const Eigen::MatrixXd& xPhys,
+                         int val_id) override;
+
     Eigen::MatrixXd AVM(const FEM& fem,
                         Analysis& analysis,
                         const Eigen::MatrixXd& x,
@@ -37,13 +53,18 @@ struct StaticLinearElasticAVM : GroupFunctionalBase {
                         const Filtering& filtering,
                         int Iter) override;
 
-private:
-    void accumulate_terms();
 };
 
 struct EigenStaticLinearElasticAVM : StaticLinearElasticAVM {
-    explicit EigenStaticLinearElasticAVM(const myjson::json& j)
-        : StaticLinearElasticAVM(j) {}
+    EigenStaticLinearElasticAVM(const myjson::json& j,
+                                const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                                const myjson::json& run_json)
+        : StaticLinearElasticAVM(j, analysis_all, run_json) {
+        if (!std::dynamic_pointer_cast<EigenStaticLinearElastic>(analysis)) {
+            throw std::runtime_error("EigenStaticLinearElasticAVM requires EigenStaticLinearElastic analysis, id: " +
+                                     std::to_string(analysis_id));
+        }
+    }
 
     Eigen::MatrixXd AVM(const FEM& fem,
                         Analysis& analysis,
@@ -54,8 +75,15 @@ struct EigenStaticLinearElasticAVM : StaticLinearElasticAVM {
 };
 
 struct PetscStaticLinearElasticAVM : StaticLinearElasticAVM {
-    explicit PetscStaticLinearElasticAVM(const myjson::json& j)
-        : StaticLinearElasticAVM(j) {}
+    PetscStaticLinearElasticAVM(const myjson::json& j,
+                                const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                                const myjson::json& run_json)
+        : StaticLinearElasticAVM(j, analysis_all, run_json) {
+        if (!std::dynamic_pointer_cast<PetscStaticLinearElastic>(analysis)) {
+            throw std::runtime_error("PetscStaticLinearElasticAVM requires PetscStaticLinearElastic analysis, id: " +
+                                     std::to_string(analysis_id));
+        }
+    }
 
     Eigen::MatrixXd AVM(const FEM& fem,
                         Analysis& analysis,

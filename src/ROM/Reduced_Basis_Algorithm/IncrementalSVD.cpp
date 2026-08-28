@@ -10,7 +10,7 @@ int IncrementalSVD::resolveResetRank() const {
     return r_reset > 0 ? r_reset : max_rank;
 }
 
-void IncrementalSVD::update(const Eigen::VectorXd& solution, const ROMContext& context) {
+void IncrementalSVD::update(const Eigen::VectorXd& solution, const ROMBase::ROMContext& context) {
     update_flag = false;
     if (store_snapshots) addSnapshot(solution, context);
     if (!ISVD_solver) throw std::runtime_error("IncrementalSVD: ISVD_solver is not initialized");

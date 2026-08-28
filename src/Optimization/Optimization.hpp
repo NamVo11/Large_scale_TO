@@ -36,7 +36,7 @@ struct Optimization {
     Eigen::MatrixXd x0;
     Eigen::MatrixXd x;
     std::vector<int> x_label;
-    std::vector<std::unique_ptr<Analysis>> analysis_all;
+    std::vector<std::shared_ptr<Analysis>> analysis_all;
     int MaxIter = 300;
     double Tol = 0.0;
     std::unique_ptr<Filtering> filtering;
@@ -49,11 +49,12 @@ struct Optimization {
 
     Optimization() = default;
 
-    Optimization(const myjson::json& optimization_json, const myjson::json& analysis_all_json,
+    Optimization(const myjson::json& optimization_json,
                  const myjson::json& output_json, const myjson::json& run_json,
                  const std::string& input_json_path, const FEM& fem,
-                 std::vector<std::unique_ptr<Analysis>> analysis_all_in) {
+                 const std::vector<std::shared_ptr<Analysis>>& analysis_all_in) {
         if (analysis_all_in.empty()) throw std::runtime_error("Optimization: analysis_all is empty");
+        analysis_all = analysis_all_in;
         init_design_variables(fem, optimization_json.at("x0").get<double>());
         MaxIter = optimization_json.at("MaxIter").get<int>();
         Tol = optimization_json.at("Tol").get<double>();
@@ -63,14 +64,13 @@ struct Optimization {
         const std::string linear_backend = run_json.at("linear_backend").get<std::string>();
         objective = Objective(optimization_json.at("ObjectiveGroups"),
                               linear_backend,
-                              analysis_all_json,
+                              analysis_all,
                               run_json);
         constraint = Constraint(optimization_json.at("Constraints"),
                                 linear_backend,
-                                analysis_all_json,
+                                analysis_all,
                                 run_json);
         Output = OutputData(output_json, run_json, input_json_path);
-        analysis_all = std::move(analysis_all_in);
     }
 
     void run(const FEM& fem);
@@ -78,17 +78,15 @@ struct Optimization {
 };
 
 inline Optimization InitializeOptimization(const myjson::json& optimization_json,
-                                           const myjson::json& analysis_all_json,
                                            const myjson::json& output_json,
                                            const myjson::json& run_json,
                                            const std::string& input_json_path,
                                            const FEM& fem,
-                                           std::vector<std::unique_ptr<Analysis>> analysis_all) {
+                                           const std::vector<std::shared_ptr<Analysis>>& analysis_all) {
     return Optimization(optimization_json,
-                        analysis_all_json,
                         output_json,
                         run_json,
                         input_json_path,
                         fem,
-                        std::move(analysis_all));
+                        analysis_all);
 }

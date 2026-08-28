@@ -26,19 +26,6 @@ struct ElementContribution {
     std::array<PetscScalar, 24 * 24> ke{};
 };
 
-const Material& element_material(const FEM& fem, int elem_id) {
-    const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
-    if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
-    return *element->material;
-}
-
-double interp_elastic(const Analysis& analysis, const FEM& fem, int elem_id, double x) {
-    const Material& material = element_material(fem, elem_id);
-    if (!analysis.interp) throw std::runtime_error("Analysis interpolation is not initialized");
-    const int val_id = material.val_ids.empty() ? 0 : material.val_ids.front();
-    return analysis.interp->calculate(material.E_values, x, material.is_design(), val_id, analysis.interp->modulus_penalty());
-}
-
 int omp_threads_from_env() {
     const char* value = std::getenv("OMP_NUM_THREADS");
     if (!value || !*value) return 1;
@@ -96,133 +83,7 @@ void set_neum(const Analysis& analysis, Vec f, int istep) {
     VecAssemblyEnd(f);
 }
 
-ROMContext make_context(const Analysis& analysis, int Iter) {
-    ROMContext ctx;
-    ctx.analysis_id = analysis.id;
-    ctx.opt_iter = Iter;
-    ctx.solve_step = 1;
-    ctx.time_step = analysis.Nstep;
-    ctx.time = 1.0;
-    ctx.role = "primal";
-    ctx.system_type = "static_equilibrium";
-    ctx.is_end_of_analysis = true;
-    return ctx;
-}
-
-SolveStats solve_with_common_rom(ROMBase& rom,
-                                 Mat lhs,
-                                 Vec rhs,
-                                 Vec u,
-                                 const ROMContext& context,
-                                 Eigen::SparseMatrix<double>* lhs_e_cache) {
-    rom.set_petsc_system(lhs, rhs, u);
-    if (!rom.use_mor) {
-        Eigen::SparseMatrix<double> empty_lhs;
-        Eigen::VectorXd empty_rhs;
-        Eigen::VectorXd empty_u;
-        return rom.main(empty_lhs, empty_rhs, empty_u, context);
-    }
-
-    if (lhs_e_cache->rows() == 0 || lhs_e_cache->cols() == 0) {
-        *lhs_e_cache = petsc_mat_to_eigen(lhs);
-    }
-    const Eigen::VectorXd rhs_e = petsc_vec_to_eigen(rhs);
-    Eigen::VectorXd u_e = Eigen::VectorXd::Zero(rhs_e.size());
-    const SolveStats stats = rom.main(*lhs_e_cache, rhs_e, u_e, context);
-    eigen_to_petsc_vec(u_e, u);
-    return stats;
-}
-
 } // namespace
-
-void PetscStaticLinearElastic::assemble_K(const FEM& fem,
-                                          const Eigen::MatrixXd& y_elem,
-                                          Mat K) const {
-    PetscMPIInt rank = 0;
-    PetscMPIInt size = 1;
-    MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
-    MPI_Comm_size(PETSC_COMM_WORLD, &size);
-    const int elem_start = (fem.NElem * rank) / size;
-    const int elem_end = (fem.NElem * (rank + 1)) / size;
-
-    if (size == 1) {
-        const int num_threads = omp_threads_from_env();
-        std::vector<std::vector<ElementContribution>> thread_contribs(static_cast<std::size_t>(num_threads));
-
-        for (const auto& region_ptr : fem.Regions) {
-            const Region& region = *region_ptr;
-            const double region_nu = element_material(fem, region.elem_ids.front()).nu();
-            ElementMatrix uniform_em;
-            if (fem.uniform_element_matrices) {
-                if (region.elem_ids.empty()) throw std::runtime_error("petsc assemble_K: region has no elements");
-                uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
-            }
-
-            #pragma omp parallel num_threads(num_threads)
-            {
-                const int tid = omp_get_thread_num();
-                auto& local_contribs = thread_contribs[static_cast<std::size_t>(tid)];
-
-                #pragma omp for schedule(static)
-                for (std::size_t e = 0; e < region.elem_ids.size(); ++e) {
-                    const int elem_id = region.elem_ids[e];
-                    const double Eeff = interp_elastic(*this, fem, elem_id, y_elem(elem_id, 0));
-                    ElementMatrix local_em;
-                    const ElementMatrix* em_ptr = &uniform_em;
-                    if (!fem.uniform_element_matrices) {
-                        local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
-                        em_ptr = &local_em;
-                    }
-                    const ElementMatrix& em = *em_ptr;
-                    const auto& rows = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
-                    ElementContribution c;
-                    c.ndof = static_cast<PetscInt>(em.ndof);
-                    for (int i = 0; i < em.ndof; ++i) {
-                        c.rows[static_cast<std::size_t>(i)] = rows[static_cast<std::size_t>(i)];
-                        for (int j = 0; j < em.ndof; ++j) {
-                            const std::size_t ij = static_cast<std::size_t>(i * em.ndof + j);
-                            c.ke[ij] = static_cast<PetscScalar>(Eeff * em.ke(i, j));
-                        }
-                    }
-                    local_contribs.push_back(std::move(c));
-                }
-            }
-        }
-
-        for (const auto& local_contribs : thread_contribs) {
-            for (const ElementContribution& c : local_contribs) {
-                MatSetValues(K, c.ndof, c.rows.data(), c.ndof, c.rows.data(), c.ke.data(), ADD_VALUES);
-            }
-        }
-    } else {
-        for (const auto& region_ptr : fem.Regions) {
-            const Region& region = *region_ptr;
-            const double region_nu = element_material(fem, region.elem_ids.front()).nu();
-            ElementMatrix uniform_em;
-            if (fem.uniform_element_matrices) {
-                if (region.elem_ids.empty()) throw std::runtime_error("petsc assemble_K: region has no elements");
-                uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
-            }
-            for (int elem_id : region.elem_ids) {
-                if (elem_id < elem_start || elem_id >= elem_end) continue;
-                const double Eeff = interp_elastic(*this, fem, elem_id, y_elem(elem_id, 0));
-                ElementMatrix local_em;
-                const ElementMatrix* em_ptr = &uniform_em;
-                if (!fem.uniform_element_matrices) {
-                    local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
-                    em_ptr = &local_em;
-                }
-                const ElementMatrix& em = *em_ptr;
-                const auto& rows = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
-                const LocalDenseMatrix ke = Eeff * em.ke;
-                MatSetValues(K, em.ndof, rows.data(), em.ndof, rows.data(), ke.data(), ADD_VALUES);
-            }
-        }
-    }
-
-    MatAssemblyBegin(K, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(K, MAT_FINAL_ASSEMBLY);
-}
 
 void PetscStaticLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter) {
     if (!ROM) throw std::runtime_error("PetscStaticLinearElastic::solver requires analysis.ROM initialized");
@@ -261,7 +122,8 @@ void PetscStaticLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_e
 
     Eigen::SparseMatrix<double> K_eigen_cache;
     PetscTime(&t0);
-    const SolveStats stats = solve_with_common_rom(*ROM, K, rhs, u, make_context(*this, Iter), &K_eigen_cache);
+    ROM->InitializeROMContext(*this, Iter, 1, Nstep, 1.0, "primal", "static_equilibrium", true);
+    const SolveStats stats = solve_petsc_with_rom(*ROM, K, rhs, u, &K_eigen_cache);
     PetscTime(&t1);
     solve_time = t1 - t0;
     store_factorized_solver(factorized_K_initial, ROM->get_petsc_factorized_solver(K));
@@ -286,4 +148,120 @@ void PetscStaticLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_e
     VecDestroy(&f_ext);
     VecDestroy(&rhs);
     VecDestroy(&u);
+}
+
+
+void PetscStaticLinearElastic::assemble_K(const FEM& fem,
+                                          const Eigen::MatrixXd& y_elem,
+                                          Mat K) const {
+    PetscMPIInt rank = 0;
+    PetscMPIInt size = 1;
+    MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+    MPI_Comm_size(PETSC_COMM_WORLD, &size);
+    const int elem_start = (fem.NElem * rank) / size;
+    const int elem_end = (fem.NElem * (rank + 1)) / size;
+
+    if (size == 1) {
+        const int num_threads = omp_threads_from_env();
+        std::vector<std::vector<ElementContribution>> thread_contribs(static_cast<std::size_t>(num_threads));
+
+        for (const auto& region_ptr : fem.Regions) {
+            const Region& region = *region_ptr;
+            const auto& region_element = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()));
+            if (!region_element || !region_element->material) {
+                throw std::runtime_error("Element material is not initialized");
+            }
+            const double region_nu = region_element->material->nu();
+            ElementMatrix uniform_em;
+            if (fem.uniform_element_matrices) {
+                if (region.elem_ids.empty()) throw std::runtime_error("petsc assemble_K: region has no elements");
+                uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
+            }
+
+            #pragma omp parallel num_threads(num_threads)
+            {
+                const int tid = omp_get_thread_num();
+                auto& local_contribs = thread_contribs[static_cast<std::size_t>(tid)];
+
+                #pragma omp for schedule(static)
+                for (std::size_t e = 0; e < region.elem_ids.size(); ++e) {
+                    const int elem_id = region.elem_ids[e];
+                    const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
+                    if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
+                    if (!interp) throw std::runtime_error("Analysis interpolation is not initialized");
+                    const Material& material = *element->material;
+                    const int val_id = material.val_ids.empty() ? 0 : material.val_ids.front();
+                    const double Eeff = interp->calculate(material.E_values,
+                                                          y_elem(elem_id, 0),
+                                                          material.is_design(),
+                                                          val_id,
+                                                          interp->modulus_penalty());
+                    ElementMatrix local_em;
+                    const ElementMatrix* em_ptr = &uniform_em;
+                    if (!fem.uniform_element_matrices) {
+                        local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
+                        em_ptr = &local_em;
+                    }
+                    const ElementMatrix& em = *em_ptr;
+                    const auto& rows = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
+                    ElementContribution c;
+                    c.ndof = static_cast<PetscInt>(em.ndof);
+                    for (int i = 0; i < em.ndof; ++i) {
+                        c.rows[static_cast<std::size_t>(i)] = rows[static_cast<std::size_t>(i)];
+                        for (int j = 0; j < em.ndof; ++j) {
+                            const std::size_t ij = static_cast<std::size_t>(i * em.ndof + j);
+                            c.ke[ij] = static_cast<PetscScalar>(Eeff * em.ke(i, j));
+                        }
+                    }
+                    local_contribs.push_back(std::move(c));
+                }
+            }
+        }
+
+        for (const auto& local_contribs : thread_contribs) {
+            for (const ElementContribution& c : local_contribs) {
+                MatSetValues(K, c.ndof, c.rows.data(), c.ndof, c.rows.data(), c.ke.data(), ADD_VALUES);
+            }
+        }
+    } else {
+        for (const auto& region_ptr : fem.Regions) {
+            const Region& region = *region_ptr;
+            const auto& region_element = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()));
+            if (!region_element || !region_element->material) {
+                throw std::runtime_error("Element material is not initialized");
+            }
+            const double region_nu = region_element->material->nu();
+            ElementMatrix uniform_em;
+            if (fem.uniform_element_matrices) {
+                if (region.elem_ids.empty()) throw std::runtime_error("petsc assemble_K: region has no elements");
+                uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
+            }
+            for (int elem_id : region.elem_ids) {
+                if (elem_id < elem_start || elem_id >= elem_end) continue;
+                const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
+                if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
+                if (!interp) throw std::runtime_error("Analysis interpolation is not initialized");
+                const Material& material = *element->material;
+                const int val_id = material.val_ids.empty() ? 0 : material.val_ids.front();
+                const double Eeff = interp->calculate(material.E_values,
+                                                      y_elem(elem_id, 0),
+                                                      material.is_design(),
+                                                      val_id,
+                                                      interp->modulus_penalty());
+                ElementMatrix local_em;
+                const ElementMatrix* em_ptr = &uniform_em;
+                if (!fem.uniform_element_matrices) {
+                    local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
+                    em_ptr = &local_em;
+                }
+                const ElementMatrix& em = *em_ptr;
+                const auto& rows = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
+                const LocalDenseMatrix ke = Eeff * em.ke;
+                MatSetValues(K, em.ndof, rows.data(), em.ndof, rows.data(), ke.data(), ADD_VALUES);
+            }
+        }
+    }
+
+    MatAssemblyBegin(K, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(K, MAT_FINAL_ASSEMBLY);
 }

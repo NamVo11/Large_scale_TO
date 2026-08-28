@@ -8,45 +8,72 @@
 #include <stdexcept>
 #include <string>
 
+struct Analysis;
 struct FEM;
-struct StaticLinearElastic;
 
 struct StaticLinearElasticFunctionalBase {
     std::string function_name;
     double weight = 1.0;
-    double initial_value = 0.0;
+    double initial_value = 1.0;
+    double scale = 1.0;
     double value = 0.0;
-
-    Eigen::MatrixXd dfdu_all;
-    Eigen::MatrixXd dfdv_all;
-    Eigen::MatrixXd dfda_all;
-    Eigen::MatrixXd dfdFext_all;
-    Eigen::MatrixXd df_dx;
 
     StaticLinearElasticFunctionalBase() = default;
     explicit StaticLinearElasticFunctionalBase(const myjson::json& j) {
-        function_name = myjson::string_value(j, "function_name", function_name);
         weight = myjson::double_value(j, "weight", weight);
-        initial_value = myjson::double_value(j, "value_initial", initial_value);
+        scale = weight / initial_value;
     }
     virtual ~StaticLinearElasticFunctionalBase() = default;
 
     virtual void initialize(const FEM& fem,
-                            StaticLinearElastic& analysis,
+                            Analysis& analysis,
                             const Eigen::MatrixXd& xPhys);
 
     virtual void calculate(const FEM& fem,
-                           StaticLinearElastic& analysis,
+                           Analysis& analysis,
                            const Eigen::MatrixXd& xPhys) = 0;
+
+    virtual Eigen::VectorXd dfdu(const FEM& fem,
+                                 Analysis& analysis,
+                                 const Eigen::MatrixXd& xPhys,
+                                 int istep) = 0;
+
+    virtual Eigen::VectorXd dfdFext(const FEM& fem,
+                                    Analysis& analysis,
+                                    const Eigen::MatrixXd& xPhys,
+                                    int istep) = 0;
+
+    virtual Eigen::VectorXd dfdx(const FEM& fem,
+                                 Analysis& analysis,
+                                 const Eigen::MatrixXd& xPhys,
+                                 int val_id) = 0;
 };
 
 struct Compliance : StaticLinearElasticFunctionalBase {
-    explicit Compliance(const myjson::json& j)
-        : StaticLinearElasticFunctionalBase(j) {}
+    explicit Compliance(const myjson::json& j) : StaticLinearElasticFunctionalBase(j) {
+        function_name = "compliance";
+    }
 
     void calculate(const FEM& fem,
-                   StaticLinearElastic& analysis,
+                   Analysis& analysis,
                    const Eigen::MatrixXd& xPhys) override;
+
+    Eigen::VectorXd dfdu(const FEM& fem,
+                         Analysis& analysis,
+                         const Eigen::MatrixXd& xPhys,
+                         int istep) override;
+
+    Eigen::VectorXd dfdFext(const FEM& fem,
+                            Analysis& analysis,
+                            const Eigen::MatrixXd& xPhys,
+                            int istep) override;
+
+    Eigen::VectorXd dfdx(const FEM&,
+                         Analysis&,
+                         const Eigen::MatrixXd&,
+                         int) override {
+        return Eigen::VectorXd();
+    }
 };
 
 inline std::unique_ptr<StaticLinearElasticFunctionalBase>

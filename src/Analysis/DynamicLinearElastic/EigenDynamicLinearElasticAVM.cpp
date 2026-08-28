@@ -20,64 +20,34 @@ int nvar_of(const Eigen::MatrixXd& x) {
     return static_cast<int>(x.cols());
 }
 
-void add_scaled(Eigen::MatrixXd& a, const Eigen::MatrixXd& b, double scale) {
-    if (b.size() == 0) return;
-    if (a.size() == 0) {
-        a = scale * b;
-        return;
-    }
-    a.noalias() += scale * b;
-}
-
-const Material& element_material(const FEM& fem, int elem_id) {
-    const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
-    if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
-    return *element->material;
-}
-
-void set_from_column(Eigen::VectorXd& v, const Eigen::MatrixXd& values, int k, double scale = 1.0) {
+void set_from_vector(Eigen::VectorXd& v, const Eigen::VectorXd& values, double scale = 1.0) {
     v.setZero();
     if (values.size() == 0) return;
-    if (k < 0 || k >= values.cols() || values.rows() != v.size()) {
-        throw std::runtime_error("eigen_backend set_from_column: size mismatch");
+    if (values.size() != v.size()) {
+        throw std::runtime_error("eigen_backend set_from_vector: size mismatch");
     }
-    v.noalias() = scale * values.col(k);
+    v.noalias() = scale * values;
 }
 
-void set_fixed_from_column(Eigen::VectorXd& v,
+void set_fixed_from_vector(Eigen::VectorXd& v,
                            const std::vector<int>& fixed,
-                           const Eigen::MatrixXd& values,
-                           int k,
+                           const Eigen::VectorXd& values,
                            double scale = 1.0) {
     if (values.size() == 0) return;
-    if (k < 0 || k >= values.cols() || values.rows() != v.size()) {
-        throw std::runtime_error("eigen_backend set_fixed_from_column: size mismatch");
+    if (values.size() != v.size()) {
+        throw std::runtime_error("eigen_backend set_fixed_from_vector: size mismatch");
     }
-    for (int id : fixed) v(id) = scale * values(id, k);
+    for (int id : fixed) v(id) = scale * values(id);
 }
 
 void zero_fixed(Eigen::VectorXd& v, const std::vector<int>& fixed) {
     for (int id : fixed) v(id) = 0.0;
 }
 
-ROMContext make_adjoint_context(const Analysis& analysis, int Iter, int time_step) {
-    const auto& dynamic = dynamic_cast<const DynamicLinearElastic&>(analysis);
-    ROMContext ctx;
-    ctx.analysis_id = analysis.id;
-    ctx.opt_iter = Iter;
-    ctx.solve_step = time_step + 1;
-    ctx.time_step = time_step;
-    ctx.time = time_step * dynamic.dt;
-    ctx.role = "adjoint";
-    ctx.system_type = "newmark_adjoint_effective";
-    ctx.is_end_of_analysis = time_step == 0;
-    return ctx;
-}
-
 Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
-                                          const DynamicLinearElastic& analysis,
+                                          DynamicLinearElastic& analysis,
                                           const Eigen::MatrixXd& xPhys,
-                                          const DynamicLinearElasticAVM& object,
+                                          DynamicLinearElasticAVM& object,
                                           const Eigen::MatrixXd& lambda_all) {
     using Clock = std::chrono::steady_clock;
 
@@ -133,7 +103,11 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
         const Region& region = *region_ptr;
         if (region.status != "design_val") continue;
         if (region.elem_ids.empty()) continue;
-        const Material& region_material = element_material(fem, region.elem_ids.front());
+        const auto& region_element = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()));
+        if (!region_element || !region_element->material) {
+            throw std::runtime_error("Element material is not initialized");
+        }
+        const Material& region_material = *region_element->material;
         if (region_material.val_ids.empty()) throw std::runtime_error("explicit_gradient_dynamic: no val_ids");
         if (region_material.E_values.empty()) throw std::runtime_error("explicit_gradient_dynamic: no elastic parameters");
         if (region_material.rho_values.empty()) throw std::runtime_error("explicit_gradient_dynamic: no density parameters");
@@ -206,7 +180,9 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                 sum_lambda_dot_Ma += lambda_elem.dot(Ma_elem);
             }
 
-            const Material& material = element_material(fem, elem_id);
+            const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
+            if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
+            const Material& material = *element->material;
             for (int val_id : material.val_ids) {
                 const double x = xPhys(elem_id, val_id - 1);
                 const double dE = analysis.interp->sensitivity(material.E_values, x, material.is_design(), val_id, analysis.interp->modulus_penalty());
@@ -220,7 +196,17 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
     const double timing_element_loop = elapsed(t0, t1);
 
     const auto add_begin = Clock::now();
-    add_scaled(df_dx, object.d_explicit_df_dx, 1.0);
+    for (int val_id = 0; val_id < nvar; ++val_id) {
+        const Eigen::VectorXd explicit_dfdx = object.dfdx(fem,
+                                                          analysis,
+                                                          xPhys,
+                                                          val_id);
+        if (explicit_dfdx.size() == 0) continue;
+        if (explicit_dfdx.size() != df_dx.rows()) {
+            throw std::runtime_error("explicit_gradient_dynamic: explicit dfdx size mismatch");
+        }
+        df_dx.col(val_id).noalias() += explicit_dfdx;
+    }
     const auto add_end = Clock::now();
 
     if (rank == 0) {
@@ -235,11 +221,14 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
     return df_dx;
 }
 
-Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
-                                               Analysis& analysis_base,
-                                               DynamicLinearElasticAVM& object,
-                                               const Filtering& filtering,
-                                               int Iter) {
+} // namespace
+
+Eigen::MatrixXd EigenDynamicLinearElasticAVM::AVM(const FEM& fem,
+                                                  Analysis& analysis_base,
+                                                  const Eigen::MatrixXd&,
+                                                  const std::vector<int>& x_label,
+                                                  const Filtering& filtering,
+                                                  int Iter) {
     auto& analysis = dynamic_cast<EigenDynamicLinearElastic&>(analysis_base);
     const int nstep = analysis.Nstep;
     const double beta = 0.25;
@@ -261,9 +250,9 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     if (K0.rows() == 0 || Keff.rows() == 0 || M.rows() == 0) {
         throw std::runtime_error("eigen_backend sensitivity requires Eigen forward matrices");
     }
-    if (!object.ROM) throw std::runtime_error("EigenDynamicLinearElasticAVM requires ROM initialized");
+    if (!ROM) throw std::runtime_error("EigenDynamicLinearElasticAVM requires ROM initialized");
 
-    std::shared_ptr<ROMBase>& rom = object.ROM;
+    std::shared_ptr<ROMBase>& rom = ROM;
     if (analysis.factorized_K_eff) {
         rom->set_factorized_solver(Keff, analysis.factorized_K_eff);
     }
@@ -280,12 +269,15 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     Eigen::MatrixXd lambda_all(ndof, nstep + 1);
 
     int k = nstep;
-    set_from_column(mu, object.d_explicit_dfda_all, k);
-    set_from_column(eta, object.d_explicit_dfdv_all, k);
-    set_from_column(rhs, object.d_explicit_dfdu_all, k, -1.0);
+    set_from_vector(mu, dfda(fem, analysis, filtering.xPhys, k));
+    set_from_vector(eta, dfdv(fem, analysis, filtering.xPhys, k));
+    set_from_vector(rhs, dfdu(fem, analysis, filtering.xPhys, k), -1.0);
     rhs.noalias() += -dHdu * mu - dLdu * eta;
-    set_fixed_from_column(rhs, analysis.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
-    rom->main(Keff, rhs, lambda, make_adjoint_context(analysis, Iter, k));
+    set_fixed_from_vector(rhs, analysis.SPCdofs, dfdFext(fem, analysis, filtering.xPhys, k), -1.0);
+    rom->InitializeROMContext(analysis, Iter, k + 1, k,
+                              k * analysis.dt, "adjoint",
+                              "newmark_adjoint_effective", k == 0);
+    rom->main(Keff, rhs, lambda);
     lambda_all.col(k) = lambda;
 
     for (k = nstep - 1; k >= 0; --k) {
@@ -294,45 +286,38 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
         eta_new = eta;
         Mlambda.noalias() = M * lambda_new;
 
-        set_from_column(mu, object.d_explicit_dfda_all, k);
+        set_from_vector(mu, dfda(fem, analysis, filtering.xPhys, k));
         mu.noalias() += -(0.5 / beta - 1.0) * Mlambda + dHda_new * mu_new + dLda_new * eta_new;
-        set_from_column(eta, object.d_explicit_dfdv_all, k);
+        set_from_vector(eta, dfdv(fem, analysis, filtering.xPhys, k));
         eta.noalias() += -(1.0 / (beta * dt)) * Mlambda + dHdv_new * mu_new + dLdv_new * eta_new;
         zero_fixed(mu, analysis.SPCdofs);
         zero_fixed(eta, analysis.SPCdofs);
 
-        set_from_column(rhs, object.d_explicit_dfdu_all, k, -1.0);
+        set_from_vector(rhs, dfdu(fem, analysis, filtering.xPhys, k), -1.0);
         rhs.noalias() += a0c * Mlambda - dHdu_new * mu_new - dLdu_new * eta_new;
         if (k != 0) rhs.noalias() += -dHdu * mu - dLdu * eta;
-        set_fixed_from_column(rhs, analysis.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
+        set_fixed_from_vector(rhs, analysis.SPCdofs, dfdFext(fem, analysis, filtering.xPhys, k), -1.0);
         if (k == 0) {
             rom->set_factorized_solver(Keff, nullptr);
             analysis.factorized_K_eff.reset();
             if (analysis.factorized_K_initial) {
                 rom->set_factorized_solver(K0, analysis.factorized_K_initial);
             }
-            rom->main(K0, rhs, lambda, make_adjoint_context(analysis, Iter, k));
+           rom->InitializeROMContext(analysis, Iter, k + 1, k, k * analysis.dt,
+                                    "adjoint", "newmark_adjoint_effective", k == 0);
+            rom->main(K0, rhs, lambda);
             rom->set_factorized_solver(K0, nullptr);
             analysis.factorized_K_initial.reset();
         } else {
-            rom->main(Keff, rhs, lambda, make_adjoint_context(analysis, Iter, k));
+            rom->InitializeROMContext(analysis, Iter, k + 1, k, k * analysis.dt,
+                                    "adjoint", "newmark_adjoint_effective", k == 0);
+            rom->main(Keff, rhs, lambda);
         }
         lambda_all.col(k) = lambda;
     }
 
-    Eigen::MatrixXd dfdx_phys = explicit_gradient_dynamic(fem, analysis, filtering.xPhys, object, lambda_all);
-    return filtering.sensitivity(dfdx_phys);
-}
-
-} // namespace
-
-Eigen::MatrixXd EigenDynamicLinearElasticAVM::AVM(const FEM& fem,
-                                                  Analysis& analysis,
-                                                  const Eigen::MatrixXd&,
-                                                  const std::vector<int>& x_label,
-                                                  const Filtering& filtering,
-                                                  int Iter) {
-    Eigen::MatrixXd out = dynamic_elastic_base_full_impl(fem, analysis, *this, filtering, Iter);
+    Eigen::MatrixXd dfdx_phys = explicit_gradient_dynamic(fem, analysis, filtering.xPhys, *this, lambda_all);
+    Eigen::MatrixXd out = filtering.sensitivity(dfdx_phys);
     for (Eigen::Index e = 0; e < out.rows(); ++e) {
         if (x_label[static_cast<std::size_t>(e)] != 0) out.row(e).setZero();
     }

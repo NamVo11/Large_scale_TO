@@ -30,10 +30,10 @@ EigenFOM_iterative::EigenFOM_iterative(std::string method_in) : method(std::move
 
 SolveStats EigenFOM_iterative::main(const Eigen::SparseMatrix<double>& lhs,
                                     const Eigen::VectorXd& rhs,
-                                    Eigen::VectorXd& u,
-                                    const ROMContext& context) {
+                                    Eigen::VectorXd& u) {
+    const ROMContext& context = ctx;
     const double t0 = wall_time();
-    const SolveStats stats = FOM_main(lhs, rhs, u, context);
+    const SolveStats stats = FOM_main(lhs, rhs, u);
     ROMInfo info;
     info.name = name;
     info.fom_used = true;
@@ -49,8 +49,7 @@ SolveStats EigenFOM_iterative::main(const Eigen::SparseMatrix<double>& lhs,
 
 SolveStats EigenFOM_iterative::FOM_main(const Eigen::SparseMatrix<double>& lhs,
                                         const Eigen::VectorXd& rhs,
-                                        Eigen::VectorXd& u,
-                                        const ROMContext&) {
+                                        Eigen::VectorXd& u) {
     SolveStats stats;
     if (rhs.norm() < 1e-30) {
         u = Eigen::VectorXd::Zero(rhs.size());

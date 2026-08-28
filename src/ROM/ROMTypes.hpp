@@ -1,17 +1,13 @@
 #pragma once
 
-#include <string>
+#ifdef EIGEN_USE_LAPACKE
+#include <mkl_spblas.h>
+using MklSparseMatrixHandle = sparse_matrix_t;
+#else
+using MklSparseMatrixHandle = void*;
+#endif
 
-struct ROMContext {
-    int analysis_id = 0;
-    int opt_iter = 0;
-    int solve_step = 0;
-    int time_step = 0;
-    double time = 0.0;
-    std::string role = "primal";
-    std::string system_type;
-    bool is_end_of_analysis = false;
-};
+#include <string>
 
 struct ROMInfo {
     std::string name;

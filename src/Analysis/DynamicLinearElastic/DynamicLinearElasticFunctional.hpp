@@ -15,20 +15,14 @@ struct FEM;
 struct DynamicLinearElasticFunctionalBase {
     std::string function_name;
     double weight = 1.0;
-    double initial_value = 0.0;
+    double initial_value = 1.0;
+    double scale = 1.0;
     double value = 0.0;
-
-    Eigen::MatrixXd dfdu_all;
-    Eigen::MatrixXd dfdv_all;
-    Eigen::MatrixXd dfda_all;
-    Eigen::MatrixXd dfdFext_all;
-    Eigen::MatrixXd df_dx;
 
     DynamicLinearElasticFunctionalBase() = default;
     explicit DynamicLinearElasticFunctionalBase(const myjson::json& j) {
-        function_name = myjson::string_value(j, "function_name", function_name);
         weight = myjson::double_value(j, "weight", weight);
-        initial_value = myjson::double_value(j, "value_initial", initial_value);
+        scale = weight / initial_value;
     }
     virtual ~DynamicLinearElasticFunctionalBase() = default;
 
@@ -39,15 +33,72 @@ struct DynamicLinearElasticFunctionalBase {
     virtual void calculate(const FEM& fem,
                            DynamicLinearElastic& analysis,
                            const Eigen::MatrixXd& xPhys) = 0;
+
+    virtual Eigen::VectorXd dfdu(const FEM& fem,
+                                 DynamicLinearElastic& analysis,
+                                 const Eigen::MatrixXd& xPhys,
+                                 int istep) = 0;
+
+    virtual Eigen::VectorXd dfdv(const FEM& fem,
+                                 DynamicLinearElastic& analysis,
+                                 const Eigen::MatrixXd& xPhys,
+                                 int istep) = 0;
+
+    virtual Eigen::VectorXd dfda(const FEM& fem,
+                                 DynamicLinearElastic& analysis,
+                                 const Eigen::MatrixXd& xPhys,
+                                 int istep) = 0;
+
+    virtual Eigen::VectorXd dfdFext(const FEM& fem,
+                                    DynamicLinearElastic& analysis,
+                                    const Eigen::MatrixXd& xPhys,
+                                    int istep) = 0;
+
+    virtual Eigen::VectorXd dfdx(const FEM& fem,
+                                 DynamicLinearElastic& analysis,
+                                 const Eigen::MatrixXd& xPhys,
+                                 int val_id) = 0;
 };
 
 struct L2ComplianceElastic : DynamicLinearElasticFunctionalBase {
-    explicit L2ComplianceElastic(const myjson::json& j)
-        : DynamicLinearElasticFunctionalBase(j) {}
+    explicit L2ComplianceElastic(const myjson::json& j) : DynamicLinearElasticFunctionalBase(j) {
+        function_name = "l2_compliance_elastic";
+    }
 
     void calculate(const FEM& fem,
                    DynamicLinearElastic& analysis,
                    const Eigen::MatrixXd& xPhys) override;
+
+    Eigen::VectorXd dfdu(const FEM& fem,
+                         DynamicLinearElastic& analysis,
+                         const Eigen::MatrixXd& xPhys,
+                         int istep) override;
+
+    Eigen::VectorXd dfdFext(const FEM& fem,
+                            DynamicLinearElastic& analysis,
+                            const Eigen::MatrixXd& xPhys,
+                            int istep) override;
+
+    Eigen::VectorXd dfdv(const FEM&,
+                         DynamicLinearElastic&,
+                         const Eigen::MatrixXd&,
+                         int) override {
+        return Eigen::VectorXd();
+    }
+
+    Eigen::VectorXd dfda(const FEM&,
+                         DynamicLinearElastic&,
+                         const Eigen::MatrixXd&,
+                         int) override {
+        return Eigen::VectorXd();
+    }
+
+    Eigen::VectorXd dfdx(const FEM&,
+                         DynamicLinearElastic&,
+                         const Eigen::MatrixXd&,
+                         int) override {
+        return Eigen::VectorXd();
+    }
 };
 
 inline std::unique_ptr<DynamicLinearElasticFunctionalBase>

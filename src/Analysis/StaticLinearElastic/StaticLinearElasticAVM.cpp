@@ -7,23 +7,54 @@
 void StaticLinearElasticAVM::initialize_terms(const FEM& fem,
                                              Analysis& analysis,
                                              const Eigen::MatrixXd& xPhys) {
-    auto* static_analysis = dynamic_cast<StaticLinearElastic*>(&analysis);
-    if (!static_analysis) throw std::runtime_error("StaticLinearElasticAVM requires StaticLinearElastic analysis");
+    value = 0.0;
     for (auto& term : terms) {
-        term->initialize(fem, *static_analysis, xPhys);
+        term->initialize(fem, analysis, xPhys);
+        value += term->scale * term->value;
     }
-    accumulate_terms();
 }
 
 void StaticLinearElasticAVM::calculate_terms(const FEM& fem,
                                             Analysis& analysis,
                                             const Eigen::MatrixXd& xPhys) {
-    auto* static_analysis = dynamic_cast<StaticLinearElastic*>(&analysis);
-    if (!static_analysis) throw std::runtime_error("StaticLinearElasticAVM requires StaticLinearElastic analysis");
+    value = 0.0;
     for (auto& term : terms) {
-        term->calculate(fem, *static_analysis, xPhys);
+        term->calculate(fem, analysis, xPhys);
+        value += term->scale * term->value;
     }
-    accumulate_terms();
+}
+
+Eigen::VectorXd StaticLinearElasticAVM::dfdu(const FEM& fem,
+                                            Analysis& analysis,
+                                            const Eigen::MatrixXd& xPhys,
+                                            int istep) {
+    Eigen::VectorXd out;
+    for (auto& term : terms) {
+        add_scaled(out, term->dfdu(fem, analysis, xPhys, istep), term->scale);
+    }
+    return out;
+}
+
+Eigen::VectorXd StaticLinearElasticAVM::dfdFext(const FEM& fem,
+                                               Analysis& analysis,
+                                               const Eigen::MatrixXd& xPhys,
+                                               int istep) {
+    Eigen::VectorXd out;
+    for (auto& term : terms) {
+        add_scaled(out, term->dfdFext(fem, analysis, xPhys, istep), term->scale);
+    }
+    return out;
+}
+
+Eigen::VectorXd StaticLinearElasticAVM::dfdx(const FEM& fem,
+                                            Analysis& analysis,
+                                            const Eigen::MatrixXd& xPhys,
+                                            int val_id) {
+    Eigen::VectorXd out;
+    for (auto& term : terms) {
+        add_scaled(out, term->dfdx(fem, analysis, xPhys, val_id), term->scale);
+    }
+    return out;
 }
 
 Eigen::MatrixXd StaticLinearElasticAVM::AVM(const FEM&,
@@ -33,21 +64,4 @@ Eigen::MatrixXd StaticLinearElasticAVM::AVM(const FEM&,
                                            const Filtering&,
                                            int) {
     throw std::runtime_error("StaticLinearElasticAVM::AVM requires a backend derived object");
-}
-
-void StaticLinearElasticAVM::accumulate_terms() {
-    reset_accumulated_derivatives();
-    for (const auto& term : terms) {
-        if (term->initial_value == 0.0) {
-            throw std::runtime_error("StaticLinearElastic functional has zero initial_value: " + term->function_name);
-        }
-        const double alpha = term->weight / term->initial_value;
-        add_term_contribution(alpha,
-                              term->value,
-                              term->dfdu_all,
-                              term->dfdv_all,
-                              term->dfda_all,
-                              term->dfdFext_all,
-                              term->df_dx);
-    }
 }

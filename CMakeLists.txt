@@ -52,6 +52,7 @@ add_executable(stage2_dynamic_forward
   src/Analysis/StaticLinearElastic/StaticLinearElasticFunctional.cpp
   src/Analysis/StaticLinearElastic/StaticLinearElasticAVM.cpp
   src/Analysis/StaticLinearElastic/EigenStaticLinearElasticAVM.cpp
+  src/Analysis/StaticLinearElastic/PetscStaticLinearElasticAVM.cpp
   src/ROM/ROM_method/ROM_Base.cpp
   src/ROM/ROM_method/FOM_direct.cpp
   src/ROM/ROM_method/FOM_iterative.cpp
@@ -72,6 +73,7 @@ add_executable(stage2_dynamic_forward
 add_executable(basis_update_benchmark
   src/tools/basis_update_benchmark.cpp
   src/helper/MyAlgebra.cpp
+  src/ROM/ROM_method/ROM_Base.cpp
   src/ROM/Reduced_Basis_Algorithm/UpdateBase.cpp
   src/ROM/Reduced_Basis_Algorithm/MyPOD_SVD1.cpp
   src/ROM/Reduced_Basis_Algorithm/IncrementalSVD.cpp
