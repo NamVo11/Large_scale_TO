@@ -106,7 +106,7 @@ void EigenFOM_direct::set_factorization(const Eigen::SparseMatrix<double>& lhs) 
 #endif
     solver_ = std::make_shared<FactorizedSolver>();
 #ifdef EIGEN_USE_LAPACKE
-    solver_->solver.pardisoParameterArray()[7] = 0;
+    solver_->solver.pardisoParameterArray()[7] = 1; // use MKL's internal parallelism for factorization
 #endif
     solver_->solver.compute(lhs);
     last_factorization_time_ = wall_time() - tf;
