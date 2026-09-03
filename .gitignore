@@ -7,3 +7,6 @@ build-*/
 # Generated results
 results/
 **/results/
+
+# Local editor/task configuration
+.vscode/
