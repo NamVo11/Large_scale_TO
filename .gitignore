@@ -14,4 +14,7 @@ case_study/
 debug_logs
 **/debug_logs/
 debug_logs/
+
+# Local editor/task configuration
+.vscode/
 debug_logs/
