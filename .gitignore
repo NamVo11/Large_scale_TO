@@ -10,3 +10,6 @@ results/
 
 case_study/
 **/case_study/
+
+# Local editor/task configuration
+.vscode/
