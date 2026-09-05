@@ -7,8 +7,8 @@
 // MyPOD_SVD with energy normalization
 class MyPOD_SVD1 final : public UpdateBase {
 public:
-    double tol = 1e-12;
-    double energy_tol = 0.0;
+    double tol = 1e-6;
+    double energy_tol = 0; // 0.99999;
     double snapshot_window = 0.0; // 0 means Inf, matching current MATLAB usage.
     std::unique_ptr<MyAlgebra::MyPODBase> pod_solver;
 
@@ -30,8 +30,8 @@ public:
 
 class MyPOD_SVD final : public UpdateBase {
 public:
-    double tol = 1e-12;
-    double energy_tol = 0.0;
+    double tol = 1e-6;
+    double energy_tol = 0; //0.99999;
     double snapshot_window = 0.0; // 0 means Inf, matching current MATLAB usage.
     std::unique_ptr<MyAlgebra::MyPODBase> pod_solver;
 

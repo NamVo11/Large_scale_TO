@@ -39,4 +39,10 @@ private:
                                           const Eigen::MatrixXd& V,
                                           const UpdateBase& basis_runtime,
                                           ROMInfo& info);
+    bool eigen_update_reduced_cache_incremental(const Eigen::SparseMatrix<double>& A,
+                                                const Eigen::MatrixXd& V,
+                                                const UpdateBase& basis_runtime);
+    bool mkl_update_reduced_cache_incremental(const Eigen::SparseMatrix<double>& A,
+                                              const Eigen::MatrixXd& V,
+                                              const UpdateBase& basis_runtime);
 };

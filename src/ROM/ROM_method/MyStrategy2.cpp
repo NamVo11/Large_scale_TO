@@ -3,9 +3,17 @@
 #include "ROM/Reduced_Basis_Algorithm/MyIncrementalQR1.hpp"
 #include "ROM/Reduced_Basis_Algorithm/UpdateBase.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
+#include <iostream>
 #include <stdexcept>
 #include <utility>
+
+#ifdef EIGEN_USE_LAPACKE
+#include <mkl_cblas.h>
+#include <mkl_spblas.h>
+#endif
 
 namespace {
 
@@ -25,9 +33,75 @@ bool MyStrategy2::update_reduced_cache_incremental(const Eigen::SparseMatrix<dou
     const int old_rank = A_r_rank_cache_;
     if (rank <= 0 || A_r_cache.rows() != old_rank || AV_cache_.cols() != old_rank) return false;
 
+    // Compare Eigen and MKL incremental projection times and results.
+    // Keep this block disabled in production because it computes the update twice.
+    /*
+    const Eigen::MatrixXd A_r_old = A_r_cache;
+    const Eigen::MatrixXd AV_old = AV_cache_;
+
+    const double t_mkl0 = now_time();
+    const bool mkl_ok = mkl_update_reduced_cache_incremental(A, V, basis_runtime);
+    const double mkl_time = now_time() - t_mkl0;
+    if (!mkl_ok) {
+        A_r_cache = A_r_old;
+        AV_cache_ = AV_old;
+        factorized_A_r.compute(A_r_cache);
+        return false;
+    }
+
+    const Eigen::MatrixXd A_r_mkl = A_r_cache;
+    const Eigen::MatrixXd AV_mkl = AV_cache_;
+
+    A_r_cache = A_r_old;
+    AV_cache_ = AV_old;
+    factorized_A_r.compute(A_r_cache);
+
+    const double t_eigen0 = now_time();
+    const bool eigen_ok = eigen_update_reduced_cache_incremental(A, V, basis_runtime);
+    const double eigen_time = now_time() - t_eigen0;
+
+    double AV_diff = 0.0;
+    double Ar_diff = 0.0;
+    if (eigen_ok) {
+        AV_diff = (AV_mkl - AV_cache_).norm() / std::max(AV_cache_.norm(), 1e-30);
+        Ar_diff = (A_r_mkl - A_r_cache).norm() / std::max(A_r_cache.norm(), 1e-30);
+    }
+
+    std::cout << "  ROM incremental projection compare[s]"
+              << ": eigen=" << eigen_time
+              << " mkl=" << mkl_time
+              << " eigen_ok=" << (eigen_ok ? 1 : 0)
+              << " AV_rel_diff=" << AV_diff
+              << " Ar_rel_diff=" << Ar_diff << "\n";
+
+    A_r_cache = A_r_mkl;
+    AV_cache_ = AV_mkl;
+    factorized_A_r.compute(A_r_cache);
+
+    info.timing_projection += mkl_time;
+    A_r_rank_cache_ = rank;
+    fom_flag = 0;
+    return true;
+    */
+
+    const double t_mkl0 = now_time();
+    const bool mkl_ok = mkl_update_reduced_cache_incremental(A, V, basis_runtime);
+    const double mkl_time = now_time() - t_mkl0;
+    if (!mkl_ok) return false;
+
+    info.timing_projection += mkl_time;
+    A_r_rank_cache_ = rank;
+    fom_flag = 0;
+    return true;
+}
+
+bool MyStrategy2::eigen_update_reduced_cache_incremental(const Eigen::SparseMatrix<double>& A,
+                                                         const Eigen::MatrixXd& V,
+                                                         const UpdateBase& basis_runtime) {
+    const int rank = static_cast<int>(V.cols());
+    const int old_rank = A_r_rank_cache_;
     const auto* qr_basis = dynamic_cast<const MyIncrementalQR1*>(&basis_runtime);
     const int drop_index = qr_basis ? qr_basis->base_rank : -1;
-    const double t0 = now_time();
 
     auto append_column = [&](const Eigen::MatrixXd& A_r_base,
                              const Eigen::MatrixXd& AV_base,
@@ -52,9 +126,6 @@ bool MyStrategy2::update_reduced_cache_incremental(const Eigen::SparseMatrix<dou
 
     if (rank == old_rank + 1) {
         append_column(A_r_cache, AV_cache_, V.col(rank - 1), rank);
-        info.timing_projection += now_time() - t0;
-        A_r_rank_cache_ = rank;
-        fom_flag = 0;
         return true;
     }
 
@@ -83,13 +154,120 @@ bool MyStrategy2::update_reduced_cache_incremental(const Eigen::SparseMatrix<dou
         } else {
             append_column(A_r_kept, AV_kept, V.col(rank - 1), rank);
         }
-        info.timing_projection += now_time() - t0;
-        A_r_rank_cache_ = rank;
-        fom_flag = 0;
         return true;
     }
 
     return false;
+}
+
+bool MyStrategy2::mkl_update_reduced_cache_incremental(const Eigen::SparseMatrix<double>& A,
+                                                       const Eigen::MatrixXd& V,
+                                                       const UpdateBase& basis_runtime) {
+#ifdef EIGEN_USE_LAPACKE
+    ensure_mkl_lhs_cache(A);
+
+    const int rank = static_cast<int>(V.cols());
+    const int old_rank = A_r_rank_cache_;
+    const auto* qr_basis = dynamic_cast<const MyIncrementalQR1*>(&basis_runtime);
+    const int drop_index = qr_basis ? qr_basis->base_rank : -1;
+
+    auto append_column = [&](const Eigen::MatrixXd& A_r_base,
+                             const Eigen::MatrixXd& AV_base,
+                             const Eigen::VectorXd& v_new,
+                             int new_rank) {
+        Eigen::VectorXd Av_new(A.rows());
+        matrix_descr descr{};
+        descr.type = SPARSE_MATRIX_TYPE_GENERAL;
+        const sparse_status_t status = mkl_sparse_d_mv(SPARSE_OPERATION_NON_TRANSPOSE,
+                                                       1.0,
+                                                       mkl_lhs_cache_,
+                                                       descr,
+                                                       v_new.data(),
+                                                       0.0,
+                                                       Av_new.data());
+        if (status != SPARSE_STATUS_SUCCESS) {
+            throw std::runtime_error("MyStrategy2::mkl_update_reduced_cache_incremental: mkl_sparse_d_mv failed");
+        }
+
+        Eigen::MatrixXd A_r_new(new_rank, new_rank);
+        if (new_rank > 1) {
+            const int kept_rank = new_rank - 1;
+            A_r_new.topLeftCorner(kept_rank, kept_rank) = A_r_base;
+
+            cblas_dgemv(CblasColMajor,
+                        CblasTrans,
+                        static_cast<MKL_INT>(V.rows()),
+                        static_cast<MKL_INT>(kept_rank),
+                        1.0,
+                        V.data(),
+                        static_cast<MKL_INT>(V.outerStride()),
+                        Av_new.data(),
+                        1,
+                        0.0,
+                        A_r_new.col(new_rank - 1).data(),
+                        1);
+
+            cblas_dgemv(CblasColMajor,
+                        CblasTrans,
+                        static_cast<MKL_INT>(AV_base.rows()),
+                        static_cast<MKL_INT>(kept_rank),
+                        1.0,
+                        AV_base.data(),
+                        static_cast<MKL_INT>(AV_base.outerStride()),
+                        v_new.data(),
+                        1,
+                        0.0,
+                        A_r_new.row(new_rank - 1).data(),
+                        static_cast<MKL_INT>(A_r_new.outerStride()));
+        }
+        A_r_new(new_rank - 1, new_rank - 1) =
+            cblas_ddot(static_cast<MKL_INT>(v_new.size()), v_new.data(), 1, Av_new.data(), 1);
+
+        Eigen::MatrixXd AV_new(AV_base.rows(), new_rank);
+        if (new_rank > 1) AV_new.leftCols(new_rank - 1) = AV_base;
+        AV_new.col(new_rank - 1) = Av_new;
+        A_r_cache = std::move(A_r_new);
+        factorized_A_r.compute(A_r_cache);
+        AV_cache_ = std::move(AV_new);
+    };
+
+    if (rank == old_rank + 1) {
+        append_column(A_r_cache, AV_cache_, V.col(rank - 1), rank);
+        return true;
+    }
+
+    if (qr_basis && drop_index >= 0 && drop_index < old_rank &&
+        (rank == old_rank || rank == old_rank - 1)) {
+        const int kept_rank = old_rank - 1;
+        Eigen::MatrixXd A_r_kept(kept_rank, kept_rank);
+        Eigen::MatrixXd AV_kept(AV_cache_.rows(), kept_rank);
+        int ii = 0;
+        for (int i = 0; i < old_rank; ++i) {
+            if (i == drop_index) continue;
+            AV_kept.col(ii) = AV_cache_.col(i);
+            int jj = 0;
+            for (int j = 0; j < old_rank; ++j) {
+                if (j == drop_index) continue;
+                A_r_kept(ii, jj) = A_r_cache(i, j);
+                ++jj;
+            }
+            ++ii;
+        }
+
+        if (rank == kept_rank) {
+            A_r_cache = std::move(A_r_kept);
+            factorized_A_r.compute(A_r_cache);
+            AV_cache_ = std::move(AV_kept);
+        } else {
+            append_column(A_r_kept, AV_kept, V.col(rank - 1), rank);
+        }
+        return true;
+    }
+
+    return false;
+#else
+    return eigen_update_reduced_cache_incremental(A, V, basis_runtime);
+#endif
 }
 
 SolveStats MyStrategy2::main(const Eigen::SparseMatrix<double>& lhs,
