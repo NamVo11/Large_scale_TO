@@ -54,6 +54,7 @@ add_executable(stage2_dynamic_forward
   src/ROM/Error_Estimator/RelativeResidualEstimator.cpp
   src/ROM/Reduced_Basis_Algorithm/UpdateBase.cpp
   src/ROM/Reduced_Basis_Algorithm/MyPOD_SVD1.cpp
+  src/ROM/Reduced_Basis_Algorithm/MyPOD_SVD.cpp
   src/ROM/Reduced_Basis_Algorithm/IncrementalSVD.cpp
   src/ROM/Reduced_Basis_Algorithm/MyIncrementalQR1.cpp
   src/third_party/mma/MMASolver.cpp
@@ -66,6 +67,7 @@ add_executable(basis_update_benchmark
   src/helper/MyAlgebra.cpp
   src/ROM/Reduced_Basis_Algorithm/UpdateBase.cpp
   src/ROM/Reduced_Basis_Algorithm/MyPOD_SVD1.cpp
+  src/ROM/Reduced_Basis_Algorithm/MyPOD_SVD.cpp
   src/ROM/Reduced_Basis_Algorithm/IncrementalSVD.cpp
   src/ROM/Reduced_Basis_Algorithm/MyIncrementalQR1.cpp
 )
@@ -125,6 +127,7 @@ else()
   target_compile_options(basis_update_benchmark PRIVATE -Wall -Wextra -Wpedantic)
   set_source_files_properties(
     src/ROM/Reduced_Basis_Algorithm/MyPOD_SVD1.cpp
+    src/ROM/Reduced_Basis_Algorithm/MyPOD_SVD.cpp
     PROPERTIES COMPILE_OPTIONS -Wno-deprecated-declarations
   )
 endif()

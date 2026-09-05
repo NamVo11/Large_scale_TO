@@ -59,7 +59,7 @@ std::shared_ptr<ROMBase> make_dynamic_ROM(const std::string& method_name,
     }
 
     std::vector<std::shared_ptr<UpdateBase>> basis_list;
-    basis_list.push_back(std::make_shared<MyPOD_SVD1>(0.0, 1e-10, rank1));
+    basis_list.push_back(std::make_shared<MyPOD_SVD>(0.0, 1e-10, rank1));
     if (method == "mystrategy2") {
         basis_list.push_back(std::make_shared<MyIncrementalQR1>(1e-20, max_rank));
         return std::make_shared<MyStrategy2>(
