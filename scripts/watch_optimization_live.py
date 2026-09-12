@@ -380,7 +380,7 @@ def save_line_figure(path: Path, title: str, series, ylabel: str = "Value"):
     return True
 
 
-def save_history_figure(result_dir: Path, figure_dir: Path):
+def save_history_figure(result_dir: Path, figure_dir: Path, ext: str = "png"):
     rows = read_history_csv(result_dir / "optimization_history.csv")
     if not rows:
         return False
@@ -400,12 +400,12 @@ def save_history_figure(result_dir: Path, figure_dir: Path):
     axes[1].set_ylabel("Constraint")
     axes[1].grid(True, alpha=0.35)
     fig.tight_layout()
-    fig.savefig(figure_dir / "objective_constraint_history.png")
+    fig.savefig(figure_dir / f"objective_constraint_history.{ext}")
     plt.close(fig)
     return True
 
 
-def save_change_figure(result_dir: Path, figure_dir: Path):
+def save_change_figure(result_dir: Path, figure_dir: Path, ext: str = "png"):
     rows = read_history_csv(result_dir / "optimization_history.csv")
     if not rows:
         return False
@@ -413,14 +413,14 @@ def save_change_figure(result_dir: Path, figure_dir: Path):
     change = [math.nan if r.get("Iter", i) == 0 else r.get("change", math.nan) for i, r in enumerate(rows)]
     rms = [math.nan if r.get("Iter", i) == 0 else r.get("rms_change", math.nan) for i, r in enumerate(rows)]
     return save_line_figure(
-        figure_dir / "design_change_history.png",
+        figure_dir / f"design_change_history.{ext}",
         "Design Variable Change History",
         [("Max change", x, change), ("RMS change", x, rms)],
         "Change",
     )
 
 
-def save_matrix_line_figure(result_dir: Path, figure_dir: Path, prefix: str, field: str, title: str, ylabel: str):
+def save_matrix_line_figure(result_dir: Path, figure_dir: Path, prefix: str, field: str, title: str, ylabel: str, ext: str = "png"):
     y = flatten_matrix(read_matrix_csv(result_dir / f"{prefix}_{field}.csv"))
     if not has_values(y):
         return False
@@ -433,10 +433,10 @@ def save_matrix_line_figure(result_dir: Path, figure_dir: Path, prefix: str, fie
         basis_error = flatten_matrix(read_matrix_csv(result_dir / f"{prefix}_basis_error.csv"))
         if has_values(basis_error):
             series.append(("basis_error", list(range(len(basis_error))), basis_error))
-    return save_line_figure(figure_dir / f"{prefix}_{field}_history.png", title, series, ylabel)
+    return save_line_figure(figure_dir / f"{prefix}_{field}_history.{ext}", title, series, ylabel)
 
 
-def save_mode_figure(result_dir: Path, figure_dir: Path, prefix: str, title: str):
+def save_mode_figure(result_dir: Path, figure_dir: Path, prefix: str, title: str, ext: str = "png"):
     mode = read_matrix_csv(result_dir / f"{prefix}_fom_used.csv")
     points_x = []
     points_y = []
@@ -458,29 +458,40 @@ def save_mode_figure(result_dir: Path, figure_dir: Path, prefix: str, title: str
     ax.grid(True, alpha=0.35)
     ax.legend()
     fig.tight_layout()
-    fig.savefig(figure_dir / f"{prefix}_fom_mode_history.png")
+    fig.savefig(figure_dir / f"{prefix}_fom_mode_history.{ext}")
     plt.close(fig)
     return True
 
 
-def save_all_figures(case_dir: Path):
+def save_density_snapshot(case_dir: Path, figure_dir: Path, ext: str):
+    latest_density = case_dir / "latest_density.png"
+    if not latest_density.exists():
+        return False
+    output_path = figure_dir / f"density_latest.{ext}"
+    if ext == "png":
+        shutil.copy2(latest_density, output_path)
+    else:
+        with Image.open(latest_density) as img:
+            img.convert("RGB").save(output_path)
+    return True
+
+
+def save_all_figures(case_dir: Path, output_dir_name: str = "figure", ext: str = "png"):
     result_dir = case_dir / "result"
-    figure_dir = case_dir / "figure"
+    figure_dir = case_dir / output_dir_name
     figure_dir.mkdir(parents=True, exist_ok=True)
 
     saved = 0
-    if (case_dir / "latest_density.png").exists():
-        shutil.copy2(case_dir / "latest_density.png", figure_dir / "density_latest.png")
-        saved += 1
-    saved += int(save_history_figure(result_dir, figure_dir))
-    saved += int(save_change_figure(result_dir, figure_dir))
-    saved += int(save_matrix_line_figure(result_dir, figure_dir, "forward", "residual", "Forward ROM Residual", "Residual"))
-    saved += int(save_matrix_line_figure(result_dir, figure_dir, "obj_sens", "residual", "Sensitivity ROM Residual", "Residual"))
-    saved += int(save_matrix_line_figure(result_dir, figure_dir, "forward", "rank", "Forward Basis Rank", "Rank"))
-    saved += int(save_matrix_line_figure(result_dir, figure_dir, "obj_sens", "rank", "Sensitivity Basis Rank", "Rank"))
-    saved += int(save_mode_figure(result_dir, figure_dir, "forward", "Forward FOM Mode"))
-    saved += int(save_mode_figure(result_dir, figure_dir, "obj_sens", "Sensitivity FOM Mode"))
-    saved += int(save_matrix_line_figure(result_dir, figure_dir, "obj_sens", "error", "Objective Sensitivity ROM-FOM Solution Error", "Error"))
+    saved += int(save_density_snapshot(case_dir, figure_dir, ext))
+    saved += int(save_history_figure(result_dir, figure_dir, ext))
+    saved += int(save_change_figure(result_dir, figure_dir, ext))
+    saved += int(save_matrix_line_figure(result_dir, figure_dir, "forward", "residual", "Forward ROM Residual", "Residual", ext))
+    saved += int(save_matrix_line_figure(result_dir, figure_dir, "obj_sens", "residual", "Sensitivity ROM Residual", "Residual", ext))
+    saved += int(save_matrix_line_figure(result_dir, figure_dir, "forward", "rank", "Forward Basis Rank", "Rank", ext))
+    saved += int(save_matrix_line_figure(result_dir, figure_dir, "obj_sens", "rank", "Sensitivity Basis Rank", "Rank", ext))
+    saved += int(save_mode_figure(result_dir, figure_dir, "forward", "Forward FOM Mode", ext))
+    saved += int(save_mode_figure(result_dir, figure_dir, "obj_sens", "Sensitivity FOM Mode", ext))
+    saved += int(save_matrix_line_figure(result_dir, figure_dir, "obj_sens", "error", "Objective Sensitivity ROM-FOM Solution Error", "Error", ext))
     return saved
 
 
@@ -488,6 +499,36 @@ def serve(directory: Path, port: int):
     handler = lambda *args, **kwargs: http.server.SimpleHTTPRequestHandler(*args, directory=str(directory), **kwargs)
     with socketserver.TCPServer(("0.0.0.0", port), handler) as httpd:
         httpd.serve_forever()
+
+
+def normalize_case_dir(path_text: str) -> Path:
+    path_text = path_text.strip().strip('"').strip("'")
+    if len(path_text) >= 3 and path_text[1] == ":" and path_text[2] in ("\\", "/"):
+        drive = path_text[0].lower()
+        tail = path_text[3:].replace("\\", "/")
+        return Path(f"/mnt/{drive}/{tail}")
+    return Path(path_text)
+
+
+def has_case_outputs(case_dir: Path) -> bool:
+    return (case_dir / "result").is_dir()
+
+
+def child_case_dirs(parent_dir: Path):
+    if not parent_dir.is_dir():
+        return []
+    return sorted(p.parent for p in parent_dir.rglob("result") if p.is_dir())
+
+
+def save_case_pdfs_once(case_dir: Path, scale: int) -> int:
+    density_dir = case_dir / "density"
+    last_seen, updated = convert_latest(density_dir, case_dir, scale, None)
+    saved = save_all_figures(case_dir, "pdf", "pdf")
+    if saved:
+        print(f"Saved {saved} PDF figure(s) to {case_dir / 'pdf'}")
+    if updated and last_seen:
+        print(f"Updated latest_density.png from {last_seen.name}")
+    return saved
 
 
 def main() -> int:
@@ -500,10 +541,26 @@ def main() -> int:
     parser.add_argument("--once", action="store_true", help="Convert latest density and write HTML once.")
     parser.add_argument("--no-server", action="store_true", help="Do not start the HTTP server.")
     parser.add_argument("--no-save-figures", action="store_true", help="Do not export PNG figures to case_dir/figure.")
+    parser.add_argument("--save-pdfs", action="store_true", help="Export PDF figures to case_dir/pdf.")
     parser.add_argument("--figure-refresh", type=float, default=5.0, help="Figure export interval in seconds.")
     args = parser.parse_args()
 
-    case_dir = Path(args.case_dir)
+    case_dir = normalize_case_dir(args.case_dir)
+    if args.save_pdfs and args.once:
+        if has_case_outputs(case_dir):
+            saved = save_case_pdfs_once(case_dir, args.scale)
+            return 0 if saved else 1
+        cases = child_case_dirs(case_dir)
+        if not cases:
+            print(f"Error: result directory not found under: {case_dir}")
+            print("Please select a case folder, or a parent folder containing case folders such as FOM and ROM_*.") 
+            return 2
+        total = 0
+        for child in cases:
+            total += save_case_pdfs_once(child, args.scale)
+        print(f"Saved {total} PDF figure(s) from {len(cases)} case folder(s).")
+        return 0
+
     result_dir = case_dir / "result"
     density_dir = case_dir / "density"
     density_dir.mkdir(parents=True, exist_ok=True)
@@ -518,6 +575,10 @@ def main() -> int:
         last_figure_save = time.time()
         if saved:
             print(f"Saved {saved} figure(s) to {case_dir / 'figure'}")
+    if args.save_pdfs:
+        saved = save_all_figures(case_dir, "pdf", "pdf")
+        if saved:
+            print(f"Saved {saved} PDF figure(s) to {case_dir / 'pdf'}")
     if args.once:
         print(f"Wrote {case_dir / 'index.html'}")
         if updated and last_seen:

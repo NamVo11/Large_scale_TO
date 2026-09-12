@@ -265,6 +265,53 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     }
 
     const int ndof = fem.ndof;
+
+    Eigen::MatrixXd adj_u = Eigen::MatrixXd::Zero(ndof, nstep + 1);
+    Eigen::MatrixXd adj_v = Eigen::MatrixXd::Zero(ndof, nstep + 1);
+    Eigen::MatrixXd adj_a = Eigen::MatrixXd::Zero(ndof, nstep + 1);
+    if (object.d_explicit_dfdu_all.size() != 0) adj_u.noalias() += object.d_explicit_dfdu_all;
+    if (object.d_explicit_dfdv_all.size() != 0) adj_v.noalias() += object.d_explicit_dfdv_all;
+    if (object.d_explicit_dfda_all.size() != 0) adj_a.noalias() += object.d_explicit_dfda_all;
+
+    Eigen::MatrixXd lambda_all = Eigen::MatrixXd::Zero(ndof, nstep + 1);
+    for (int k = nstep; k >= 1; --k) {
+        adj_a.col(k).noalias() += gamma * dt * adj_v.col(k);
+        Eigen::VectorXd bar_v_pred = adj_v.col(k);
+        Eigen::VectorXd bar_u_pred = -a0c * adj_a.col(k);
+        adj_u.col(k).noalias() += a0c * adj_a.col(k);
+
+        Eigen::VectorXd lambda_bar = Eigen::VectorXd::Zero(ndof);
+        rom->main(Keff, adj_u.col(k), lambda_bar, make_adjoint_context(analysis, Iter, k));
+        lambda_all.col(k).noalias() = -lambda_bar;
+
+        bar_u_pred.noalias() += a0c * (M * lambda_bar);
+        adj_u.col(k - 1).noalias() += bar_u_pred;
+        adj_v.col(k - 1).noalias() += dt * bar_u_pred + bar_v_pred;
+        adj_a.col(k - 1).noalias() +=
+            dt * dt * (0.5 - beta) * bar_u_pred +
+            dt * (1.0 - gamma) * bar_v_pred;
+        for (const int dof : analysis.results.SPCdofs) {
+            if (dof < 0 || dof >= ndof) continue;
+            adj_u(dof, k - 1) = 0.0;
+            adj_v(dof, k - 1) = 0.0;
+            adj_a(dof, k - 1) = 0.0;
+        }
+    }
+
+    Eigen::VectorXd lambda0_bar = Eigen::VectorXd::Zero(ndof);
+    if (analysis.results.factorized_K_initial_eigen) {
+        rom->set_factorized_solver(K0, analysis.results.factorized_K_initial_eigen);
+    } else {
+        rom->set_factorized_solver(K0, nullptr);
+    }
+    rom->main(K0, adj_u.col(0), lambda0_bar, make_adjoint_context(analysis, Iter, 0));
+    lambda_all.col(0).noalias() = -lambda0_bar;
+    rom->set_factorized_solver(K0, nullptr);
+
+    Eigen::MatrixXd dfdx_phys = explicit_gradient_dynamic(fem, analysis, filtering_state.xPhys, object, lambda_all);
+    return filtering.sensitivity(dfdx_phys, filtering_state);
+
+    /*
     Eigen::VectorXd lambda = Eigen::VectorXd::Zero(ndof);
     Eigen::VectorXd lambda_new = Eigen::VectorXd::Zero(ndof);
     Eigen::VectorXd mu = Eigen::VectorXd::Zero(ndof);
@@ -318,6 +365,7 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
 
     Eigen::MatrixXd dfdx_phys = explicit_gradient_dynamic(fem, analysis, filtering_state.xPhys, object, lambda_all);
     return filtering.sensitivity(dfdx_phys, filtering_state);
+    */
 }
 
 } // namespace
