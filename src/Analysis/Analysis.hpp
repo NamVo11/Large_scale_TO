@@ -127,6 +127,7 @@ struct AnalysisResult {
     Eigen::MatrixXd V;
     Eigen::MatrixXd A;
     Eigen::MatrixXd F_ext;
+    Eigen::MatrixXd Lambda;
     std::vector<int> SPCdofs;
     std::vector<int> free;
     std::vector<int> ksp_iterations;

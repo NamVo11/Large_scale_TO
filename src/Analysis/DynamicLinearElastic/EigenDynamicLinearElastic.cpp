@@ -10,6 +10,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -46,6 +48,87 @@ namespace
         if (end == value || n < 1) return 1;
         return static_cast<int>(n);
     }
+
+// ================= TEMP DEBUG: forward effective RHS at force DOFs =================
+void write_temp_forward_rhs_debug(int Iter,
+                                  int istep,
+                                  const Eigen::VectorXd& rhs_forward,
+                                  const Eigen::VectorXd& f_ext) {
+    constexpr const char* path =
+        "/home/votrongnam/PROJECT/Large_scale_TO/case_study/thuuuu/forward_rhs_debug.csv";
+
+    const bool write_header = [] {
+        std::ifstream in(path);
+        return !in.good() || in.peek() == std::ifstream::traits_type::eof();
+    }();
+
+    std::ofstream out(path, std::ios::app);
+    if (!out) return;
+
+    if (write_header) {
+        out << "Iter,step,"
+            << "forward_effective_rhs_norm_global,forward_force_norm_global,"
+            << "effective_force_sum,external_force_sum,"
+            << "effective_force_mean,external_force_mean,"
+            << "effective_force_abs_mean,external_force_abs_mean,"
+            << "effective_force_norm,external_force_norm,"
+            << "effective_force_max_abs,external_force_max_abs,"
+            << "num_force_dofs\n";
+    }
+
+    std::vector<int> force_dofs;
+    force_dofs.reserve(static_cast<std::size_t>(f_ext.size()));
+    for (Eigen::Index dof = 0; dof < f_ext.size(); ++dof) {
+        if (std::abs(f_ext(dof)) > 0.0) force_dofs.push_back(static_cast<int>(dof));
+    }
+
+    double eff_sum = 0.0;
+    double ext_sum = 0.0;
+    double eff_abs_sum = 0.0;
+    double ext_abs_sum = 0.0;
+    double eff_sq_sum = 0.0;
+    double ext_sq_sum = 0.0;
+    double eff_max_abs = 0.0;
+    double ext_max_abs = 0.0;
+
+    for (int dof : force_dofs) {
+        if (dof < 0 || dof >= rhs_forward.size() || dof >= f_ext.size()) continue;
+        const double eff_val = rhs_forward(dof);
+        const double ext_val = f_ext(dof);
+        const double eff_abs = std::abs(eff_val);
+        const double ext_abs = std::abs(ext_val);
+
+        eff_sum += eff_val;
+        ext_sum += ext_val;
+        eff_abs_sum += eff_abs;
+        ext_abs_sum += ext_abs;
+        eff_sq_sum += eff_val * eff_val;
+        ext_sq_sum += ext_val * ext_val;
+        eff_max_abs = std::max(eff_max_abs, eff_abs);
+        ext_max_abs = std::max(ext_max_abs, ext_abs);
+    }
+
+    const double n = static_cast<double>(force_dofs.size());
+
+    out << std::scientific << std::setprecision(16)
+        << Iter << ','
+        << istep << ','
+        << rhs_forward.norm() << ','
+        << f_ext.norm() << ','
+        << eff_sum << ','
+        << ext_sum << ','
+        << (n > 0.0 ? eff_sum / n : 0.0) << ','
+        << (n > 0.0 ? ext_sum / n : 0.0) << ','
+        << (n > 0.0 ? eff_abs_sum / n : 0.0) << ','
+        << (n > 0.0 ? ext_abs_sum / n : 0.0) << ','
+        << std::sqrt(eff_sq_sum) << ','
+        << std::sqrt(ext_sq_sum) << ','
+        << eff_max_abs << ','
+        << ext_max_abs << ','
+        << force_dofs.size()
+        << '\n';
+}
+// ================= END TEMP DEBUG: forward effective RHS at force DOFs =================
 
 } // namespace
 
@@ -379,6 +462,7 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
     set_neum(analysis, f_ext, 0);
     rhs = f_ext;
     set_dirichlet_rhs(analysis, rhs, 0);
+    write_temp_forward_rhs_debug(Iter, 0, rhs, f_ext);
     const SolveStats initial = rom->main(
         K_initial, rhs, u, make_context(analysis, Iter, 1, 0, "initial_equilibrium", analysis.Nstep == 0));
 
@@ -418,6 +502,7 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
         set_neum(analysis, f_ext, istep);
         rhs.noalias() = f_ext + a0c * (M * u_pred);
         set_dirichlet_rhs(analysis, rhs, istep);
+        write_temp_forward_rhs_debug(Iter, istep, rhs, f_ext);
 
         const SolveStats step = rom->main(
             K_eff, rhs, u, make_context(analysis, Iter, istep + 1, istep, "newmark_effective", istep == analysis.Nstep));

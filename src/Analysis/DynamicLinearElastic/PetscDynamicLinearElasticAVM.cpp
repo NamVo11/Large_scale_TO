@@ -466,6 +466,7 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
         }
     }
 
+    analysis.results.Lambda = lambda_all;
     MemoryDebug::print("petsc_sens_before_explicit_gradient");
     Eigen::MatrixXd dfdx_phys = explicit_gradient_dynamic(fem, analysis, filtering_state.xPhys, object, lambda_all);
     MemoryDebug::print("petsc_sens_after_explicit_gradient");

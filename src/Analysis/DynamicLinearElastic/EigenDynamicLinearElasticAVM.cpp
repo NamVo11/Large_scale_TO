@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
 
@@ -72,6 +74,94 @@ ROMContext make_adjoint_context(const Analysis& analysis, int Iter, int time_ste
     ctx.is_end_of_analysis = time_step == 0;
     return ctx;
 }
+
+// ================= TEMP DEBUG: adjoint/forward RHS at force DOFs =================
+void write_temp_adjoint_rhs_debug(const Analysis& analysis,
+                                  int Iter,
+                                  int k,
+                                  const Eigen::VectorXd& rhs_adjoint) {
+    constexpr const char* path =
+        "/home/votrongnam/PROJECT/Large_scale_TO/case_study/thuuuu/adjoint_rhs_debug.csv";
+
+    if (analysis.results.F_ext.size() == 0 ||
+        k < 0 || k >= analysis.results.F_ext.cols()) {
+        return;
+    }
+
+    const bool write_header = [] {
+        std::ifstream in(path);
+        return !in.good() || in.peek() == std::ifstream::traits_type::eof();
+    }();
+
+    std::ofstream out(path, std::ios::app);
+    if (!out) return;
+
+    if (write_header) {
+        out << "Iter,step,"
+            << "adj_rhs_norm_global,forward_rhs_norm_global,"
+            << "adj_force_sum,forward_force_sum,"
+            << "adj_force_mean,forward_force_mean,"
+            << "adj_force_abs_mean,forward_force_abs_mean,"
+            << "adj_force_norm,forward_force_norm,"
+            << "adj_force_max_abs,forward_force_max_abs,"
+            << "num_force_dofs\n";
+    }
+
+    std::vector<int> force_dofs;
+    force_dofs.reserve(static_cast<std::size_t>(analysis.results.F_ext.rows()));
+    for (Eigen::Index dof = 0; dof < analysis.results.F_ext.rows(); ++dof) {
+        const double row_max = analysis.results.F_ext.row(dof).cwiseAbs().maxCoeff();
+        if (row_max > 0.0) force_dofs.push_back(static_cast<int>(dof));
+    }
+
+    double adj_sum = 0.0;
+    double fwd_sum = 0.0;
+    double adj_abs_sum = 0.0;
+    double fwd_abs_sum = 0.0;
+    double adj_sq_sum = 0.0;
+    double fwd_sq_sum = 0.0;
+    double adj_max_abs = 0.0;
+    double fwd_max_abs = 0.0;
+
+    for (int dof : force_dofs) {
+        if (dof < 0 || dof >= rhs_adjoint.size() || dof >= analysis.results.F_ext.rows()) continue;
+        const double adj_val = rhs_adjoint(dof);
+        const double fwd_val = analysis.results.F_ext(dof, k);
+        const double adj_abs = std::abs(adj_val);
+        const double fwd_abs = std::abs(fwd_val);
+
+        adj_sum += adj_val;
+        fwd_sum += fwd_val;
+        adj_abs_sum += adj_abs;
+        fwd_abs_sum += fwd_abs;
+        adj_sq_sum += adj_val * adj_val;
+        fwd_sq_sum += fwd_val * fwd_val;
+        adj_max_abs = std::max(adj_max_abs, adj_abs);
+        fwd_max_abs = std::max(fwd_max_abs, fwd_abs);
+    }
+
+    const double n = static_cast<double>(force_dofs.size());
+    const Eigen::VectorXd forward_rhs = analysis.results.F_ext.col(k);
+
+    out << std::scientific << std::setprecision(16)
+        << Iter << ','
+        << k << ','
+        << rhs_adjoint.norm() << ','
+        << forward_rhs.norm() << ','
+        << adj_sum << ','
+        << fwd_sum << ','
+        << (n > 0.0 ? adj_sum / n : 0.0) << ','
+        << (n > 0.0 ? fwd_sum / n : 0.0) << ','
+        << (n > 0.0 ? adj_abs_sum / n : 0.0) << ','
+        << (n > 0.0 ? fwd_abs_sum / n : 0.0) << ','
+        << std::sqrt(adj_sq_sum) << ','
+        << std::sqrt(fwd_sq_sum) << ','
+        << adj_max_abs << ','
+        << fwd_max_abs << ','
+        << force_dofs.size()
+        << '\n';
+}
+// ================= END TEMP DEBUG: adjoint/forward RHS at force DOFs =================
 
 Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                                           const Analysis& analysis,
@@ -281,6 +371,7 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
     set_from_column(rhs, object.d_explicit_dfdu_all, k, -1.0);
     rhs.noalias() += -dHdu * mu - dLdu * eta;
     set_fixed_from_column(rhs, analysis.results.SPCdofs, object.d_explicit_dfdFext_all, k, -1.0);
+    write_temp_adjoint_rhs_debug(analysis, Iter, k, rhs);
     rom->main(Keff, rhs, lambda, make_adjoint_context(analysis, Iter, k));
     lambda_all.col(k) = lambda;
 
@@ -307,15 +398,18 @@ Eigen::MatrixXd dynamic_elastic_base_full_impl(const FEM& fem,
             if (analysis.results.factorized_K_initial_eigen) {
                 rom->set_factorized_solver(K0, analysis.results.factorized_K_initial_eigen);
             }
+            write_temp_adjoint_rhs_debug(analysis, Iter, k, rhs);
             rom->main(K0, rhs, lambda, make_adjoint_context(analysis, Iter, k));
             rom->set_factorized_solver(K0, nullptr);
             analysis.results.factorized_K_initial_eigen.reset();
         } else {
+            write_temp_adjoint_rhs_debug(analysis, Iter, k, rhs);
             rom->main(Keff, rhs, lambda, make_adjoint_context(analysis, Iter, k));
         }
         lambda_all.col(k) = lambda;
     }
 
+    analysis.results.Lambda = lambda_all;
     Eigen::MatrixXd dfdx_phys = explicit_gradient_dynamic(fem, analysis, filtering_state.xPhys, object, lambda_all);
     return filtering.sensitivity(dfdx_phys, filtering_state);
 }

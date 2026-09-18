@@ -263,6 +263,7 @@ void OutputData::export_response_vtk(const FEM& fem,
         write_vector_field("displacement", analysis.results.U);
         write_vector_field("velocity", analysis.results.V);
         write_vector_field("acceleration", analysis.results.A);
+        write_vector_field("lambda", analysis.results.Lambda);
         write_vector_field("Reaction_force", analysis.results.F_ext);
 
         if (xPhys.rows() == fem.NElem && xPhys.cols() > 0) {

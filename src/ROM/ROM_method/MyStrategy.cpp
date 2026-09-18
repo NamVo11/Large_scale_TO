@@ -80,8 +80,8 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
         info.timing_fom_factorization += stats.factorization_time;
         info.timing_fom_solve += stats.solve_time;
         if (u_rom.size() == solution_e.size()) {
-            //info.error = error_estimator->relative_solution_error(solution_e, u_rom);
-            //info.basis_error = error_estimator->basis_error(V, solution_e);
+            info.error = error_estimator->relative_solution_error(solution_e, u_rom);
+            info.basis_error = error_estimator->basis_error(V, solution_e);
         }
         if (online) {
             const double tu = now_time();

@@ -150,14 +150,6 @@ void OptimizationBase::run(const FEM& fem) {
         MemoryDebug::print("after_forward");
         auto t1 = Clock::now();
         forward_time = elapsed(t0, t1);
-        for (auto& A : analysis_all) {
-            if (Iter % Output.save_vtk_response_interval == 0) {
-                const auto out_t0 = Clock::now();
-                Output.export_response_vtk(fem, *A, filtering_state.xPhys, Iter);
-                output_time += elapsed(out_t0, Clock::now());
-            }
-        }
-
         t0 = Clock::now();
         MemoryDebug::print("before_objective_value");
         if (Iter == 0) objective.initialize(fem, analysis_all, filtering_state.xPhys);
@@ -195,6 +187,13 @@ void OptimizationBase::run(const FEM& fem) {
         t1 = Clock::now();
         objective_sensitivity_time = elapsed(t0, t1);
         dObj_dx_vec = flatten(dObj_dx_mat);
+        for (auto& A : analysis_all) {
+            if (Iter % Output.save_vtk_response_interval == 0) {
+                const auto out_t0 = Clock::now();
+                Output.export_response_vtk(fem, *A, filtering_state.xPhys, Iter);
+                output_time += elapsed(out_t0, Clock::now());
+            }
+        }
         if (Iter % Output.save_vtk_opt_interval == 0) {
             const auto out_t0 = Clock::now();
             Output.export_opt_vtk(fem, filtering_state.xPhys, dObj_dx_mat, Iter);
