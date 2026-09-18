@@ -133,11 +133,13 @@ struct AnalysisResult {
     std::vector<double> ksp_residuals;
     Mat K_inf = nullptr;
     Mat M = nullptr;
+    Mat C = nullptr;
     Mat K_eff = nullptr;
     KSP factorized_K_initial = nullptr;
     KSP factorized_K_eff = nullptr;
     Eigen::SparseMatrix<double> K_inf_eigen;
     Eigen::SparseMatrix<double> M_eigen;
+    Eigen::SparseMatrix<double> C_eigen;
     Eigen::SparseMatrix<double> K_eff_eigen;
     std::shared_ptr<FactorizedSolver> factorized_K_initial_eigen;
     std::shared_ptr<FactorizedSolver> factorized_K_eff_eigen;
@@ -210,6 +212,8 @@ struct Analysis {
 struct DynamicLinearElastic : Analysis {
     double Tmax = 0.12;
     double dt = Tmax / static_cast<double>(Nstep);
+    double alpha_M = 0.0;
+    double alpha_K = 0.0;
 
     DynamicLinearElastic() {
         type = "dynamic";
@@ -231,6 +235,8 @@ struct DynamicLinearElastic : Analysis {
         }
         Tmax = myjson::required_double(j, "Tmax", owner);
         Nstep = myjson::required_int(j, "Nstep", owner);
+        alpha_M = myjson::double_value(j, "alpha_M", alpha_M);
+        alpha_K = myjson::double_value(j, "alpha_K", alpha_K);
         if (!(Tmax > 0.0)) throw std::runtime_error("dynamic_elastic_linear requires Tmax > 0");
         if (Nstep <= 0) throw std::runtime_error("dynamic_elastic_linear requires Nstep > 0");
         dt = Tmax / static_cast<double>(Nstep);

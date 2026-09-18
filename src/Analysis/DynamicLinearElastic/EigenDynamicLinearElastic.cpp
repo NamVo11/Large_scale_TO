@@ -323,6 +323,7 @@ namespace
         if (analysis.ROM) analysis.ROM->set_factorized_solver(analysis.results.K_inf_eigen, nullptr);
         analysis.results.K_inf_eigen.resize(0, 0);
         analysis.results.M_eigen.resize(0, 0);
+        analysis.results.C_eigen.resize(0, 0);
         analysis.results.K_eff_eigen.resize(0, 0);
         analysis.results.factorized_K_initial_eigen.reset();
         analysis.results.factorized_K_eff_eigen.reset();
@@ -356,8 +357,17 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
     const double beta = 0.25;
     const double gamma = 0.5;
     const double a0c = 1.0 / (beta * analysis.dt * analysis.dt);
-    analysis.results.K_eff_eigen = K + a0c * M;
+    const double a1c = gamma / (beta * analysis.dt);
+    const bool has_damping = (analysis.alpha_M != 0.0 || analysis.alpha_K != 0.0);
+    if (has_damping) {
+        analysis.results.C_eigen = analysis.alpha_M * M + analysis.alpha_K * K;
+        analysis.results.K_eff_eigen = K + a0c * M + a1c * analysis.results.C_eigen;
+    } else {
+        analysis.results.C_eigen.resize(0, 0);
+        analysis.results.K_eff_eigen = K + a0c * M;
+    }
     Sparse& K_initial = analysis.results.K_inf_eigen;
+    Sparse& C = analysis.results.C_eigen;
     Sparse& K_eff = analysis.results.K_eff_eigen;
     MemoryDebug::print("forward_after_prepare_Keff");
     // From here, K_initial stores the SPC-applied initial stiffness, not raw K.
@@ -370,6 +380,8 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
     Eigen::VectorXd acc = Eigen::VectorXd::Zero(ndof);
     Eigen::VectorXd u_pred = Eigen::VectorXd::Zero(ndof);
     Eigen::VectorXd v_pred = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd damping_predictor;
+    if (has_damping) damping_predictor = Eigen::VectorXd::Zero(ndof);
     Eigen::VectorXd rhs = Eigen::VectorXd::Zero(ndof);
     Eigen::VectorXd f_ext = Eigen::VectorXd::Zero(ndof);
     MemoryDebug::print("forward_after_vec_create");
@@ -394,7 +406,7 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
 
     const int nstore = analysis.Nstep + 1;
     analysis.results.U.resize(ndof, nstore);
-    analysis.results.V.resize(0, 0); // save memory by not storing velocity history
+    analysis.results.V.resize(has_damping ? ndof : 0, has_damping ? nstore : 0);
     analysis.results.A.resize(ndof, nstore);
     analysis.results.F_ext.resize(ndof, nstore);
     MemoryDebug::print("forward_after_history_alloc");
@@ -404,8 +416,8 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
     analysis.results.free = analysis.free_dofs(ndof);
     analysis.results.U.col(0) = u;
     // Velocity history is not used by the current objective/sensitivity flow.
-    // Keep results.V empty in this memory-saving version.
-    // analysis.results.V.col(0) = v;
+    // Keep results.V empty unless damping is active and sensitivity needs it.
+    if (has_damping) analysis.results.V.col(0) = v;
     analysis.results.A.col(0) = acc;
     analysis.results.F_ext.col(0) = f_ext;
 
@@ -417,6 +429,10 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
 
         set_neum(analysis, f_ext, istep);
         rhs.noalias() = f_ext + a0c * (M * u_pred);
+        if (has_damping) {
+            damping_predictor.noalias() = a1c * u_pred - v_pred;
+            rhs.noalias() += C * damping_predictor;
+        }
         set_dirichlet_rhs(analysis, rhs, istep);
 
         const SolveStats step = rom->main(
@@ -438,8 +454,7 @@ void EigenDynamicLinearElastic::solver(const FEM &fem, const Eigen::MatrixXd &y_
                   << ", ksp_res = " << step.residual_norm << "\n";
 
         analysis.results.U.col(istep) = u;
-        // Velocity history is intentionally not stored in this memory-saving flow.
-        // analysis.results.V.col(istep) = v;
+        if (has_damping) analysis.results.V.col(istep) = v;
         analysis.results.A.col(istep) = acc;
         analysis.results.F_ext.col(istep) = f_ext;
     }
