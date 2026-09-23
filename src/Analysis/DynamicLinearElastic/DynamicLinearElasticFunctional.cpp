@@ -5,11 +5,19 @@
 
 #include <stdexcept>
 
+#include <cstdlib>
+
+#include <iostream>
+
 void DynamicLinearElasticFunctionalBase::initialize(const FEM& fem,
                                                    DynamicLinearElastic& analysis,
                                                    const Eigen::MatrixXd& xPhys) {
     calculate(fem, analysis, xPhys);
     if (initial_value == 0.0) initial_value = value;
+    std::count << "============================= " << std::endl;
+    std::count << "============================= " << std::endl;
+    std::cout << "============================= " << initial_value << std::endl;
+    std::exit(0);
 }
 
 void L2ComplianceElastic::calculate(const FEM& fem,
