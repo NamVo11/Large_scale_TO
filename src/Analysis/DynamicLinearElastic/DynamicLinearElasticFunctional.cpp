@@ -14,8 +14,8 @@ void DynamicLinearElasticFunctionalBase::initialize(const FEM& fem,
                                                    const Eigen::MatrixXd& xPhys) {
     calculate(fem, analysis, xPhys);
     if (initial_value == 0.0) initial_value = value;
-    std::count << "============================= " << std::endl;
-    std::count << "============================= " << std::endl;
+    std::cout << "============================= " << std::endl;
+    std::cout << "============================= " << std::endl;
     std::cout << "============================= " << initial_value << std::endl;
     std::exit(0);
 }

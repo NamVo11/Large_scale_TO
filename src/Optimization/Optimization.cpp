@@ -161,7 +161,6 @@ void OptimizationBase::run(const FEM& fem) {
         t0 = Clock::now();
         MemoryDebug::print("before_objective_value");
         if (Iter == 0) objective.initialize(fem, analysis_all, filtering_state.xPhys);
-        std::count << "Initial objective value: " << objective.value << std::endl;
         else objective.calculate(fem, analysis_all, filtering_state.xPhys);
         obj_value = objective.value;
         MemoryDebug::print("after_objective_value");
