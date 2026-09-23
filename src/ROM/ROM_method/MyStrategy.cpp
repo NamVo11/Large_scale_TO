@@ -80,8 +80,8 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
         info.timing_fom_factorization += stats.factorization_time;
         info.timing_fom_solve += stats.solve_time;
         if (u_rom.size() == solution_e.size()) {
-            //info.error = error_estimator->relative_solution_error(solution_e, u_rom);
-            //info.basis_error = error_estimator->basis_error(V, solution_e);
+            info.error = error_estimator->relative_solution_error(solution_e, u_rom);
+            info.basis_error = error_estimator->basis_error(V, solution_e);
         }
         if (online) {
             const double tu = now_time();
@@ -93,6 +93,15 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
         }
         fom_flag = online ? (basis_list[1]->update_flag ? 1 : 0) : 0;
     } else {
+        Eigen::VectorXd fom_reference;
+        const SolveStats fom_stats = fom_solver->FOM_main(lhs, rhs, fom_reference, context);
+        info.timing_fom_factorization += fom_stats.factorization_time;
+        info.timing_fom_solve += fom_stats.solve_time;
+        if (u_rom.size() == fom_reference.size()) {
+            info.error = error_estimator->relative_solution_error(fom_reference, u_rom);
+            info.basis_error = error_estimator->basis_error(V, fom_reference);
+        }
+
         u = u_rom;
         solution_e = std::move(u_rom);
         info.rom_used = true;
