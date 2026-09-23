@@ -17,7 +17,7 @@ void DynamicLinearElasticFunctionalBase::initialize(const FEM& fem,
     std::cout << "============================= " << std::endl;
     std::cout << "============================= " << std::endl;
     std::cout << "============================= " << initial_value << std::endl;
-    std::exit(0);
+    //std::exit(0);
 }
 
 void L2ComplianceElastic::calculate(const FEM& fem,
