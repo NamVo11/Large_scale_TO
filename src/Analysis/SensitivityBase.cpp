@@ -24,6 +24,7 @@ void GroupFunctionalBase::add_scaled(Eigen::VectorXd& dst,
 std::unique_ptr<GroupFunctionalBase> InitializeGroupFunctional(const myjson::json& j,
                                                               const std::string& linear_backend,
                                                               const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                                                              const myjson::json& analysis_all_json,
                                                               const myjson::json& run_json) {
     const std::string key = myjson::lower_ascii(j.at("sens_function").get<std::string>());
     const std::string backend = myjson::lower_ascii(linear_backend.empty() ? "petsc" : linear_backend);
@@ -33,20 +34,20 @@ std::unique_ptr<GroupFunctionalBase> InitializeGroupFunctional(const myjson::jso
         key == "dynamic_compliance_avm" ||
         key == "dynamic_linear_elastic_avm") {
         if (backend == "eigen") {
-            group = std::make_unique<EigenDynamicLinearElasticAVM>(j, analysis_all, run_json);
+            group = std::make_unique<EigenDynamicLinearElasticAVM>(j, analysis_all, analysis_all_json, run_json);
         } else {
-            group = std::make_unique<PetscDynamicLinearElasticAVM>(j, analysis_all, run_json);
+            group = std::make_unique<PetscDynamicLinearElasticAVM>(j, analysis_all, analysis_all_json, run_json);
         }
     } else if (key == "static_elastic_base" ||
                key == "static_compliance_avm" ||
                key == "static_linear_elastic_avm") {
         if (backend == "eigen") {
-            group = std::make_unique<EigenStaticLinearElasticAVM>(j, analysis_all, run_json);
+            group = std::make_unique<EigenStaticLinearElasticAVM>(j, analysis_all, analysis_all_json, run_json);
         } else {
-            group = std::make_unique<PetscStaticLinearElasticAVM>(j, analysis_all, run_json);
+            group = std::make_unique<PetscStaticLinearElasticAVM>(j, analysis_all, analysis_all_json, run_json);
         }
     } else if (key == "volume_fraction" || key == "volume_sens_base") {
-        group = std::make_unique<VolumeFractionConstraint>(j, analysis_all, run_json);
+        group = std::make_unique<VolumeFractionConstraint>(j, analysis_all, analysis_all_json, run_json);
     } else {
         throw std::runtime_error("Unknown group functional: " + key);
     }

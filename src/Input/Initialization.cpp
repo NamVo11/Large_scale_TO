@@ -81,5 +81,6 @@ InitializationData::InitializationData(const std::string& input_json_path) {
     optimization = InitializeOptimization(cfg.at("Optimization"),
                                           cfg.value("Output", json::object()),
                                           run_json, input_json_path, *fem,
-                                          analysis_all);
+                                          analysis_all,
+                                          analysis_all_json);
 }

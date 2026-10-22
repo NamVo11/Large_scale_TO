@@ -12,8 +12,9 @@ struct VolumeFractionConstraint : GroupFunctionalBase {
 
     VolumeFractionConstraint(const myjson::json& j,
                              const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                             const myjson::json& analysis_all_json,
                              const myjson::json& run_json)
-        : GroupFunctionalBase(j, analysis_all, run_json) {
+        : GroupFunctionalBase(j, analysis_all, analysis_all_json, run_json) {
         for (const auto& term_json : j.at("terms")) {
             terms.push_back(InitializeVolumeFunctional(term_json));
         }

@@ -18,11 +18,13 @@ struct Constraint {
     Constraint(const myjson::json& constraints_json,
                const std::string& linear_backend,
                const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+               const myjson::json& analysis_all_json,
                const myjson::json& run_json) {
         for (const auto& constraint_json : constraints_json) {
             groups.push_back(InitializeGroupFunctional(constraint_json,
                                                        linear_backend,
                                                        analysis_all,
+                                                       analysis_all_json,
                                                        run_json));
             limits.push_back(constraint_json.at("limit").get<double>());
             values.push_back(0.0);

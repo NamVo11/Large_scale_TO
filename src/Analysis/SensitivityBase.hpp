@@ -31,8 +31,8 @@ struct GroupFunctionalBase {
 
     GroupFunctionalBase(const myjson::json& j,
                         const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                        const myjson::json& analysis_all_json,
                         const myjson::json& run_json) {
-        (void)run_json;
         analysis_id = j.at("analysis_id").get<int>();
         sens_function = j.at("sens_function").get<std::string>();
 
@@ -42,11 +42,20 @@ struct GroupFunctionalBase {
         for (const auto& candidate : analysis_all) {
             if (candidate && candidate->id == analysis_id) {
                 analysis = candidate;
-                ROM = candidate->ROM;
+                break;
+            }
+        }
+        if (!analysis) {
+            throw std::runtime_error("Analysis object not found for id: " + std::to_string(analysis_id));
+        }
+
+        for (const auto& analysis_json : analysis_all_json) {
+            if (analysis_json.at("id").get<int>() == analysis_id) {
+                ROM = InitializeROM(analysis_json.at("ROM"), run_json);
                 return;
             }
         }
-        throw std::runtime_error("Analysis id not found in JSON: " + std::to_string(analysis_id));
+        throw std::runtime_error("Analysis JSON not found for id: " + std::to_string(analysis_id));
     }
 
     virtual ~GroupFunctionalBase() = default;
@@ -90,4 +99,5 @@ protected:
 std::unique_ptr<GroupFunctionalBase> InitializeGroupFunctional(const myjson::json& j,
                                                               const std::string& linear_backend,
                                                               const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                                                              const myjson::json& analysis_all_json,
                                                               const myjson::json& run_json);

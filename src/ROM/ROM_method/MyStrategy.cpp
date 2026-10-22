@@ -139,7 +139,7 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
     }
 
     if (context.is_end_of_analysis) {
-        if (offline_update) {
+        if (offline_update && basis_list[0]->max_rank > 0) {
             const double tu = now_time();
             basis_list[0]->update(solution_e, context);
             append_basis_debug("offline_update_basis1", context, 1, *basis_list[0]);
@@ -152,10 +152,15 @@ SolveStats MyStrategy::main(const Eigen::SparseMatrix<double>& lhs,
             basis_list[1]->setBasis(basis_list[0]->V, basis_list[0]->s);
             append_basis_debug("copy_basis1_to_basis2", context, 2, *basis_list[1]);
             info.timing_basis_copy_reset += now_time() - tc;
+        } else {
+            const double tc = now_time();
+            basis_list[1]->reset();
+            append_basis_debug("reset_basis2", context, 2, *basis_list[1]);
+            info.timing_basis_copy_reset += now_time() - tc;
         }
         const double tr = now_time();
         basis_list[1]->clearSnapshots();
-        if (offline_update) basis_list[0]->reset();
+        basis_list[0]->reset();
         fom_flag = 1;
         clear_reduced_cache(AV_cache_, A_r_lhs_cache_, A_r_rank_cache_);
         info.timing_basis_copy_reset += now_time() - tr;

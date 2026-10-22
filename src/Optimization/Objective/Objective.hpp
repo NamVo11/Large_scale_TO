@@ -17,11 +17,13 @@ struct Objective {
     Objective(const myjson::json& objective_groups_json,
               const std::string& linear_backend,
               const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+              const myjson::json& analysis_all_json,
               const myjson::json& run_json) {
         for (const auto& group_json : objective_groups_json) {
             groups.push_back(InitializeGroupFunctional(group_json,
                                                        linear_backend,
                                                        analysis_all,
+                                                       analysis_all_json,
                                                        run_json));
         }
     }

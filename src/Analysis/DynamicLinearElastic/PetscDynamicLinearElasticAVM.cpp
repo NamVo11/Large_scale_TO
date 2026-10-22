@@ -157,6 +157,7 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
 
     const int nstep = analysis.Nstep;
     const int nvar = nvar_of(xPhys);
+    const bool has_damping = analysis.alpha_M != 0.0 || analysis.alpha_K != 0.0;
     const int elem_start = (fem.NElem * rank) / size;
     const int elem_end = (fem.NElem * (rank + 1)) / size;
 
@@ -167,6 +168,9 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
         analysis.A.cols() < nstep + 1 ||
         lambda_all.cols() < nstep + 1) {
         throw std::runtime_error("explicit_gradient_dynamic: insufficient time-step columns");
+    }
+    if (has_damping && analysis.V.cols() < nstep + 1) {
+        throw std::runtime_error("explicit_gradient_dynamic: damping sensitivity requires velocity history");
     }
     if (analysis.U.rows() != analysis.A.rows() ||
         analysis.U.rows() != lambda_all.rows()) {
@@ -262,6 +266,7 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
             const auto& dofs = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
 
             Eigen::Matrix<double, 24, 1> u_elem_buffer;
+            Eigen::Matrix<double, 24, 1> v_elem_buffer;
             Eigen::Matrix<double, 24, 1> acc_elem_buffer;
             Eigen::Matrix<double, 24, 1> lambda_elem_buffer;
             Eigen::Matrix<double, 24, 1> Ku_elem_buffer;
@@ -278,6 +283,7 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                 for (int i = 0; i < em.ndof; ++i) {
                     const int dof_i = static_cast<int>(dofs[static_cast<std::size_t>(i)]);
                     u_elem_buffer(i) = u(dof_i);
+                    if (has_damping) v_elem_buffer(i) = analysis.V(dof_i, k);
                     acc_elem_buffer(i) = acc(dof_i);
                     lambda_elem_buffer(i) = lambda(dof_i);
                 }
@@ -288,9 +294,18 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                 auto Ku_elem = Ku_elem_buffer.head(em.ndof);
                 auto Ma_elem = Ma_elem_buffer.head(em.ndof);
 
-                Ku_elem.noalias() = em.ke * u_elem;
-                if (k == 0) Ma_elem.setZero();
-                else Ma_elem.noalias() = em.me * acc_elem;
+                if (!has_damping) {
+                    Ku_elem.noalias() = em.ke * u_elem;
+                    if (k == 0) Ma_elem.setZero();
+                    else Ma_elem.noalias() = em.me * acc_elem;
+                } else if (k == 0) {
+                    Ku_elem.noalias() = em.ke * u_elem;
+                    Ma_elem.setZero();
+                } else {
+                    const auto v_elem = v_elem_buffer.head(em.ndof);
+                    Ku_elem.noalias() = em.ke * (u_elem + analysis.alpha_K * v_elem);
+                    Ma_elem.noalias() = em.me * (acc_elem + analysis.alpha_M * v_elem);
+                }
 
                 sum_lambda_dot_Ku += lambda_elem.dot(Ku_elem);
                 sum_lambda_dot_Ma += lambda_elem.dot(Ma_elem);
@@ -375,8 +390,11 @@ Eigen::MatrixXd PetscDynamicLinearElasticAVM::AVM(const FEM& fem,
     const double gamma = 0.5;
     const double dt = analysis.dt;
     const double a0c = 1.0 / (beta * dt * dt);
+    const double a1c = gamma / (beta * dt);
+    const double c_eta = gamma / beta - 1.0;
+    const double c_mu = (gamma / (2.0 * beta) - 1.0) * dt;
     const double dHdu = a0c;
-    const double dLdu = gamma / (beta * dt);
+    const double dLdu = a1c;
     const double dHda_new = -(0.5 / beta - 1.0);
     const double dHdv_new = -1.0 / (beta * dt);
     const double dHdu_new = -a0c;
@@ -391,6 +409,11 @@ Eigen::MatrixXd PetscDynamicLinearElasticAVM::AVM(const FEM& fem,
     MemoryDebug::print("petsc_sens_after_get_K0");
     Mat Keff = analysis.K_eff;
     MemoryDebug::print("petsc_sens_after_get_Keff");
+    Mat C = analysis.C;
+    const bool has_damping = analysis.alpha_M != 0.0 || analysis.alpha_K != 0.0;
+    if (has_damping && !C) {
+        throw std::runtime_error("PetscDynamicLinearElasticAVM requires damping matrix");
+    }
 
     Eigen::SparseMatrix<double> K0_eigen_cache;
     Eigen::SparseMatrix<double> Keff_eigen_cache;
@@ -403,6 +426,7 @@ Eigen::MatrixXd PetscDynamicLinearElasticAVM::AVM(const FEM& fem,
     Vec eta_new = nullptr;
     Vec rhs = nullptr;
     Vec Mlambda = nullptr;
+    Vec Clambda = nullptr;
 
     MatCreateVecs(Keff, &lambda, &rhs);
     VecDuplicate(lambda, &lambda_new);
@@ -411,6 +435,7 @@ Eigen::MatrixXd PetscDynamicLinearElasticAVM::AVM(const FEM& fem,
     VecDuplicate(lambda, &eta);
     VecDuplicate(lambda, &eta_new);
     VecDuplicate(lambda, &Mlambda);
+    if (has_damping) VecDuplicate(lambda, &Clambda);
     MemoryDebug::print("petsc_sens_after_vec_create");
 
     Eigen::MatrixXd lambda_all(fem.ndof, nstep + 1);
@@ -436,13 +461,16 @@ Eigen::MatrixXd PetscDynamicLinearElasticAVM::AVM(const FEM& fem,
         VecCopy(mu, mu_new);
         VecCopy(eta, eta_new);
         MatMult(analysis.M, lambda_new, Mlambda);
+        if (has_damping) MatMult(C, lambda_new, Clambda);
 
         set_vec_from_eigen_vector(mu, dfda(fem, analysis, filtering.xPhys, k));
         VecAXPY(mu, -(0.5 / beta - 1.0), Mlambda);
+        if (has_damping) VecAXPY(mu, -c_mu, Clambda);
         VecAXPY(mu, dHda_new, mu_new);
         VecAXPY(mu, dLda_new, eta_new);
         set_vec_from_eigen_vector(eta, dfdv(fem, analysis, filtering.xPhys, k));
         VecAXPY(eta, -(1.0 / (beta * dt)), Mlambda);
+        if (has_damping) VecAXPY(eta, -c_eta, Clambda);
         VecAXPY(eta, dHdv_new, mu_new);
         VecAXPY(eta, dLdv_new, eta_new);
         zero_fixed(mu, analysis.SPCdofs);
@@ -450,6 +478,7 @@ Eigen::MatrixXd PetscDynamicLinearElasticAVM::AVM(const FEM& fem,
 
         set_vec_from_eigen_vector(rhs, dfdu(fem, analysis, filtering.xPhys, k), -1.0);
         VecAXPY(rhs, a0c, Mlambda);
+        if (has_damping) VecAXPY(rhs, a1c, Clambda);
         VecAXPY(rhs, -dHdu_new, mu_new);
         VecAXPY(rhs, -dLdu_new, eta_new);
         if (k != 0) {
@@ -493,6 +522,7 @@ Eigen::MatrixXd PetscDynamicLinearElasticAVM::AVM(const FEM& fem,
     VecDestroy(&eta_new);
     VecDestroy(&rhs);
     VecDestroy(&Mlambda);
+    if (Clambda) VecDestroy(&Clambda);
     MemoryDebug::print("petsc_sens_after_destroy_temp");
 
     Eigen::MatrixXd out = filtering.sensitivity(dfdx_phys);

@@ -95,6 +95,8 @@ struct Analysis {
 struct DynamicLinearElastic : Analysis {
     double Tmax;
     double dt;
+    double alpha_M;
+    double alpha_K;
     Eigen::MatrixXd V;
     Eigen::MatrixXd A;
 
@@ -110,9 +112,14 @@ struct DynamicLinearElastic : Analysis {
         solver_name = "dynamic_elastic_linear";
         Tmax = j.at("Tmax").get<double>();
         Nstep = j.at("Nstep").get<int>();
+        alpha_M = j.at("alpha_M").get<double>();
+        alpha_K = j.at("alpha_K").get<double>();
 
         if (!(Tmax > 0.0)) throw std::runtime_error("dynamic_elastic_linear requires Tmax > 0");
         if (Nstep <= 0) throw std::runtime_error("dynamic_elastic_linear requires Nstep > 0");
+        if (alpha_M < 0.0 || alpha_K < 0.0) {
+            throw std::runtime_error("dynamic_elastic_linear requires non-negative Rayleigh damping coefficients");
+        }
         dt = Tmax / static_cast<double>(Nstep);
     }
 };
@@ -120,6 +127,7 @@ struct DynamicLinearElastic : Analysis {
 struct PetscDynamicLinearElastic : DynamicLinearElastic {
     Mat K_inf = nullptr;
     Mat M = nullptr;
+    Mat C = nullptr;
     Mat K_eff = nullptr;
     KSP factorized_K_initial = nullptr;
     KSP factorized_K_eff = nullptr;
@@ -138,6 +146,7 @@ struct PetscDynamicLinearElastic : DynamicLinearElastic {
 struct EigenDynamicLinearElastic : DynamicLinearElastic {
     Eigen::SparseMatrix<double> K_inf;
     Eigen::SparseMatrix<double> M;
+    Eigen::SparseMatrix<double> C;
     Eigen::SparseMatrix<double> K_eff;
     std::shared_ptr<FactorizedSolver> factorized_K_initial;
     std::shared_ptr<FactorizedSolver> factorized_K_eff;

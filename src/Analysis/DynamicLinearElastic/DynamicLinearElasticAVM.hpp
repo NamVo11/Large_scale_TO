@@ -12,8 +12,9 @@ struct DynamicLinearElasticAVM : GroupFunctionalBase {
 
     DynamicLinearElasticAVM(const myjson::json& j,
                             const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                            const myjson::json& analysis_all_json,
                             const myjson::json& run_json)
-        : GroupFunctionalBase(j, analysis_all, run_json) {
+        : GroupFunctionalBase(j, analysis_all, analysis_all_json, run_json) {
         if (!std::dynamic_pointer_cast<DynamicLinearElastic>(analysis)) {
             throw std::runtime_error("DynamicLinearElasticAVM requires dynamic_elastic_linear analysis, id: " +
                                      std::to_string(analysis_id));
@@ -68,8 +69,9 @@ struct DynamicLinearElasticAVM : GroupFunctionalBase {
 struct EigenDynamicLinearElasticAVM : DynamicLinearElasticAVM {
     EigenDynamicLinearElasticAVM(const myjson::json& j,
                                  const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                                 const myjson::json& analysis_all_json,
                                  const myjson::json& run_json)
-        : DynamicLinearElasticAVM(j, analysis_all, run_json) {
+        : DynamicLinearElasticAVM(j, analysis_all, analysis_all_json, run_json) {
         if (!std::dynamic_pointer_cast<EigenDynamicLinearElastic>(analysis)) {
             throw std::runtime_error("EigenDynamicLinearElasticAVM requires EigenDynamicLinearElastic analysis, id: " +
                                      std::to_string(analysis_id));
@@ -87,8 +89,9 @@ struct EigenDynamicLinearElasticAVM : DynamicLinearElasticAVM {
 struct PetscDynamicLinearElasticAVM : DynamicLinearElasticAVM {
     PetscDynamicLinearElasticAVM(const myjson::json& j,
                                  const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                                 const myjson::json& analysis_all_json,
                                  const myjson::json& run_json)
-        : DynamicLinearElasticAVM(j, analysis_all, run_json) {
+        : DynamicLinearElasticAVM(j, analysis_all, analysis_all_json, run_json) {
         if (!std::dynamic_pointer_cast<PetscDynamicLinearElastic>(analysis)) {
             throw std::runtime_error("PetscDynamicLinearElasticAVM requires PetscDynamicLinearElastic analysis, id: " +
                                      std::to_string(analysis_id));

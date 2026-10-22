@@ -63,12 +63,16 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
 
     const int nstep = analysis.Nstep;
     const int nvar = nvar_of(xPhys);
+    const bool has_damping = analysis.alpha_M != 0.0 || analysis.alpha_K != 0.0;
 
     if (xPhys.rows() != fem.NElem) throw std::runtime_error("explicit_gradient_dynamic: xPhys row mismatch");
     if (analysis.U.cols() < nstep + 1 ||
         analysis.A.cols() < nstep + 1 ||
         lambda_all.cols() < nstep + 1) {
         throw std::runtime_error("explicit_gradient_dynamic: insufficient time-step columns");
+    }
+    if (has_damping && analysis.V.cols() < nstep + 1) {
+        throw std::runtime_error("explicit_gradient_dynamic: damping sensitivity requires velocity history");
     }
     if (analysis.U.rows() != analysis.A.rows() ||
         analysis.U.rows() != lambda_all.rows()) {
@@ -146,6 +150,7 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
             const auto& dofs = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
 
             Eigen::Matrix<double, 24, 1> u_elem_buffer;
+            Eigen::Matrix<double, 24, 1> v_elem_buffer;
             Eigen::Matrix<double, 24, 1> acc_elem_buffer;
             Eigen::Matrix<double, 24, 1> lambda_elem_buffer;
             Eigen::Matrix<double, 24, 1> Ku_elem_buffer;
@@ -162,6 +167,7 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                 for (int i = 0; i < em.ndof; ++i) {
                     const int dof_i = static_cast<int>(dofs[static_cast<std::size_t>(i)]);
                     u_elem_buffer(i) = u(dof_i);
+                    if (has_damping) v_elem_buffer(i) = analysis.V(dof_i, k);
                     acc_elem_buffer(i) = acc(dof_i);
                     lambda_elem_buffer(i) = lambda(dof_i);
                 }
@@ -172,9 +178,18 @@ Eigen::MatrixXd explicit_gradient_dynamic(const FEM& fem,
                 auto Ku_elem = Ku_elem_buffer.head(em.ndof);
                 auto Ma_elem = Ma_elem_buffer.head(em.ndof);
 
-                Ku_elem.noalias() = em.ke * u_elem;
-                if (k == 0) Ma_elem.setZero();
-                else Ma_elem.noalias() = em.me * acc_elem;
+                if (!has_damping) {
+                    Ku_elem.noalias() = em.ke * u_elem;
+                    if (k == 0) Ma_elem.setZero();
+                    else Ma_elem.noalias() = em.me * acc_elem;
+                } else if (k == 0) {
+                    Ku_elem.noalias() = em.ke * u_elem;
+                    Ma_elem.setZero();
+                } else {
+                    const auto v_elem = v_elem_buffer.head(em.ndof);
+                    Ku_elem.noalias() = em.ke * (u_elem + analysis.alpha_K * v_elem);
+                    Ma_elem.noalias() = em.me * (acc_elem + analysis.alpha_M * v_elem);
+                }
 
                 sum_lambda_dot_Ku += lambda_elem.dot(Ku_elem);
                 sum_lambda_dot_Ma += lambda_elem.dot(Ma_elem);
@@ -235,8 +250,11 @@ Eigen::MatrixXd EigenDynamicLinearElasticAVM::AVM(const FEM& fem,
     const double gamma = 0.5;
     const double dt = analysis.dt;
     const double a0c = 1.0 / (beta * dt * dt);
+    const double a1c = gamma / (beta * dt);
+    const double c_eta = gamma / beta - 1.0;
+    const double c_mu = (gamma / (2.0 * beta) - 1.0) * dt;
     const double dHdu = a0c;
-    const double dLdu = gamma / (beta * dt);
+    const double dLdu = a1c;
     const double dHda_new = -(0.5 / beta - 1.0);
     const double dHdv_new = -1.0 / (beta * dt);
     const double dHdu_new = -a0c;
@@ -247,8 +265,13 @@ Eigen::MatrixXd EigenDynamicLinearElasticAVM::AVM(const FEM& fem,
     const auto& K0 = analysis.K_inf;
     const auto& Keff = analysis.K_eff;
     const auto& M = analysis.M;
+    const auto& C = analysis.C;
+    const bool has_damping = analysis.alpha_M != 0.0 || analysis.alpha_K != 0.0;
     if (K0.rows() == 0 || Keff.rows() == 0 || M.rows() == 0) {
         throw std::runtime_error("eigen_backend sensitivity requires Eigen forward matrices");
+    }
+    if (has_damping && C.rows() == 0) {
+        throw std::runtime_error("EigenDynamicLinearElasticAVM requires damping matrix");
     }
     if (!ROM) throw std::runtime_error("EigenDynamicLinearElasticAVM requires ROM initialized");
 
@@ -266,6 +289,8 @@ Eigen::MatrixXd EigenDynamicLinearElasticAVM::AVM(const FEM& fem,
     Eigen::VectorXd eta_new = Eigen::VectorXd::Zero(ndof);
     Eigen::VectorXd rhs = Eigen::VectorXd::Zero(ndof);
     Eigen::VectorXd Mlambda = Eigen::VectorXd::Zero(ndof);
+    Eigen::VectorXd Clambda;
+    if (has_damping) Clambda = Eigen::VectorXd::Zero(ndof);
     Eigen::MatrixXd lambda_all(ndof, nstep + 1);
 
     int k = nstep;
@@ -285,16 +310,20 @@ Eigen::MatrixXd EigenDynamicLinearElasticAVM::AVM(const FEM& fem,
         mu_new = mu;
         eta_new = eta;
         Mlambda.noalias() = M * lambda_new;
+        if (has_damping) Clambda.noalias() = C * lambda_new;
 
         set_from_vector(mu, dfda(fem, analysis, filtering.xPhys, k));
         mu.noalias() += -(0.5 / beta - 1.0) * Mlambda + dHda_new * mu_new + dLda_new * eta_new;
+        if (has_damping) mu.noalias() += -c_mu * Clambda;
         set_from_vector(eta, dfdv(fem, analysis, filtering.xPhys, k));
         eta.noalias() += -(1.0 / (beta * dt)) * Mlambda + dHdv_new * mu_new + dLdv_new * eta_new;
+        if (has_damping) eta.noalias() += -c_eta * Clambda;
         zero_fixed(mu, analysis.SPCdofs);
         zero_fixed(eta, analysis.SPCdofs);
 
         set_from_vector(rhs, dfdu(fem, analysis, filtering.xPhys, k), -1.0);
         rhs.noalias() += a0c * Mlambda - dHdu_new * mu_new - dLdu_new * eta_new;
+        if (has_damping) rhs.noalias() += a1c * Clambda;
         if (k != 0) rhs.noalias() += -dHdu * mu - dLdu * eta;
         set_fixed_from_vector(rhs, analysis.SPCdofs, dfdFext(fem, analysis, filtering.xPhys, k), -1.0);
         if (k == 0) {

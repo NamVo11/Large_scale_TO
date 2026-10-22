@@ -42,6 +42,7 @@ void clear_stored_petsc(PetscDynamicLinearElastic& analysis) {
     if (analysis.ROM) analysis.ROM->set_petsc_factorized_solver(nullptr, nullptr);
     if (analysis.K_inf) MatDestroy(&analysis.K_inf);
     if (analysis.M) MatDestroy(&analysis.M);
+    if (analysis.C) MatDestroy(&analysis.C);
     if (analysis.K_eff) MatDestroy(&analysis.K_eff);
     if (analysis.factorized_K_initial) KSPDestroy(&analysis.factorized_K_initial);
     if (analysis.factorized_K_eff) KSPDestroy(&analysis.factorized_K_eff);
@@ -117,6 +118,7 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     double timing_rhs_build = 0.0;
     double timing_rhs_set_neum = 0.0;
     double timing_rhs_matmult_mass = 0.0;
+    double timing_rhs_matmult_damping = 0.0;
     double timing_rhs_vec_ops = 0.0;
     double timing_rhs_dirich = 0.0;
     double timing_solve_wall = 0.0;
@@ -152,10 +154,20 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     const double beta = 0.25;
     const double gamma = 0.5;
     const double a0c = 1.0 / (beta * analysis.dt * analysis.dt);
+    const double a1c = gamma / (beta * analysis.dt);
+    const bool has_damping = analysis.alpha_M != 0.0 || analysis.alpha_K != 0.0;
 
     PetscTime(&ts0);
+    if (has_damping) {
+        MatDuplicate(M, MAT_COPY_VALUES, &analysis.C);
+        MatScale(analysis.C, analysis.alpha_M);
+        MatAXPY(analysis.C, analysis.alpha_K, K, DIFFERENT_NONZERO_PATTERN);
+    }
+    Mat C = analysis.C;
+
     MatDuplicate(K, MAT_COPY_VALUES, &analysis.K_eff);
     MatAXPY(analysis.K_eff, a0c, M, SAME_NONZERO_PATTERN);
+    if (has_damping) MatAXPY(analysis.K_eff, a1c, C, DIFFERENT_NONZERO_PATTERN);
     Mat K_eff = analysis.K_eff;
     MemoryDebug::print("forward_after_prepare_Keff");
     PetscTime(&ts1);
@@ -180,6 +192,8 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     Vec rhs = nullptr;
     Vec f_ext = nullptr;
     Vec tmp = nullptr;
+    Vec damping_predictor = nullptr;
+    Vec tmp_C = nullptr;
     MatCreateVecs(K, &u, &rhs);
     VecDuplicate(u, &v);
     VecDuplicate(u, &acc);
@@ -187,6 +201,10 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     VecDuplicate(u, &v_pred);
     VecDuplicate(u, &f_ext);
     VecDuplicate(u, &tmp);
+    if (has_damping) {
+        VecDuplicate(u, &damping_predictor);
+        VecDuplicate(u, &tmp_C);
+    }
     MemoryDebug::print("forward_after_vec_create");
     VecSet(u, 0.0);
     VecSet(v, 0.0);
@@ -230,7 +248,8 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
 
     const std::size_t nstore = static_cast<std::size_t>(analysis.Nstep + 1);
     analysis.U.resize(ndof, static_cast<int>(nstore));
-    analysis.V.resize(0, 0);
+    analysis.V.resize(has_damping ? ndof : 0,
+                      has_damping ? static_cast<int>(nstore) : 0);
     analysis.A.resize(ndof, static_cast<int>(nstore));
     analysis.F_ext.resize(ndof, static_cast<int>(nstore));
     MemoryDebug::print("forward_after_history_alloc");
@@ -240,9 +259,7 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     analysis.free = analysis.free_dofs(static_cast<int>(ndof));
     PetscTime(&ts0);
     gather_vec_to_all_into_column(u, analysis.U, 0);
-    // Velocity history is not used by the current objective/sensitivity flow.
-    // Keep V empty in this memory-saving version.
-    // gather_vec_to_all_into_column(v, analysis.V, 0);
+    if (has_damping) gather_vec_to_all_into_column(v, analysis.V, 0);
     gather_vec_to_all_into_column(acc, analysis.A, 0);
     gather_vec_to_all_into_column(f_ext, analysis.F_ext, 0);
     PetscTime(&ts1);
@@ -274,9 +291,20 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
         PetscTime(&ts1);
         timing_rhs_matmult_mass += static_cast<double>(ts1 - ts0);
 
+        if (has_damping) {
+            PetscTime(&ts0);
+            VecCopy(u_pred, damping_predictor);
+            VecScale(damping_predictor, a1c);
+            VecAXPY(damping_predictor, -1.0, v_pred);
+            MatMult(C, damping_predictor, tmp_C);
+            PetscTime(&ts1);
+            timing_rhs_matmult_damping += static_cast<double>(ts1 - ts0);
+        }
+
         PetscTime(&ts0);
         VecCopy(f_ext, rhs);
         VecAXPY(rhs, a0c, tmp);
+        if (has_damping) VecAXPY(rhs, 1.0, tmp_C);
         PetscTime(&ts1);
         timing_rhs_vec_ops += static_cast<double>(ts1 - ts0);
 
@@ -333,8 +361,7 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
         const std::size_t store_id = static_cast<std::size_t>(istep);
         PetscTime(&ts0);
         gather_vec_to_all_into_column(u, analysis.U, static_cast<int>(store_id));
-        // Velocity history is intentionally not stored in this memory-saving flow.
-        // gather_vec_to_all_into_column(v, analysis.V, static_cast<int>(store_id));
+        if (has_damping) gather_vec_to_all_into_column(v, analysis.V, static_cast<int>(store_id));
         gather_vec_to_all_into_column(acc, analysis.A, static_cast<int>(store_id));
         gather_vec_to_all_into_column(f_ext, analysis.F_ext, static_cast<int>(store_id));
         PetscTime(&ts1);
@@ -356,6 +383,7 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
                   << " rhs_build=" << timing_rhs_build
                   << " rhs_set_neum=" << timing_rhs_set_neum
                   << " rhs_matmult_mass=" << timing_rhs_matmult_mass
+                  << " rhs_matmult_damping=" << timing_rhs_matmult_damping
                   << " rhs_vec_ops=" << timing_rhs_vec_ops
                   << " rhs_dirich=" << timing_rhs_dirich
                   << " solve_wall=" << timing_solve_wall
@@ -373,7 +401,9 @@ void PetscDynamicLinearElastic::solver(const FEM& fem, const Eigen::MatrixXd& y_
     VecDestroy(&rhs);
     VecDestroy(&f_ext);
     VecDestroy(&tmp);
-    // K, M and K_eff are owned by analysis.results and reused by sensitivity.
+    if (damping_predictor) VecDestroy(&damping_predictor);
+    if (tmp_C) VecDestroy(&tmp_C);
+    // K, M, C and K_eff are owned by analysis and reused by sensitivity.
     MemoryDebug::print("forward_after_destroy_temp");
 }
 

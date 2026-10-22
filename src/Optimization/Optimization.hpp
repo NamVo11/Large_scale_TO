@@ -52,7 +52,8 @@ struct Optimization {
     Optimization(const myjson::json& optimization_json,
                  const myjson::json& output_json, const myjson::json& run_json,
                  const std::string& input_json_path, const FEM& fem,
-                 const std::vector<std::shared_ptr<Analysis>>& analysis_all_in) {
+                 const std::vector<std::shared_ptr<Analysis>>& analysis_all_in,
+                 const myjson::json& analysis_all_json) {
         if (analysis_all_in.empty()) throw std::runtime_error("Optimization: analysis_all is empty");
         analysis_all = analysis_all_in;
         init_design_variables(fem, optimization_json.at("x0").get<double>());
@@ -65,10 +66,12 @@ struct Optimization {
         objective = Objective(optimization_json.at("ObjectiveGroups"),
                               linear_backend,
                               analysis_all,
+                              analysis_all_json,
                               run_json);
         constraint = Constraint(optimization_json.at("Constraints"),
                                 linear_backend,
                                 analysis_all,
+                                analysis_all_json,
                                 run_json);
         Output = OutputData(output_json, run_json, input_json_path);
     }
@@ -82,11 +85,13 @@ inline Optimization InitializeOptimization(const myjson::json& optimization_json
                                            const myjson::json& run_json,
                                            const std::string& input_json_path,
                                            const FEM& fem,
-                                           const std::vector<std::shared_ptr<Analysis>>& analysis_all) {
+                                           const std::vector<std::shared_ptr<Analysis>>& analysis_all,
+                                           const myjson::json& analysis_all_json) {
     return Optimization(optimization_json,
                         output_json,
                         run_json,
                         input_json_path,
                         fem,
-                        analysis_all);
+                        analysis_all,
+                        analysis_all_json);
 }
