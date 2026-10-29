@@ -2,6 +2,7 @@
 
 #include "Optimization/Filtering/Filtering.hpp"
 #include "FEM/Element/ElementBase.hpp"
+#include "FEM/Element/StructuralElement/StructuralElement.hpp"
 #include "helper/MemoryDebug.hpp"
 #include "myjson.hpp"
 
@@ -39,8 +40,9 @@ Eigen::MatrixXd unflatten(const std::vector<double>& x, int nelem, int nvar) {
 void Optimization::init_design_variables(const FEM& fem, double x0) {
     int nvar = 1;
     for (const auto& element : fem.ElementObjects) {
-        if (!element || !element->material) continue;
-        for (int val_id : element->material->val_ids) nvar = std::max(nvar, val_id);
+        const auto structural = std::dynamic_pointer_cast<StructuralElement>(element);
+        if (!structural || !structural->material_paras) continue;
+        for (int val_id : structural->material_paras->val_ids) nvar = std::max(nvar, val_id);
     }
 
     if (x0 < 0.0 || x0 > 1.0) {
@@ -53,7 +55,9 @@ void Optimization::init_design_variables(const FEM& fem, double x0) {
     for (const auto& region_ptr : fem.Regions) {
         const Region& region = *region_ptr;
         if (region.elem_ids.empty()) continue;
-        const auto material = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->material;
+        const auto structural = std::dynamic_pointer_cast<StructuralElement>(
+            fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front())));
+        const auto material = structural ? structural->material_paras : nullptr;
         if (!material) throw std::runtime_error("init_design_variables: element material is not initialized");
         for (int val_id : material->val_ids) {
             if (val_id <= 0 || val_id > nvar) {

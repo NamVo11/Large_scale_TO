@@ -2,7 +2,7 @@
 
 #include "BounadryCondition/BoundaryCondition.hpp"
 #include "FEM/FEM.hpp"
-#include "Material/Material.hpp"
+#include "Material/MaterialParas.hpp"
 #include "Optimization/Interpolation/Interpolation.hpp"
 #include "Region/Region.hpp"
 #include "ROM/ROM_method/ROM_Base.hpp"
@@ -52,9 +52,13 @@ struct Analysis {
              const std::vector<std::shared_ptr<BoundaryCondition>>& dirich_all,
              const std::vector<std::shared_ptr<BoundaryCondition>>& neum_all) {
         id = j.at("id").get<int>();
-        save_factorized_K_initial = j.at("save_factorized_K_initial").get<bool>();
+        save_factorized_K_initial = myjson::bool_value(j, "save_factorized_K_initial", false);
 
-        ROM = InitializeROM(j.at("ROM"), run_json);
+        const std::string requested_solver = myjson::lower_ascii(j.at("solver_name").get<std::string>());
+        if (j.contains("ROM") && requested_solver != "static_geomerical_nonlinear" &&
+            requested_solver != "static_geometrical_nonlinear") {
+            ROM = InitializeROM(j.at("ROM"), run_json);
+        }
 
         const int interp_id = j.at("interp_id").get<int>();
         init_interp(interps, interp_id);
@@ -212,6 +216,33 @@ struct EigenStaticLinearElastic : StaticLinearElastic {
     void solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter = 0) override;
 };
 
+// Full-order total-Lagrange Newton analysis. No reduced basis is used.
+struct StaticGeomericalNonlinear : Analysis {
+    int max_newton_iterations = 30;
+    int max_line_search_iterations = 12;
+    double newton_tolerance = 1e-8;
+    std::vector<int> newton_iterations;
+    std::vector<double> equilibrium_residuals;
+
+    StaticGeomericalNonlinear(const myjson::json& j,
+                              const myjson::json& run_json,
+                              const std::vector<std::shared_ptr<Interpolation>>& interps,
+                              const std::vector<std::shared_ptr<BoundaryCondition>>& dirich,
+                              const std::vector<std::shared_ptr<BoundaryCondition>>& neum)
+        : Analysis(j, run_json, interps, dirich, neum) {
+        type = "static";
+        solver_name = "static_geomerical_nonlinear";
+        Nstep = myjson::int_value(j, "Nstep", 10);
+        max_newton_iterations = myjson::int_value(j, "max_newton_iterations", 30);
+        max_line_search_iterations = myjson::int_value(j, "max_line_search_iterations", 12);
+        newton_tolerance = myjson::double_value(j, "newton_tolerance", 1e-8);
+        if (Nstep < 1 || max_newton_iterations < 1 ||
+            max_line_search_iterations < 1 || !(newton_tolerance > 0.0))
+            throw std::invalid_argument("Invalid nonlinear static solver settings");
+    }
+    void solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter = 0) override;
+};
+
 inline std::shared_ptr<Analysis> InitializeAnalysis(const myjson::json& analysis_json,
                                                     const myjson::json& run_json,
                                                     const std::vector<std::shared_ptr<Interpolation>>& interps,
@@ -229,6 +260,10 @@ inline std::shared_ptr<Analysis> InitializeAnalysis(const myjson::json& analysis
     } else if (solver_name == "static_elastic_linear") {
         if (linear_backend == "eigen") analysis = std::make_shared<EigenStaticLinearElastic>(analysis_json, run_json, interps, dirich, neum);
         else analysis = std::make_shared<PetscStaticLinearElastic>(analysis_json, run_json, interps, dirich, neum);
+
+    } else if (solver_name == "static_geomerical_nonlinear" ||
+               solver_name == "static_geometrical_nonlinear") {
+        analysis = std::make_shared<StaticGeomericalNonlinear>(analysis_json, run_json, interps, dirich, neum);
 
     } else if (solver_name == "dynamic_viscoelastic_linear") {
         throw std::runtime_error("dynamic_viscoelastic_linear is recognized but the Analysis class is not implemented yet");

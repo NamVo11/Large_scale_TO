@@ -1,5 +1,7 @@
 #include "FEM/FEM.hpp"
 #include "FEM/Element/ElementBase.hpp"
+#include "FEM/Element/StructuralElement/StructuralElement.hpp"
+#include "Material/MaterialParas.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -195,7 +197,7 @@ void StructuredMesh::build_from_geometry(const Geometry& geom) {
                 elem_center.push_back({(i + 0.5) * ex, (j + 0.5) * ey, 0.0});
             }
         }
-    } else if (type_name == "3d_brick") {
+    } else if (type_name == "3d_brick" || type_name == "brick") {
         dim = 3;
         const double ex = geom.Lx / static_cast<double>(geom.nelx);
         const double ey = geom.Ly / static_cast<double>(geom.nely);
@@ -274,7 +276,7 @@ void UnstructuredMesh::read_hypermesh_fem(const std::string& fem_file) {
     const std::string type_name = lower(fem_type);
     if (type_name == "plane_stress" || type_name == "plane_strain") {
         dim = 2;
-    } else if (type_name == "3d_brick") {
+    } else if (type_name == "3d_brick" || type_name == "brick") {
         dim = 3;
     } else {
         throw std::runtime_error("UnstructuredMesh: unsupported FEM.fem_type: " + fem_type);
@@ -437,7 +439,10 @@ const HMSet& UnstructuredMesh::hmset_by_name(const std::string& name) const {
     throw std::runtime_error("HMSET not found: " + name);
 }
 
-void FEM::precompute_elements() {
+void FEM::precompute_elements(const std::string& element_type) {
+    const std::string formulation = myjson::lower_ascii(element_type);
+    if (formulation != "small_strain" && formulation != "finite_strain")
+        throw std::invalid_argument("Unsupported FEM.element_type: " + element_type);
     ElementObjects.assign(static_cast<std::size_t>(NElem), nullptr);
     ElementDofs.resize(static_cast<std::size_t>(NElem));
     elem_center.resize(static_cast<std::size_t>(NElem));
@@ -459,7 +464,7 @@ void FEM::precompute_elements() {
             }
         }
 
-        auto elem_obj = make_element_object(*this, e);
+        auto elem_obj = ElementBase::make_element_object(*this, e, formulation);
         elem_center[static_cast<std::size_t>(e)] = elem_obj->center(*this);
         const double v = elem_obj->volume(*this);
         if (!(v > 0.0)) {
@@ -519,17 +524,35 @@ void FEM::InitializeMaterials(const myjson::json& materials_json) {
     if (Regions.empty()) {
         throw std::runtime_error("FEM::InitializeMaterials requires FEM Regions initialized");
     }
+    StructuralMaterial::StressState stress_state;
+    if (dim == 3) {
+        stress_state = StructuralMaterial::StressState::ThreeDimensional;
+    } else if (fem_type == "plane_stress") {
+        stress_state = StructuralMaterial::StressState::PlaneStress;
+    } else if (fem_type == "plane_strain") {
+        stress_state = StructuralMaterial::StressState::PlaneStrain;
+    } else {
+        throw std::invalid_argument("FEM::InitializeMaterials: unsupported stress state: " + fem_type);
+    }
     for (const auto& region_ptr : Regions) {
         const Region& region = *region_ptr;
-        const auto material = InitializeMaterial(materials_json, region.mat_ids, region.status);
+        const auto paras = MaterialParas::InitializeMaterialParas(materials_json, region.mat_ids, region.status);
         for (int elem_id : region.elem_ids) {
             if (elem_id < 0 || elem_id >= static_cast<int>(ElementObjects.size())) {
                 throw std::runtime_error("FEM::InitializeMaterials: element id outside ElementObjects");
             }
-            ElementObjects[static_cast<std::size_t>(elem_id)]->material = material;
+            auto& element = ElementObjects[static_cast<std::size_t>(elem_id)];
+            auto* structural = dynamic_cast<StructuralElement*>(element.get());
+            if (!structural)
+                throw std::runtime_error("FEM::InitializeMaterials: unsupported element class");
+            element->status = region.status;
+            structural->material_paras = paras;
+
+            structural->initialize_material_point(stress_state);
         }
     }
 }
+
 
 void FEM::debug_check_element_orientation() const {
     if (ElementObjects.empty()) {

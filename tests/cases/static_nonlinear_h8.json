@@ -1,0 +1,22 @@
+{
+  "Run": {"linear_backend":"eigen", "run_optimization":false,
+          "threads":{"omp_num_threads":1,"mkl_num_threads":1,"factor_num_threads":1,"sens_element_threads":1}},
+  "FEM": {"mesh_type":"structured", "fem_type":"3d_brick", "element_type":"finite_strain", "thickness":1,
+          "uniform_element_matrices":true,
+          "Geom":{"Lx":1,"Ly":1,"Lz":1,"nelx":1,"nely":1,"nelz":1}},
+  "Regions": [{"id":1,"name":"body","source":"range","range_type":"all",
+               "status":"solid","mat_ids":[1]}],
+  "Materials": [{"id":1,"type":"st_venant","E":1000,"nu":0.3,"rho":1}],
+  "Interp": [{"id":1,"type":"simp","penalty":3}],
+  "BoundaryConditions": {
+    "Dirich":[{"id":1,"name":"clamp","source":"range","kind":"dirich","flag":[1,1,1],
+                "x_range":[[0,0]],"y_range":[[0,1]],"z_range":[[0,1]],
+                "Function":{"type":"constant","amp":0}}],
+    "Neum":[{"id":2,"name":"tip_force","source":"range","kind":"neum","flag":[0,1,0],
+             "x_range":[[1,1]],"y_range":[[1,1]],"z_range":[[1,1]],
+             "Function":{"type":"linear","amp":-10}}]
+  },
+  "Analysis":[{"id":1,"solver_name":"static_geomerical_nonlinear",
+               "interp_id":1,"Dirich_id":[1],"Neum_id":[2],"Nstep":2,
+               "newton_tolerance":1e-10,"max_newton_iterations":30}]
+}

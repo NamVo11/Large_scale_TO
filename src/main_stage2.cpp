@@ -44,6 +44,8 @@ int main(int argc, char** argv) {
             data.optimization.run(fem);
         } else {
             data.optimization.analysis_all.front()->solver(fem, data.optimization.x, 0);
+            const auto& response = *data.optimization.analysis_all.front();
+            std::cout << "analysis max_abs_u=" << response.U.cwiseAbs().maxCoeff() << "\n";
         }
 
     } catch (const std::exception& ex) {

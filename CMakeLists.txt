@@ -20,11 +20,22 @@ add_executable(stage2_dynamic_forward
   src/BounadryCondition/HMSetBoundaryCondition.cpp
   src/FEM/FEM.cpp
   src/FEM/Element/ElementBase.cpp
-  src/FEM/Element/Q4Element.cpp
-  src/FEM/Element/Tri3Element.cpp
-  src/FEM/Element/H8Element.cpp
-  src/FEM/Element/T4Element.cpp
-  src/FEM/Element/P6Element.cpp
+  src/FEM/NumericalIntegration/NumericalIntegration.cpp
+  src/FEM/Shape/Shape.cpp
+  src/FEM/Shape/Quad4.cpp
+  src/FEM/Shape/Tria3.cpp
+  src/FEM/Shape/Hexa8.cpp
+  src/FEM/Shape/Tetra4.cpp
+  src/FEM/Shape/Penta6.cpp
+  src/FEM/Element/Bmatrix/StructuralBmatrix.cpp
+  src/FEM/Element/Bmatrix/StructuralBmatrixTotalLagrange.cpp
+  src/FEM/Element/StructuralElement/StructuralElement.cpp
+  src/FEM/Element/StructuralElement/StructuralElementSmallStrain.cpp
+  src/FEM/Element/StructuralElement/StructuralElementTotalLagrange.cpp
+  src/Material/MaterialParas.cpp
+  src/Material/StructuralMaterial/StructuralMaterial.cpp
+  src/Material/StructuralMaterial/Elastic/Elastic.cpp
+  src/Material/StructuralMaterial/StVenant/StVenant.cpp
   src/Input/Initialization.cpp
   src/Region/Region.cpp
   src/Optimization/Interpolation/RAM.cpp
@@ -44,6 +55,7 @@ add_executable(stage2_dynamic_forward
   src/Analysis/DynamicLinearElastic/EigenDynamicLinearElastic.cpp
   src/Analysis/StaticLinearElastic/PetscStaticLinearElastic.cpp
   src/Analysis/StaticLinearElastic/EigenStaticLinearElastic.cpp
+  src/Analysis/StaticGeomericalNonlinear/StaticGeomericalNonlinear.cpp
   src/Analysis/SensitivityBase.cpp
   src/Analysis/DynamicLinearElastic/DynamicLinearElasticFunctional.cpp
   src/Analysis/DynamicLinearElastic/DynamicLinearElasticAVM.cpp
@@ -139,3 +151,27 @@ else()
     PROPERTIES COMPILE_OPTIONS -Wno-deprecated-declarations
   )
 endif()
+
+# The analysis smoke target runs the existing full-order solvers without MPI_Init.
+# This also makes it usable on hosts where the OpenMPI launcher is unavailable.
+get_target_property(analysis_sources stage2_dynamic_forward SOURCES)
+list(REMOVE_ITEM analysis_sources src/main_stage2.cpp)
+add_executable(analysis_smoke tests/analysis_smoke.cpp ${analysis_sources})
+target_include_directories(analysis_smoke PRIVATE src)
+target_include_directories(analysis_smoke SYSTEM PRIVATE
+  src/third_party/eigen src/third_party/json src/third_party/mma src/third_party/mma_jdumas)
+target_link_libraries(analysis_smoke PRIVATE PkgConfig::PETSC MPI::MPI_CXX OpenMP::OpenMP_CXX)
+target_compile_definitions(analysis_smoke PRIVATE
+  PETSC_FUNCTION_NAME_CXX=__func__ PETSC_CXX_RESTRICT=__restrict__)
+if(STAGE2_MKLROOT AND EXISTS "${STAGE2_MKLROOT}/include/mkl_lapacke.h")
+  target_include_directories(analysis_smoke SYSTEM PRIVATE "${STAGE2_MKLROOT}/include")
+  target_link_directories(analysis_smoke PRIVATE "${STAGE2_MKLROOT}/lib" "${STAGE2_MKLROOT}/lib/intel64")
+  target_link_libraries(analysis_smoke PRIVATE "${STAGE2_MKLROOT}/lib/libmkl_rt.so" dl pthread m)
+endif()
+
+enable_testing()
+add_test(NAME analysis_fom_smoke COMMAND analysis_smoke
+  ${CMAKE_SOURCE_DIR}/tests/cases/static_linear_q4.json
+  ${CMAKE_SOURCE_DIR}/tests/cases/static_nonlinear_q4.json
+  ${CMAKE_SOURCE_DIR}/tests/cases/static_nonlinear_h8.json)
+set_tests_properties(analysis_fom_smoke PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=1")

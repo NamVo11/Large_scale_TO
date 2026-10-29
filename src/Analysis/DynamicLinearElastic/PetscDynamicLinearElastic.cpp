@@ -1,5 +1,7 @@
 #include "Analysis/Analysis.hpp"
 #include "FEM/Element/ElementBase.hpp"
+#include "FEM/Element/StructuralElement/StructuralElement.hpp"
+#include "Material/StructuralMaterial/Elastic/ElasticParas.hpp"
 #include "ROM/ROM_method/ROM_Base.hpp"
 #include "helper/MyAlgebra.hpp"
 #include "helper/MemoryDebug.hpp"
@@ -426,11 +428,11 @@ void PetscDynamicLinearElastic::assemble_K_M(const FEM& fem,
 
         for (const auto& region_ptr : fem.Regions) {
             const Region& region = *region_ptr;
-            const auto& region_element = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()));
-            if (!region_element || !region_element->material) {
+            const auto region_element = std::dynamic_pointer_cast<StructuralElement>(fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front())));
+            if (!region_element || !region_element->material_paras) {
                 throw std::runtime_error("Element material is not initialized");
             }
-            const double region_nu = region_element->material->nu();
+            const double region_nu = dynamic_cast<const ElasticParas&>(*region_element->material_paras).nu_values.front();
             ElementMatrix uniform_em;
             if (fem.uniform_element_matrices) {
                 if (region.elem_ids.empty()) throw std::runtime_error("assemble_K_M: region has no elements");
@@ -447,21 +449,19 @@ void PetscDynamicLinearElastic::assemble_K_M(const FEM& fem,
                 for (std::size_t e = 0; e < region.elem_ids.size(); ++e) {
                     const int elem_id = region.elem_ids[e];
                     const double x = y_elem(elem_id, 0);
-                    const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
-                    if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
+                    const auto element = std::dynamic_pointer_cast<StructuralElement>(fem.ElementObjects.at(static_cast<std::size_t>(elem_id)));
+                    if (!element || !element->material_paras) throw std::runtime_error("Element material is not initialized");
                     if (!analysis.interp) throw std::runtime_error("Analysis interpolation is not initialized");
-                    const Material& material = *element->material;
+                    const auto& material = dynamic_cast<const ElasticParas&>(*element->material_paras);
+                    const bool is_design = myjson::lower_ascii(element->status) == "design_val";
                     const int val_id = material.val_ids.empty() ? 0 : material.val_ids.front();
-                    const double Eeff = analysis.interp->calculate(material.E_values,
-                                                                   x,
-                                                                   material.is_design(),
-                                                                   val_id,
-                                                                   analysis.interp->modulus_penalty());
-                    const double rhoeff = analysis.interp->calculate(material.rho_values,
-                                                                     x,
-                                                                     material.is_design(),
-                                                                     val_id,
-                                                                     analysis.interp->mass_density_penalty());
+                    element->E_interp = analysis.interp->calculate(material.E_values, x, is_design,
+                        val_id, analysis.interp->modulus_penalty());
+                    element->nu_interp = material.nu_values.front();
+                    element->rho_interp = analysis.interp->calculate(material.rho_values, x, is_design,
+                        val_id, analysis.interp->mass_density_penalty());
+                    const double Eeff = element->E_interp;
+                    const double rhoeff = element->rho_interp;
 
                     ElementMatrix local_em;
                     const ElementMatrix* em_ptr = &uniform_em;
@@ -504,11 +504,11 @@ void PetscDynamicLinearElastic::assemble_K_M(const FEM& fem,
 
     for (const auto& region_ptr : fem.Regions) {
         const Region& region = *region_ptr;
-        const auto& region_element = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()));
-        if (!region_element || !region_element->material) {
+        const auto region_element = std::dynamic_pointer_cast<StructuralElement>(fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front())));
+        if (!region_element || !region_element->material_paras) {
             throw std::runtime_error("Element material is not initialized");
         }
-        const double region_nu = region_element->material->nu();
+        const double region_nu = dynamic_cast<const ElasticParas&>(*region_element->material_paras).nu_values.front();
         ElementMatrix uniform_em;
         if (fem.uniform_element_matrices) {
             if (region.elem_ids.empty()) throw std::runtime_error("assemble_K_M: region has no elements");
@@ -518,21 +518,19 @@ void PetscDynamicLinearElastic::assemble_K_M(const FEM& fem,
         for (int elem_id : region.elem_ids) {
             if (elem_id < elem_start || elem_id >= elem_end) continue;
             const double x = y_elem(elem_id, 0);
-            const auto& element = fem.ElementObjects.at(static_cast<std::size_t>(elem_id));
-            if (!element || !element->material) throw std::runtime_error("Element material is not initialized");
+            const auto element = std::dynamic_pointer_cast<StructuralElement>(fem.ElementObjects.at(static_cast<std::size_t>(elem_id)));
+            if (!element || !element->material_paras) throw std::runtime_error("Element material is not initialized");
             if (!analysis.interp) throw std::runtime_error("Analysis interpolation is not initialized");
-            const Material& material = *element->material;
+            const auto& material = dynamic_cast<const ElasticParas&>(*element->material_paras);
+            const bool is_design = myjson::lower_ascii(element->status) == "design_val";
             const int val_id = material.val_ids.empty() ? 0 : material.val_ids.front();
-            const double Eeff = analysis.interp->calculate(material.E_values,
-                                                           x,
-                                                           material.is_design(),
-                                                           val_id,
-                                                           analysis.interp->modulus_penalty());
-            const double rhoeff = analysis.interp->calculate(material.rho_values,
-                                                             x,
-                                                             material.is_design(),
-                                                             val_id,
-                                                             analysis.interp->mass_density_penalty());
+            element->E_interp = analysis.interp->calculate(material.E_values, x, is_design,
+                val_id, analysis.interp->modulus_penalty());
+            element->nu_interp = material.nu_values.front();
+            element->rho_interp = analysis.interp->calculate(material.rho_values, x, is_design,
+                val_id, analysis.interp->mass_density_penalty());
+            const double Eeff = element->E_interp;
+            const double rhoeff = element->rho_interp;
             ElementMatrix local_em;
             const ElementMatrix* em_ptr = &uniform_em;
             if (!fem.uniform_element_matrices) {

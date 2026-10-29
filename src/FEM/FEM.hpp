@@ -92,7 +92,7 @@ struct FEM {
     virtual ~FEM() = default;
     void InitializeRegions(const myjson::json& regions_json);
     void InitializeMaterials(const myjson::json& materials_json);
-    void precompute_elements();
+    void precompute_elements(const std::string& element_type);
     void debug_check_element_orientation() const;
 };
 
@@ -104,7 +104,7 @@ struct StructuredMesh : FEM {
         thickness = myjson::double_value(fem_json, "thickness", 1.0);
         uniform_element_matrices = myjson::bool_value(fem_json, "uniform_element_matrices", true);
         build_from_geometry(geometry);
-        precompute_elements();
+        precompute_elements(fem_json.at("element_type").get<std::string>());
     }
 
     void build_from_geometry(const Geometry& geom);
@@ -114,15 +114,15 @@ struct UnstructuredMesh : FEM {
     std::unordered_map<int, HMSet> hm_sets_by_id;
     std::unordered_map<std::string, HMSet> hm_sets_by_name;
 
-    UnstructuredMesh(const std::string& fem_file,
-                     const std::string& fem_type_in,
-                     double thickness_in,
-                     bool uniform_element_matrices_in) {
-        fem_type = myjson::lower_ascii(fem_type_in);
-        thickness = thickness_in;
-        uniform_element_matrices = uniform_element_matrices_in;
+    explicit UnstructuredMesh(const myjson::json& fem_json) {
+        fem_type = myjson::lower_ascii(fem_json.at("fem_type").get<std::string>());
+        thickness = myjson::double_value(fem_json, "thickness", 1.0);
+        uniform_element_matrices = myjson::bool_value(fem_json, "uniform_element_matrices", false);
+        const std::string fem_file = myjson::string_value(fem_json, "fem_file", "");
+        if (fem_file.empty())
+            throw std::runtime_error("FEM.fem_file is required for unstructured/hypermesh mesh");
         read_hypermesh_fem(fem_file);
-        precompute_elements();
+        precompute_elements(fem_json.at("element_type").get<std::string>());
 
         if (uniform_element_matrices) {
             std::cout << "====================NOTE===================\n";
@@ -136,14 +136,8 @@ struct UnstructuredMesh : FEM {
 
 inline std::unique_ptr<FEM> InitializeFEM(const myjson::json& fem_json) {
     const std::string mesh_type = myjson::lower_ascii(fem_json.at("mesh_type").get<std::string>());
-    const std::string fem_type = myjson::lower_ascii(fem_json.at("fem_type").get<std::string>());
-    const double thickness = myjson::double_value(fem_json, "thickness", 1.0);
-    const bool uniform = myjson::bool_value(fem_json, "uniform_element_matrices", mesh_type == "structured");
-
     if (mesh_type == "hypermesh" || mesh_type == "unstructured") {
-        const std::string fem_file = myjson::string_value(fem_json, "fem_file", "");
-        if (fem_file.empty()) throw std::runtime_error("FEM.fem_file is required for unstructured/hypermesh mesh");
-        return std::make_unique<UnstructuredMesh>(fem_file, fem_type, thickness, uniform);
+        return std::make_unique<UnstructuredMesh>(fem_json);
     }
     if (mesh_type == "structured") {
         return std::make_unique<StructuredMesh>(fem_json);

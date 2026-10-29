@@ -72,10 +72,8 @@ void check_matrix_diagonal(Mat A, const char* name)
     PetscBool missing = PETSC_FALSE;
     PetscInt row = -1;
 
-    PetscCallAbort(
-        PETSC_COMM_WORLD,
-        MatMissingDiagonal(A, &missing, &row)
-    );
+    const PetscErrorCode ierr = MatMissingDiagonal(A, &missing, &row);
+    if (ierr) MPI_Abort(PETSC_COMM_WORLD, static_cast<int>(ierr));
 
     PetscPrintf(
         PETSC_COMM_WORLD,

@@ -37,8 +37,7 @@ struct RAMP : Interpolation {
     double p_E_elastic = 0.0;
     double p_rho = 0.0;
 
-    explicit RAMP(const myjson::json& j)
-        : Interpolation(j) {
+    explicit RAMP(const myjson::json& j) : Interpolation(j) {
         p_E_elastic = j.at("p_E_elastic").get<double>();
         p_rho = j.at("p_rho").get<double>();
     }

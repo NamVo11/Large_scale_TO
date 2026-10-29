@@ -78,9 +78,17 @@ InitializationData::InitializationData(const std::string& input_json_path) {
     }
     if (analysis_all.empty()) throw std::runtime_error("JSON Analysis is empty");
 
-    optimization = InitializeOptimization(cfg.at("Optimization"),
-                                          cfg.value("Output", json::object()),
-                                          run_json, input_json_path, *fem,
-                                          analysis_all,
-                                          analysis_all_json);
+    if (run_json.value("run_optimization", true)) {
+        optimization = InitializeOptimization(cfg.at("Optimization"),
+                                              cfg.value("Output", json::object()),
+                                              run_json, input_json_path, *fem,
+                                              analysis_all,
+                                              analysis_all_json);
+    } else {
+        optimization.analysis_all = std::move(analysis_all);
+        const json opt = cfg.value("Optimization", json::object());
+        const double x0 = myjson::double_value(opt, "x0", 1.0);
+        if (x0 < 0.0 || x0 > 1.0) throw std::runtime_error("Analysis-only x0 must be in [0,1]");
+        optimization.x = Eigen::MatrixXd::Constant(fem->NElem, 1, x0);
+    }
 }
