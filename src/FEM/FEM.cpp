@@ -1,10 +1,12 @@
 #include "FEM/FEM.hpp"
 #include "FEM/Element/ElementBase.hpp"
 #include "FEM/Element/StructuralElement/StructuralElement.hpp"
+#include "FEM/Element/StructuralElement/StructuralElementSmallStrain.hpp"
 #include "Material/MaterialParas.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -514,6 +516,38 @@ void FEM::InitializeRegions(const myjson::json& regions_json) {
 
     if (std::any_of(assigned.begin(), assigned.end(), [](int v) { return v == 0; })) {
         throw std::runtime_error("Some elements are not assigned to any region");
+    }
+
+    // A unit matrix may be shared only by small-strain elements with the
+    // same reference geometry (up to translation) and shape. Material
+    // parameters and thickness are already shared within each region/FEM.
+    if (uniform_element_matrices) {
+        for (const auto& region : Regions) {
+            if (region->elem_ids.empty()) continue;
+            const int first_id = region->elem_ids.front();
+            if (!dynamic_cast<StructuralElementSmallStrain*>(
+                    ElementObjects.at(static_cast<std::size_t>(first_id)).get()))
+                continue;
+            const auto& first = *ElementObjects.at(static_cast<std::size_t>(first_id));
+            const auto reference = first.reference_coordinates(*this);
+            for (int elem_id : region->elem_ids) {
+                if (ElementTypes.at(static_cast<std::size_t>(elem_id)) !=
+                    ElementTypes.at(static_cast<std::size_t>(first_id)))
+                    throw std::invalid_argument(
+                        "uniform_element_matrices requires one element shape per region");
+                const auto coordinates =
+                    ElementObjects.at(static_cast<std::size_t>(elem_id))->reference_coordinates(*this);
+                for (Eigen::Index a = 0; a < reference.rows(); ++a) {
+                    for (Eigen::Index j = 0; j < reference.cols(); ++j) {
+                        const double r = reference(a,j) - reference(0,j);
+                        const double c = coordinates(a,j) - coordinates(0,j);
+                        if (std::abs(c-r) > 1e-10*std::max({1.0,std::abs(r),std::abs(c)}))
+                            throw std::invalid_argument(
+                                "uniform_element_matrices requires identical element geometry within each region");
+                    }
+                }
+            }
+        }
     }
 }
 

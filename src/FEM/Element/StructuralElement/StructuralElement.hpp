@@ -1,7 +1,6 @@
 #pragma once
 
 #include "FEM/Element/ElementBase.hpp"
-#include "FEM/Element/Bmatrix/StructuralBmatrix.hpp"
 #include "FEM/Shape/Shape.hpp"
 #include "Material/MaterialParas.hpp"
 #include "Material/StructuralMaterial/StructuralMaterial.hpp"
@@ -9,12 +8,6 @@
 #include <cstddef>
 #include <memory>
 #include <vector>
-
-// Ket qua o cap ELEMENT, khong luu contribution K_g tai moi Gauss point.
-struct ElementResponse {
-    Eigen::VectorXd f_int;
-    Eigen::MatrixXd K_tangent; // rong khi need_tangent=false
-};
 
 // Tuong tu TOP_general_v1: moi element so huu 1 Shape, 1 Bmatrix,
 // va nhieu StructuralMaterial objects (1 object / Gauss point).
@@ -32,22 +25,12 @@ public:
     // FEM assigns MaterialParas first; each concrete element creates its own GP materials.
     virtual void initialize_material_point(StructuralMaterial::StressState stress_state) = 0;
 
-    // Muc dich: lap qua cac Gauss points, goi Shape::update_at_gauss_point(ip,X_e),
-    //           Bmatrix, Material[ip], sau do tich phan f_int^e va K_t^e.
-    // Tra ve: ElementResponse {f_int, K_tangent}.
-    // Goi boi: Nonlinear FOM assembly / Newton; ROM + ECSW chi selected elements.
-    // Luu y: X_e duoc cung cap moi lan evaluate de KHONG nhan ban reference
-    //         nodal coordinates ben trong moi Shape; caller co the gom X_e 1 lan / element.
-    virtual ElementResponse compute_response(const Eigen::VectorXd& u_e,
-                                             const Eigen::MatrixXd& X_e,
-                                             double thickness,
-                                             bool need_tangent = true) = 0;
-
-    // Muc dich: tich phan M_e = sum N^T * rho * N * detJ0 * weight.
-    // Tra ve: dense element mass matrix (nDOF x nDOF).
-    // Goi boi: Linear/Dynamic assembly; xay dung/cache mass khi can.
-    Eigen::MatrixXd compute_mass(const Eigen::MatrixXd& X_e,
-                                 double thickness);
+    // Uses this element's interpolated E and rho. Small-strain elements use
+    // unit coefficients when FEM requests shared uniform matrices.
+    virtual ElementMatrix create_local_matrix(const FEM& fem,
+                                              const Eigen::VectorXd& u_e,
+                                              bool need_K,
+                                              bool need_mass) = 0;
 
     // Current interpolated values belong to this element, never to region-shared MaterialParas.
     double E_interp = 0.0;
@@ -74,6 +57,5 @@ public:
 
 protected:
     double integration_factor(double thickness) const;
-    std::unique_ptr<StructuralBmatrix> bmatrix_;
     std::vector<std::unique_ptr<StructuralMaterial>> materials_;
 };

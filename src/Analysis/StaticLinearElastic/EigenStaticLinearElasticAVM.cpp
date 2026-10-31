@@ -3,6 +3,7 @@
 #include "Analysis/Analysis.hpp"
 #include "FEM/Element/ElementBase.hpp"
 #include "FEM/Element/StructuralElement/StructuralElement.hpp"
+#include "FEM/Element/StructuralElement/StructuralElementSmallStrain.hpp"
 #include "Material/StructuralMaterial/Elastic/ElasticParas.hpp"
 #include "ROM/ROM_method/ROM_Base.hpp"
 
@@ -68,7 +69,8 @@ Eigen::MatrixXd explicit_gradient_static(const FEM& fem,
         ElementMatrix uniform_em;
         if (fem.uniform_element_matrices) {
             if (region.elem_ids.empty()) throw std::runtime_error("explicit_gradient_static: region has no elements");
-            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
+            region_element->nu_interp = region_nu;
+            uniform_em = region_element->create_local_matrix(fem, Eigen::VectorXd::Zero(region_element->dof_count()), true, false);
         }
 
         const int region_nelem = static_cast<int>(region.elem_ids.size());
@@ -78,7 +80,9 @@ Eigen::MatrixXd explicit_gradient_static(const FEM& fem,
             ElementMatrix local_em;
             const ElementMatrix* em_ptr = &uniform_em;
             if (!fem.uniform_element_matrices) {
-                local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
+                auto& sensitivity_element = dynamic_cast<StructuralElementSmallStrain&>(*fem.ElementObjects.at(static_cast<std::size_t>(elem_id)));
+                sensitivity_element.nu_interp = region_nu;
+                local_em = sensitivity_element.create_unit_local_matrix(fem, Eigen::VectorXd::Zero(sensitivity_element.dof_count()), true, false);
                 em_ptr = &local_em;
             }
             const ElementMatrix& em = *em_ptr;

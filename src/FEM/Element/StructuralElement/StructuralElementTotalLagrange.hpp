@@ -15,19 +15,11 @@ public:
         }
     }
     void initialize_material_point(StructuralMaterial::StressState stress_state) override;
-    // Muc dich: Gauss loop -> stress 2-PK, f_int, K_material + K_geometric.
-    // Tra ve: ElementResponse tai current u_e.
-    // Goi boi: Newton nonlinear FOM; ROM/ECSW sampled element evaluation.
-    ElementResponse compute_response(const Eigen::VectorXd& u_e,
-                                     const Eigen::MatrixXd& X_e,
-                                     double thickness,
-                                     bool need_tangent = true) override;
+    ElementMatrix create_local_matrix(const FEM& fem,
+                                      const Eigen::VectorXd& u_e,
+                                      bool need_K,
+                                      bool need_mass) override;
 
-    // Muc dich: bridge virtual API cu (co the throw not-supported for TL).
-    // Tra ve: ElementMatrix, hoac throw co thong bao ro.
-    // Goi boi: legacy linear assembler neu bi goi nham; nonlinear khong dung.
-    ElementMatrix compute_element_matrices(const FEM& fem,
-                                           double nu,
-                                           double thickness) const override;
-
+private:
+    std::unique_ptr<StructuralBmatrixTotalLagrange> bmatrix_;
 };

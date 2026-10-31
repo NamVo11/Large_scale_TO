@@ -21,34 +21,41 @@ void StructuralElementTotalLagrange::initialize_material_point(
         materials_.emplace_back(std::make_unique<StVenant>(stress_state));
 }
 
-ElementResponse StructuralElementTotalLagrange::compute_response(const Eigen::VectorXd& u,
-                                                                  const Eigen::MatrixXd& X,
-                                                                  double thickness,bool need_tangent) {
+ElementMatrix StructuralElementTotalLagrange::create_local_matrix(
+    const FEM& fem, const Eigen::VectorXd& u, bool need_K, bool need_mass) {
     if (u.size()!=static_cast<Eigen::Index>(dof_count()))
         throw std::invalid_argument("Element displacement size mismatch");
+    if (materials_.size()!=shape_->num_integral_point())
+        throw std::logic_error("Finite-strain material points are not initialized");
+    if (need_mass && !(rho_interp>=0.0))
+        throw std::invalid_argument("Finite-strain density must be nonnegative");
 
-    auto* tl=dynamic_cast<StructuralBmatrixTotalLagrange*>(bmatrix_.get());
+    ElementMatrix out;
+    out.ndof=static_cast<int>(dof_count());
+    out.f_int=Eigen::VectorXd::Zero(out.ndof);
+    if (need_K) out.ke=LocalDenseMatrix::Zero(out.ndof,out.ndof);
+    if (need_mass) out.me=LocalDenseMatrix::Zero(out.ndof,out.ndof);
 
-    ElementResponse out{Eigen::VectorXd::Zero(dof_count()), Eigen::MatrixXd()};
-
-    if (need_tangent) out.K_tangent=Eigen::MatrixXd::Zero(dof_count(),dof_count());
-
-    const std::size_t npoint = shape_->num_integral_point();
-    for (std::size_t ip=0;ip<npoint;++ip) {
+    const auto X=reference_coordinates(fem);
+    for (std::size_t ip=0;ip<materials_.size();++ip) {
         shape_->update_at_gauss_point(ip,X);
-        const auto B=tl->create(*shape_,u);
-        materials_[ip]->cal_constitutive_law(tl->create_kinematics(*shape_,u), E_interp, nu_interp);
-        const double w=integration_factor(thickness);
-        out.f_int.noalias()+=w*B.transpose()*materials_[ip]->stress();
-        if (need_tangent) {
-            out.K_tangent.noalias()+=w*B.transpose()*materials_[ip]->C_matrix()*B;
-            const auto Bnl=tl->create_NL(*shape_);
-            out.K_tangent.noalias()+=w*Bnl.transpose()*tl->create_Sbar(materials_[ip]->stress())*Bnl;
+        auto& material=dynamic_cast<FiniteStrainMaterial&>(*materials_[ip]);
+        material.cal_constitutive_law(shape_->dNdX(),u,E_interp,nu_interp);
+        const auto B=bmatrix_->create(*shape_,material.deformation_gradient());
+        const double w=integration_factor(fem.thickness);
+        out.f_int.noalias()+=w*B.transpose()*material.stress();
+        if (need_K) {
+            out.ke.noalias()+=w*B.transpose()*material.C_matrix()*B;
+            const auto Bnl=bmatrix_->create_NL(*shape_);
+            out.ke.noalias()+=w*Bnl.transpose()*bmatrix_->create_Sbar(material.stress())*Bnl;
+        }
+        if (need_mass) {
+            const double mass_factor=w*rho_interp;
+            for (int a=0;a<shape_->numnode();++a)
+                for (int b=0;b<shape_->numnode();++b)
+                    for (int j=0;j<dim;++j)
+                        out.me(dim*a+j,dim*b+j)+= mass_factor*shape_->N()[a]*shape_->N()[b];
         }
     }
     return out;
-}
-
-ElementMatrix StructuralElementTotalLagrange::compute_element_matrices(const FEM&,double,double) const {
-    throw std::logic_error("TotalLagrange element cannot be assembled as a linear unit-modulus matrix");
 }

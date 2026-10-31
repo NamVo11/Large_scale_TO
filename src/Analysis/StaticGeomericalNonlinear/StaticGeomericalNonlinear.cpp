@@ -64,14 +64,14 @@ void StaticGeomericalNonlinear::solver(const FEM& fem,const Eigen::MatrixXd& y_e
                                   static_cast<std::size_t>(fem.dim==2 ? 64:576));
         for (const auto& element:elements) {
 
-            const auto X=element->reference_coordinates(fem);
             Eigen::VectorXd ue(element->dof_count());
 
             for (std::size_t i=0;i<element->dof_count();++i)
                 ue[i]=u[static_cast<int>(element->dof_ids[i])];
 
-            const auto response = element->compute_response(ue,X,fem.thickness,Kff!=nullptr); // trả về f_int và K_tangent (nếu cần) tại trạng thái trial u_e
-            // lắp vao f_int va K_tangent cua element vao global fint va Kff
+            const auto response = element->create_local_matrix(
+                fem,ue,Kff!=nullptr,false);
+            // Lap f_int va K cua element vao global fint va Kff.
             for (std::size_t i=0;i<element->dof_count();++i) {
                 const int gi=static_cast<int>(element->dof_ids[i]);
                 fint[gi]+=response.f_int[i];
@@ -80,7 +80,7 @@ void StaticGeomericalNonlinear::solver(const FEM& fem,const Eigen::MatrixXd& y_e
                 for (std::size_t j=0;j<element->dof_count();++j) {
                     const int gj=static_cast<int>(element->dof_ids[j]);
                     if (free_index[gj]>=0)
-                        triplets.emplace_back(free_index[gi],free_index[gj],response.K_tangent(i,j));
+                        triplets.emplace_back(free_index[gi],free_index[gj],response.ke(i,j));
                 }
             }
         }

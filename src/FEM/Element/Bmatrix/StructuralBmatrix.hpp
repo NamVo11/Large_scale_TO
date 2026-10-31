@@ -2,38 +2,24 @@
 
 #include "FEM/Element/Bmatrix/Bmatrix.hpp"
 
-// Base class cho cac Bmatrix cua structural mechanics.
+// Small-strain B matrix; the dimension is fixed by the concrete formulation.
 class StructuralBmatrix : public Bmatrix {
 public:
+    explicit StructuralBmatrix(int dimension) : dim_(dimension) {}
     ~StructuralBmatrix() override = default;
+    Eigen::MatrixXd create(const Shape& shape,
+                           const Eigen::VectorXd& u_e) const;
+
+protected:
+    const int dim_;
 };
 
 class StructuralBmatrix2D final : public StructuralBmatrix {
 public:
-    // Muc dich: tao B small-strain 2D tu Shape::dNdX().
-    // Tra ve: matrix 3 x (2*nNode), Voigt {xx,yy,xy_engineering}.
-    // Goi boi: StructuralElementSmallStrain::compute_response() o moi GP.
-    Eigen::MatrixXd create(const Shape& shape,
-                           const Eigen::VectorXd& u_e) const override;
-
-    // Muc dich: tinh eps = B * u_e (small strain 2D).
-    // Tra ve: KinematicData chua eps, formulation=SmallStrain.
-    // Goi boi: StructuralElementSmallStrain -> material(ip).cal_constitutive_law().
-    KinematicData create_kinematics(const Shape& shape,
-                                    const Eigen::VectorXd& u_e) const override;
+    StructuralBmatrix2D() : StructuralBmatrix(2) {}
 };
 
 class StructuralBmatrix3D final : public StructuralBmatrix {
 public:
-    // Muc dich: tao B small-strain 3D tu Shape::dNdX().
-    // Tra ve: matrix 6 x (3*nNode), theo Voigt convention thong nhat.
-    // Goi boi: StructuralElementSmallStrain::compute_response() o moi GP.
-    Eigen::MatrixXd create(const Shape& shape,
-                           const Eigen::VectorXd& u_e) const override;
-
-    // Muc dich: tinh eps = B * u_e (small strain 3D).
-    // Tra ve: KinematicData chua eps, formulation=SmallStrain.
-    // Goi boi: StructuralElementSmallStrain -> material(ip).cal_constitutive_law().
-    KinematicData create_kinematics(const Shape& shape,
-                                    const Eigen::VectorXd& u_e) const override;
+    StructuralBmatrix3D() : StructuralBmatrix(3) {}
 };

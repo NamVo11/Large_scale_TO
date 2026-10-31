@@ -79,13 +79,6 @@ double ElementBase::mesh_size(const FEM& fem) const {
     return std::pow(volume(fem),1.0/static_cast<double>(dim));
 }
 
-LocalDenseMatrix ElementBase::element_stiffness(const FEM& fem,double nu,double thickness) const {
-    return compute_element_matrices(fem,nu,thickness).ke;
-}
-LocalDenseMatrix ElementBase::element_mass(const FEM& fem,double thickness) const {
-    return compute_element_matrices(fem,0.3,thickness).me;
-}
-
 std::vector<ElementOrientationPermutation> ElementBase::orientation_check_permutations() const {
     if (dynamic_cast<const Quad4*>(shape_.get())) return {
         {"as_file_order 1-2-3-4",{0,1,2,3}},

@@ -177,7 +177,8 @@ void PetscStaticLinearElastic::assemble_K(const FEM& fem,
             ElementMatrix uniform_em;
             if (fem.uniform_element_matrices) {
                 if (region.elem_ids.empty()) throw std::runtime_error("petsc assemble_K: region has no elements");
-                uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
+                region_element->nu_interp = region_nu;
+                uniform_em = region_element->create_local_matrix(fem, Eigen::VectorXd::Zero(region_element->dof_count()), true, false);
             }
 
             #pragma omp parallel num_threads(num_threads)
@@ -202,7 +203,7 @@ void PetscStaticLinearElastic::assemble_K(const FEM& fem,
                     ElementMatrix local_em;
                     const ElementMatrix* em_ptr = &uniform_em;
                     if (!fem.uniform_element_matrices) {
-                        local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
+                        local_em = element->create_local_matrix(fem, Eigen::VectorXd::Zero(element->dof_count()), true, false);
                         em_ptr = &local_em;
                     }
                     const ElementMatrix& em = *em_ptr;
@@ -213,7 +214,7 @@ void PetscStaticLinearElastic::assemble_K(const FEM& fem,
                         c.rows[static_cast<std::size_t>(i)] = rows[static_cast<std::size_t>(i)];
                         for (int j = 0; j < em.ndof; ++j) {
                             const std::size_t ij = static_cast<std::size_t>(i * em.ndof + j);
-                            c.ke[ij] = static_cast<PetscScalar>(Eeff * em.ke(i, j));
+                            c.ke[ij] = static_cast<PetscScalar>((fem.uniform_element_matrices ? Eeff : 1.0) * em.ke(i, j));
                         }
                     }
                     local_contribs.push_back(std::move(c));
@@ -237,7 +238,8 @@ void PetscStaticLinearElastic::assemble_K(const FEM& fem,
             ElementMatrix uniform_em;
             if (fem.uniform_element_matrices) {
                 if (region.elem_ids.empty()) throw std::runtime_error("petsc assemble_K: region has no elements");
-                uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
+                region_element->nu_interp = region_nu;
+                uniform_em = region_element->create_local_matrix(fem, Eigen::VectorXd::Zero(region_element->dof_count()), true, false);
             }
             for (int elem_id : region.elem_ids) {
                 if (elem_id < elem_start || elem_id >= elem_end) continue;
@@ -255,12 +257,12 @@ void PetscStaticLinearElastic::assemble_K(const FEM& fem,
                 ElementMatrix local_em;
                 const ElementMatrix* em_ptr = &uniform_em;
                 if (!fem.uniform_element_matrices) {
-                    local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
+                    local_em = element->create_local_matrix(fem, Eigen::VectorXd::Zero(element->dof_count()), true, false);
                     em_ptr = &local_em;
                 }
                 const ElementMatrix& em = *em_ptr;
                 const auto& rows = fem.ElementDofs.at(static_cast<std::size_t>(elem_id));
-                const LocalDenseMatrix ke = Eeff * em.ke;
+                const LocalDenseMatrix ke = (fem.uniform_element_matrices ? Eeff : 1.0) * em.ke;
                 MatSetValues(K, em.ndof, rows.data(), em.ndof, rows.data(), ke.data(), ADD_VALUES);
             }
         }

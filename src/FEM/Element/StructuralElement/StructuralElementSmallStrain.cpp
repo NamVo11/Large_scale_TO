@@ -19,48 +19,51 @@ void StructuralElementSmallStrain::initialize_material_point(
         materials_.emplace_back(std::make_unique<Elastic>(stress_state));
 }
 
-ElementResponse StructuralElementSmallStrain::compute_response(const Eigen::VectorXd& u,
-                                                                const Eigen::MatrixXd& X,
-                                                                double thickness,bool need_tangent) {
-    if (u.size()!=static_cast<Eigen::Index>(dof_count()))
-        throw std::invalid_argument("Element displacement size mismatch");
-    ElementResponse out{Eigen::VectorXd::Zero(dof_count()), Eigen::MatrixXd()};
-    if (need_tangent) out.K_tangent=Eigen::MatrixXd::Zero(dof_count(),dof_count());
-    const std::size_t npoint = shape_->num_integral_point();
-    for (std::size_t ip=0;ip<npoint;++ip) {
-        shape_->update_at_gauss_point(ip,X);
-        const auto B=bmatrix_->create(*shape_,u);
-        materials_[ip]->cal_constitutive_law(bmatrix_->create_kinematics(*shape_,u), E_interp, nu_interp);
-        const double w=integration_factor(thickness);
-        out.f_int.noalias()+=w*B.transpose()*materials_[ip]->stress();
-        if (need_tangent) out.K_tangent.noalias()+=w*B.transpose()*materials_[ip]->C_matrix()*B;
-    }
-    return out;
+ElementMatrix StructuralElementSmallStrain::create_local_matrix(
+    const FEM& fem, const Eigen::VectorXd& u, bool need_K, bool need_mass) {
+    const double stiffness=fem.uniform_element_matrices ? 1.0 : E_interp;
+    const double density=fem.uniform_element_matrices ? 1.0 : rho_interp;
+    return integrate_local_matrix(fem,u,stiffness,density,need_K,need_mass);
 }
 
-ElementMatrix StructuralElementSmallStrain::compute_element_matrices(const FEM& fem,double nu,double thickness) const {
-    auto& self=const_cast<StructuralElementSmallStrain&>(*this);
-    const double previous_E = self.E_interp;
-    const double previous_nu = self.nu_interp;
-    const double previous_rho = self.rho_interp;
-    self.E_interp = 1.0;
-    self.nu_interp = nu;
-    self.rho_interp = 1.0;
-    try {
-        const auto X=reference_coordinates(fem);
-        const auto u=Eigen::VectorXd::Zero(dof_count());
-        ElementMatrix out;
-        out.ndof=static_cast<int>(dof_count());
-        out.ke=self.compute_response(u,X,thickness,true).K_tangent;
-        out.me=self.compute_mass(X,thickness);
-        self.E_interp = previous_E;
-        self.nu_interp = previous_nu;
-        self.rho_interp = previous_rho;
-        return out;
-    } catch (...) {
-        self.E_interp = previous_E;
-        self.nu_interp = previous_nu;
-        self.rho_interp = previous_rho;
-        throw;
+ElementMatrix StructuralElementSmallStrain::create_unit_local_matrix(
+    const FEM& fem, const Eigen::VectorXd& u, bool need_K, bool need_mass) {
+    return integrate_local_matrix(fem,u,1.0,1.0,need_K,need_mass);
+}
+
+ElementMatrix StructuralElementSmallStrain::integrate_local_matrix(
+    const FEM& fem, const Eigen::VectorXd& u, double stiffness, double density,
+    bool need_K, bool need_mass) {
+    if (u.size()!=static_cast<Eigen::Index>(dof_count()))
+        throw std::invalid_argument("Element displacement size mismatch");
+    if (materials_.size()!=shape_->num_integral_point())
+        throw std::logic_error("Small-strain material points are not initialized");
+    ElementMatrix out;
+    out.ndof=static_cast<int>(dof_count());
+    if (need_K) out.ke=LocalDenseMatrix::Zero(out.ndof,out.ndof);
+    if (need_mass) {
+        if (!(density>=0.0)) throw std::invalid_argument("Small-strain density must be nonnegative");
+        out.me=LocalDenseMatrix::Zero(out.ndof,out.ndof);
     }
+    if (!need_K && !need_mass) return out;
+    const auto X=reference_coordinates(fem);
+    for (std::size_t ip=0;ip<materials_.size();++ip) {
+        shape_->update_at_gauss_point(ip,X);
+        const double w=integration_factor(fem.thickness);
+        if (need_K) {
+            const auto B=bmatrix_->create(*shape_,u);
+            auto& material=dynamic_cast<SmallStrainMaterial&>(*materials_[ip]);
+            material.cal_constitutive_law(B,u,stiffness,nu_interp);
+            out.ke.noalias()+=w*B.transpose()*materials_[ip]->C_matrix()*B;
+        }
+        if (need_mass) {
+            const double mass_factor=w*density;
+            for (int a=0;a<shape_->numnode();++a)
+                for (int b=0;b<shape_->numnode();++b)
+                    for (int j=0;j<dim;++j)
+                        out.me(dim*a+j,dim*b+j)+=
+                            mass_factor*shape_->N()[a]*shape_->N()[b];
+        }
+    }
+    return out;
 }

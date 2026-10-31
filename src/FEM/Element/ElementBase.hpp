@@ -56,8 +56,6 @@ public:
     virtual double volume(const FEM& fem) const;
     virtual double mesh_size(const FEM& fem) const;
     virtual Eigen::MatrixXd shape_function_matrix(const Eigen::Vector3d& xi) const;
-    virtual LocalDenseMatrix element_stiffness(const FEM& fem, double nu, double thickness) const;
-    virtual LocalDenseMatrix element_mass(const FEM& fem, double thickness) const;
     virtual std::vector<double> signed_detJ_values(const FEM& fem,
                                                    const std::vector<int>& node_order = {}) const;
     virtual std::vector<ElementOrientationPermutation> orientation_check_permutations() const;
@@ -65,14 +63,6 @@ public:
     std::size_t node_count() const { return node_ids.size(); }
     std::size_t dof_count() const { return dof_ids.size(); }
     Eigen::MatrixXd reference_coordinates(const FEM& fem) const;
-
-    // Mục đích: API tuong thich vói assembler LINEAR hien tại.
-    // Trả về: normalized unit-modulus Ke và Me theo convention cu.
-    // Gọi bởi: EigenStaticLinearElastic::assemble_K(), assemble_K_M(), Petsc counterparts.
-    // CHÚ Ý: giữ Eeff nhan ở assembler trong giai đoạn migration, tranh double E.
-    virtual ElementMatrix compute_element_matrices(const FEM& fem,
-                                                   double nu,
-                                                   double thickness) const = 0;
 
     static std::shared_ptr<ElementBase> make_element_object(const FEM& fem,
                                                             int elem_local_id,

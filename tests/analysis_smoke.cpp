@@ -25,8 +25,10 @@ void check_core(ElementType type, const std::vector<std::array<double,3>>& nodes
         R"([{"id":1,"type":"linear_elastic","E":1.0,"nu":0.3,"rho":1.0}])");
     fem.InitializeRegions(regions);
     fem.InitializeMaterials(materials);
-    const auto& element=*fem.ElementObjects.front();
-    const auto small=element.compute_element_matrices(fem,0.3,1.0);
+    auto& element=dynamic_cast<StructuralElement&>(*fem.ElementObjects.front());
+    element.nu_interp=0.3;
+    const Eigen::VectorXd zero=Eigen::VectorXd::Zero(fem.ndof);
+    const auto small=element.create_local_matrix(fem,zero,true,true);
     if (small.ndof!=fem.ndof ||
         (small.ke-small.ke.transpose()).norm()>1e-10 ||
         (small.me-small.me.transpose()).norm()>1e-10 ||
@@ -45,10 +47,8 @@ void check_core(ElementType type, const std::vector<std::array<double,3>>& nodes
     tl.E_interp = 1.0;
     tl.nu_interp = 0.3;
     tl.rho_interp = 1.0;
-    const auto X=tl.reference_coordinates(fem);
-    const Eigen::VectorXd zero=Eigen::VectorXd::Zero(fem.ndof);
-    const auto initial=tl.compute_response(zero,X,1.0);
-    if ((initial.K_tangent-small.ke).norm()>1e-9 || initial.f_int.norm()>1e-12)
+    const auto initial=tl.create_local_matrix(tl_fem,zero,true,false);
+    if ((initial.ke-small.ke).norm()>1e-9 || initial.f_int.norm()>1e-12)
         throw std::runtime_error("TL tangent does not match small-strain limit: "+element.name());
     Eigen::VectorXd u(fem.ndof),direction(fem.ndof);
     for (int i=0;i<fem.ndof;++i) {
@@ -56,12 +56,12 @@ void check_core(ElementType type, const std::vector<std::array<double,3>>& nodes
         direction[i]=std::cos(0.4*(i+1));
     }
     direction.normalize();
-    const auto response=tl.compute_response(u,X,1.0);
+    const auto response=tl.create_local_matrix(tl_fem,u,true,false);
     const double h=1e-6;
-    const Eigen::VectorXd fplus=tl.compute_response(u+h*direction,X,1.0,false).f_int;
-    const Eigen::VectorXd fminus=tl.compute_response(u-h*direction,X,1.0,false).f_int;
+    const Eigen::VectorXd fplus=tl.create_local_matrix(tl_fem,u+h*direction,false,false).f_int;
+    const Eigen::VectorXd fminus=tl.create_local_matrix(tl_fem,u-h*direction,false,false).f_int;
     const Eigen::VectorXd finite_difference=(fplus-fminus)/(2*h);
-    const double relative_error=(finite_difference-response.K_tangent*direction).norm()/
+    const double relative_error=(finite_difference-response.ke*direction).norm()/
                                 std::max(1.0,finite_difference.norm());
     if (relative_error>1e-7)
         throw std::runtime_error("TL tangent finite-difference check failed: "+element.name());
@@ -73,7 +73,7 @@ void check_core(ElementType type, const std::vector<std::array<double,3>>& nodes
         rotation[dim*a]=std::cos(angle)*x-std::sin(angle)*y-x;
         rotation[dim*a+1]=std::sin(angle)*x+std::cos(angle)*y-y;
     }
-    if (tl.compute_response(rotation,X,1.0,false).f_int.norm()>1e-10)
+    if (tl.create_local_matrix(tl_fem,rotation,false,false).f_int.norm()>1e-10)
         throw std::runtime_error("Rigid rotation generated internal force: "+element.name());
     std::cout << "core " << element.name() << " " << fem_type
               << " tangent_relative_error=" << relative_error << "\n";

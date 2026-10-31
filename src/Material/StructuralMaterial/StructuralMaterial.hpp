@@ -11,12 +11,6 @@ public:
     explicit StructuralMaterial(StressState state) : state_(state) {}
     virtual ~StructuralMaterial() = default;
 
-    // Mục đích: tính strain/stress/tangent và lưu VAO chính material object.
-    // Trả về: void; kết quả lay qua stress(), strain(), C_matrix().
-    // Gọi bởi: StructuralElementSmallStrain/TotalLagrange loop theo Gauss point.
-    virtual void cal_constitutive_law(const KinematicData& kinematics,
-                                      double E, double nu) = 0;
-
     // Mục đích: lay strain da tính tại Gauss point.
     // Trả về: const ref vector strain (small strain hoac Green-Lagrange E).
     // Gọi bởi: output, postprocess và unit tests.
@@ -49,4 +43,28 @@ protected:
     Eigen::VectorXd stress_;
     Eigen::MatrixXd C_matrix_;
     // Internal history của visco/plastic được khai bao tại derived class.
+};
+
+// Small-strain materials receive the B matrix already computed by the element.
+class SmallStrainMaterial : public StructuralMaterial {
+public:
+    explicit SmallStrainMaterial(StressState state) : StructuralMaterial(state) {}
+    virtual void cal_constitutive_law(const Eigen::MatrixXd& B,
+                                      const Eigen::VectorXd& u_e,
+                                      double young_modulus,
+                                      double poisson_ratio) = 0;
+};
+
+// Finite-strain materials own the deformation gradient at their Gauss point.
+class FiniteStrainMaterial : public StructuralMaterial {
+public:
+    explicit FiniteStrainMaterial(StressState state) : StructuralMaterial(state) {}
+    virtual void cal_constitutive_law(const Eigen::MatrixXd& dNdX,
+                                      const Eigen::VectorXd& u_e,
+                                      double young_modulus,
+                                      double poisson_ratio) = 0;
+    const Eigen::Matrix3d& deformation_gradient() const { return F_; }
+
+protected:
+    Eigen::Matrix3d F_ = Eigen::Matrix3d::Identity();
 };

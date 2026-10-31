@@ -263,7 +263,8 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
                 throw std::runtime_error( "eigen assemble_K_M: region has no elements");
             }
 
-            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
+            region_element->nu_interp = region_nu;
+            uniform_em = region_element->create_local_matrix(fem, Eigen::VectorXd::Zero(region_element->dof_count()), true, true);
         }
 
         /*
@@ -304,7 +305,7 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
 
                 if (!fem.uniform_element_matrices)
                 {
-                    local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
+                    local_em = element->create_local_matrix(fem, Eigen::VectorXd::Zero(element->dof_count()), true, true);
                                                      
                     em_ptr = &local_em;
                 }
@@ -321,9 +322,9 @@ void EigenDynamicLinearElastic::assemble_K_M(const FEM &fem,
                     {
                         const int col = static_cast<int>(dofs[static_cast<std::size_t>(j)]);
 
-                        local_k_triplets.emplace_back(row, col, Eeff * em.ke(i, j));
+                        local_k_triplets.emplace_back(row, col, (fem.uniform_element_matrices ? Eeff : 1.0) * em.ke(i, j));
 
-                        local_m_triplets.emplace_back(row,col, rhoeff * em.me(i, j));
+                        local_m_triplets.emplace_back(row,col, (fem.uniform_element_matrices ? rhoeff : 1.0) * em.me(i, j));
                     }
                 }
             }

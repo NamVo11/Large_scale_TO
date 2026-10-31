@@ -41,7 +41,7 @@ public:
     // Muc dich: tai diem GP 'ip', tinh N, dNdXi, dNdX, detJ0 tu reference
     //           coordinates X_e; GHI DE bo working buffers cua Shape.
     // Tra ve: void; ket qua duoc lay qua N(), dNdX(), detJ0(), factor().
-    // Goi boi: StructuralElement::{compute_response,compute_mass} trong Gauss loop;
+    // Goi boi: StructuralElement::create_local_matrix() trong Gauss loop;
     //           initialize_geometry() de kiem tra detJ0 va khoi tao buffer.
     // Luu y: KHONG cache cac GP, KHONG nhan displacement; khong goi dong thoi
     //         tren cung mot Shape object tu nhieu threads.

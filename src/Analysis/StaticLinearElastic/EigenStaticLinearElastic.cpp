@@ -127,7 +127,8 @@ void EigenStaticLinearElastic::assemble_K(const FEM& fem,
         ElementMatrix uniform_em;
         if (fem.uniform_element_matrices) {
             if (region.elem_ids.empty()) throw std::runtime_error("eigen assemble_K: region has no elements");
-            uniform_em = fem.ElementObjects.at(static_cast<std::size_t>(region.elem_ids.front()))->compute_element_matrices(fem, region_nu, fem.thickness);
+            region_element->nu_interp = region_nu;
+            uniform_em = region_element->create_local_matrix(fem, Eigen::VectorXd::Zero(region_element->dof_count()), true, false);
         }
 
         #pragma omp parallel num_threads(num_threads)
@@ -152,7 +153,7 @@ void EigenStaticLinearElastic::assemble_K(const FEM& fem,
                 ElementMatrix local_em;
                 const ElementMatrix* em_ptr = &uniform_em;
                 if (!fem.uniform_element_matrices) {
-                    local_em = fem.ElementObjects.at(static_cast<std::size_t>(elem_id))->compute_element_matrices(fem, region_nu, fem.thickness);
+                    local_em = element->create_local_matrix(fem, Eigen::VectorXd::Zero(element->dof_count()), true, false);
                     em_ptr = &local_em;
                 }
                 const ElementMatrix& em = *em_ptr;
@@ -161,7 +162,7 @@ void EigenStaticLinearElastic::assemble_K(const FEM& fem,
                     const int row = static_cast<int>(dofs[static_cast<std::size_t>(i)]);
                     for (int j = 0; j < em.ndof; ++j) {
                         const int col = static_cast<int>(dofs[static_cast<std::size_t>(j)]);
-                        local_triplets.emplace_back(row, col, Eeff * em.ke(i, j));
+                        local_triplets.emplace_back(row, col, (fem.uniform_element_matrices ? Eeff : 1.0) * em.ke(i, j));
                     }
                 }
             }

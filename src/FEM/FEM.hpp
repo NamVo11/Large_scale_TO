@@ -59,6 +59,7 @@ struct ElementMatrix {
     int ndof = 0;
     LocalDenseMatrix ke;
     LocalDenseMatrix me;
+    Eigen::VectorXd f_int;
 };
 
 struct FEM {
