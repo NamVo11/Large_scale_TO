@@ -13,14 +13,27 @@ StaticGeomericalNonlinear& current_analysis(Analysis& A) {
 }
 }
 
-void GeometricalNonlinearCompliance::calculate(const FEM&, Analysis& A,
-                                               const Eigen::MatrixXd&) {
-    auto& n = current_analysis(A);
-    // Work-type compliance for current step, as in existing static linear code.
-    // Not strain energy: in geometrically nonlinear analysis these differ.
-    value = n.F_ext.col(1).dot(n.U.col(1));
+void StaticGeomericalNonlinearFunctionalBase::initialize(
+    const FEM& fem,
+    Analysis& analysis,
+    const Eigen::MatrixXd& xPhys)
+{
+    calculate(fem, analysis, xPhys);
+    initial_value = value;
 }
 
+void GeometricalNonlinearCompliance::calculate(
+    const FEM& fem,
+    Analysis& analysis,
+    const Eigen::MatrixXd& xPhys)
+{
+    (void)fem;
+    (void)xPhys;
+
+    auto& A = dynamic_cast<StaticGeomericalNonlinear&>(analysis);
+
+    value += A.F_ext.col(1).dot(A.U.col(1));
+}
 Eigen::VectorXd GeometricalNonlinearCompliance::dfdu(const FEM&, Analysis& A,
                                                      const Eigen::MatrixXd&, int /*istep*/) {
     auto& n = current_analysis(A);

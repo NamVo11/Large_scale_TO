@@ -48,6 +48,28 @@ struct Objective {
         }
     }
 
+
+
+    void initialize_temp(const FEM& fem,
+                        const Eigen::MatrixXd& xPhys) {
+        for (auto& group : groups) {
+            Analysis& analysis = *group->analysis;
+            group->initialize_terms(fem, analysis, xPhys);
+            value += group->value;
+        }
+    }
+
+    void calculate_temp(const FEM& fem,
+                        const Eigen::MatrixXd& xPhys) {
+        for (auto& group : groups) {
+            Analysis& analysis = *group->analysis;
+            group->calculate_terms(fem, analysis, xPhys);
+            value += group->value;
+        }
+    }
+
+
+
     void calculate_sensitivity(const FEM& fem,
                                const Eigen::MatrixXd& x,
                                const std::vector<int>& x_label,

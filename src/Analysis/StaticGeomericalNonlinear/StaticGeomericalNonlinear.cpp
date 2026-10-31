@@ -39,11 +39,9 @@ void StaticGeomericalNonlinear::validate_input(const FEM& fem, const Eigen::Matr
 }
 // ===========================================
 
-std::vector<StructuralElementTotalLagrange*>
-StaticGeomericalNonlinear::prepare_elements(const FEM& fem, const Eigen::MatrixXd& y_elem) const {
-    std::vector<StructuralElementTotalLagrange*> elements;
-    elements.reserve(static_cast<std::size_t>(fem.NElem));
-
+void StaticGeomericalNonlinear::prepare_elements(const FEM& fem, const Eigen::MatrixXd& y_elem) const {
+    // FEM owns the element objects. No auxiliary vector of typed pointers is stored.
+    // Density interpolation is performed only once per optimization iteration.
     for (int e = 0; e < fem.NElem; ++e) {
         auto* element = dynamic_cast<StructuralElementTotalLagrange*>(fem.ElementObjects.at(e).get());
         if (!element)
@@ -54,22 +52,26 @@ StaticGeomericalNonlinear::prepare_elements(const FEM& fem, const Eigen::MatrixX
         const auto* paras = dynamic_cast<const ElasticParas*>(element->material_paras.get());
         if (!paras)
             throw std::invalid_argument("StaticGeomericalNonlinear requires elastic material parameters");
-        if (paras->nu_values.empty())
-            throw std::runtime_error("Element Poisson ratio is missing");
+        if (paras->E_values.empty() || paras->nu_values.empty() || paras->rho_values.empty())
+            throw std::runtime_error("Nonlinear element material parameters are incomplete");
+        if (paras->val_ids.size() > 1)
+            throw std::runtime_error("Nonlinear AVM currently supports one design val_id per element");
 
         const bool is_design = myjson::lower_ascii(element->status) == "design_val";
+        if (is_design && paras->val_ids.empty())
+            throw std::runtime_error("Nonlinear design element has no val_id");
         const int val_id = paras->val_ids.empty() ? 0 : paras->val_ids.front();
-        const double density = y_elem(e, 0);
+        const int col = val_id > 0 ? val_id - 1 : 0;
+        if (col < 0 || col >= y_elem.cols())
+            throw std::runtime_error("Nonlinear element val_id is outside y_elem columns");
+        const double density = y_elem(e, col);
 
         element->E_interp = interp->calculate(paras->E_values, density, is_design, val_id,
                                               interp->modulus_penalty());
         element->nu_interp = paras->nu_values.front();
         element->rho_interp = interp->calculate(paras->rho_values, density, is_design, val_id,
                                                 interp->mass_density_penalty());
-        elements.push_back(element);
     }
-
-    return elements;
 }
 // ===========================================
 
@@ -83,6 +85,7 @@ std::vector<int> StaticGeomericalNonlinear::make_free_index(int ndof, const std:
 void StaticGeomericalNonlinear::set_neum(Eigen::VectorXd& f_ext, int step) const {
     f_ext.setZero();
     for (const auto& bc : Neum) {
+        if (bc->nDof <= 0) throw std::runtime_error("Neumann BC has no DOFs");
         const double value = bc->value(*this, step, static_cast<double>(bc->nDof));
         for (int dof : bc->dof_ids) f_ext[dof] += value;
     }
@@ -108,9 +111,7 @@ int StaticGeomericalNonlinear::omp_threads_from_env() {
 }
 // ===========================================
 
-void StaticGeomericalNonlinear::assemble_system(const FEM& fem,
-                                                const std::vector<StructuralElementTotalLagrange*>& elements,
-                                                const std::vector<int>& free_index, const Eigen::VectorXd& u,
+void StaticGeomericalNonlinear::assemble_system(const FEM& fem, const Eigen::VectorXd& u,
                                                 Eigen::VectorXd& f_int, Eigen::SparseMatrix<double>* K_ff)
 {
     using Clock = std::chrono::steady_clock;
@@ -124,6 +125,7 @@ void StaticGeomericalNonlinear::assemble_system(const FEM& fem,
                                     static_cast<std::size_t>(ndofe_max);
     const int num_threads = omp_threads_from_env();
 
+    // Each thread owns its triplets and full internal-force vector.
     std::vector<std::vector<MyAlgebra::Triplet>> thread_k_triplets(static_cast<std::size_t>(num_threads));
     const std::size_t reserve_per_thread = reserve_nnz / static_cast<std::size_t>(num_threads) + 1;
     if (need_tangent)
@@ -140,9 +142,11 @@ void StaticGeomericalNonlinear::assemble_system(const FEM& fem,
         auto& local_error = thread_errors[static_cast<std::size_t>(tid)];
 
         #pragma omp for schedule(static)
-        for (int e = 0; e < static_cast<int>(elements.size()); ++e) {
+        for (int e = 0; e < fem.NElem; ++e) {
+            if (local_error) continue;
             try {
-                auto* element = elements[e];
+                auto* element = dynamic_cast<StructuralElementTotalLagrange*>(fem.ElementObjects.at(e).get());
+                if (!element) throw std::runtime_error("Nonlinear assemble_system: invalid element type");
                 const auto& dofs = fem.ElementDofs.at(static_cast<std::size_t>(e));
                 const int ndofe = static_cast<int>(dofs.size());
 
@@ -152,6 +156,7 @@ void StaticGeomericalNonlinear::assemble_system(const FEM& fem,
                 for (int i = 0; i < ndofe; ++i)
                     u_e[i] = u[static_cast<int>(dofs[static_cast<std::size_t>(i)])];
 
+                // Internal force and (optional) tangent; no mass or uniform matrix.
                 const ElementMatrix em = element->create_local_matrix(fem, u_e, need_tangent, false);
                 for (int i = 0; i < em.ndof; ++i) {
                     const int gi = static_cast<int>(dofs[static_cast<std::size_t>(i)]);
@@ -204,9 +209,7 @@ void StaticGeomericalNonlinear::assemble_system(const FEM& fem,
 // ===========================================
 
 StaticGeomericalNonlinear::NewtonResult
-StaticGeomericalNonlinear::solve_newton_step(const FEM& fem,
-                                             const std::vector<StructuralElementTotalLagrange*>& elements,
-                                             const std::vector<int>& free_index, const Eigen::VectorXd& f_ext,
+StaticGeomericalNonlinear::solve_newton_step(const FEM& fem, const Eigen::VectorXd& f_ext,
                                              Eigen::VectorXd& u, int step)
 {
     using Clock = std::chrono::steady_clock;
@@ -219,8 +222,7 @@ StaticGeomericalNonlinear::solve_newton_step(const FEM& fem,
         // With max_newton_iterations updates, evaluate the residual up to one extra time.
         for (int iter = 0; iter <= max_newton_iterations; ++iter) {
             Eigen::VectorXd f_int;
-            Eigen::SparseMatrix<double> K_ff;
-            assemble_system(fem, elements, free_index, u, f_int, &K_ff);
+            assemble_system(fem, u, f_int, &K_T);
 
             const int nfree = static_cast<int>(free.size());
             Eigen::VectorXd residual(nfree);
@@ -236,6 +238,15 @@ StaticGeomericalNonlinear::solve_newton_step(const FEM& fem,
             const double scale = std::max({1.0, f_ext.norm(), initial_norm});
             const double threshold = newton_tolerance * scale;
             if (final_norm <= threshold) {
+                // K_T corresponds exactly to the converged displacement.
+                // The previous Newton correction's factors are not reusable.
+                const auto factor_start = Clock::now();
+                factorized_K_T = std::make_shared<Eigen::SparseLU<Eigen::SparseMatrix<double>>>();
+                factorized_K_T->compute(K_T);
+                if (factorized_K_T->info() != Eigen::Success)
+                    throw std::runtime_error("Converged Newton tangent factorization failed");
+                solve_time += std::chrono::duration<double>(Clock::now() - factor_start).count();
+
                 result.iterations = updates;
                 result.residual_norm = final_norm;
                 return result;
@@ -244,7 +255,7 @@ StaticGeomericalNonlinear::solve_newton_step(const FEM& fem,
 
             const auto solve_start = Clock::now();
             Eigen::SparseLU<Eigen::SparseMatrix<double>> linear_solver;
-            linear_solver.compute(K_ff);
+            linear_solver.compute(K_T);
             if (linear_solver.info() != Eigen::Success)
                 throw std::runtime_error("Newton tangent factorization failed");
 
@@ -253,7 +264,7 @@ StaticGeomericalNonlinear::solve_newton_step(const FEM& fem,
                 throw std::runtime_error("Newton tangent solve failed");
             solve_time += std::chrono::duration<double>(Clock::now() - solve_start).count();
 
-            // Full Newton update; line search will be added separately.
+            // Full Newton update; constrained DOFs stay fixed within the step.
             for (int i = 0; i < nfree; ++i) u[free[i]] += delta_u[i];
             ++updates;
         }
@@ -262,15 +273,34 @@ StaticGeomericalNonlinear::solve_newton_step(const FEM& fem,
                                  ", iterations=" + std::to_string(updates) +
                                  ", residual=" + std::to_string(final_norm));
     } catch (...) {
-        for (auto* element : elements) element->rollback_materials();
+        // The currently evaluated Gauss-point trial state must not be committed.
+        for (int e = 0; e < fem.NElem; ++e) {
+            auto* element = dynamic_cast<StructuralElementTotalLagrange*>(fem.ElementObjects.at(e).get());
+            if (element) element->rollback_materials();
+        }
+        factorized_K_T.reset();
         throw;
     }
 }
 // ===========================================
 
-void StaticGeomericalNonlinear::solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter) {
+void StaticGeomericalNonlinear::initialize_solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter) {
     (void)Iter;
     validate_input(fem, y_elem);
+    prepare_elements(fem, y_elem);
+
+    const int ndof = fem.ndof;
+    SPCdofs = SPC();
+    free = free_dofs(ndof);
+    if (free.empty()) throw std::runtime_error("Nonlinear AVM currently requires at least one free DOF");
+    free_index = make_free_index(ndof, free);
+
+    // 0 = previous converged response; 1 = current response.
+    U = Eigen::MatrixXd::Zero(ndof, 2);
+    F_ext = Eigen::MatrixXd::Zero(ndof, 2);
+    current_step = 0;
+    K_T.resize(0, 0);
+    factorized_K_T.reset();
 
     assembly_time = 0.0;
     solve_time = 0.0;
@@ -279,35 +309,43 @@ void StaticGeomericalNonlinear::solver(const FEM& fem, const Eigen::MatrixXd& y_
     // SparseLU is direct: Newton iterations are not KSP iterations.
     ksp_iterations.clear();
     ksp_residuals.clear();
+}
+// ===========================================
 
-    // FEM owns the elements; the typed vector only avoids repeated casts.
-    const std::vector<StructuralElementTotalLagrange*> elements = prepare_elements(fem, y_elem);
-    const int ndof = fem.ndof;
-    SPCdofs = SPC();
-    free = free_dofs(ndof);
-    const std::vector<int> free_index = make_free_index(ndof, free);
+void StaticGeomericalNonlinear::solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter) {
+    (void)y_elem;
+    (void)Iter;
+    if (current_step < 1 || current_step > Nstep)
+        throw std::runtime_error("Set A.current_step in [1, Nstep] before A.solver()");
+    if (newton_iterations.size() != static_cast<std::size_t>(current_step - 1))
+        throw std::runtime_error("Nonlinear load steps must be solved sequentially");
+    if (U.rows() != fem.ndof || U.cols() != 2 || F_ext.cols() != 2 ||
+        free_index.size() != static_cast<std::size_t>(fem.ndof))
+        throw std::runtime_error("A.initialize_solver() must be called before A.solver()");
 
-    U = Eigen::MatrixXd::Zero(ndof, Nstep + 1);
-    F_ext = Eigen::MatrixXd::Zero(ndof, Nstep + 1);
-    Eigen::VectorXd u = Eigen::VectorXd::Zero(ndof);
-    Eigen::VectorXd f_ext = Eigen::VectorXd::Zero(ndof);
+    // Start from the preceding load step's converged displacement.
+    Eigen::VectorXd u = U.col(1);
+    Eigen::VectorXd f_ext = Eigen::VectorXd::Zero(fem.ndof);
+    set_neum(f_ext, current_step);
+    set_dirichlet_u(u, current_step);
+    factorized_K_T.reset();
 
-    for (int step = 1; step <= Nstep; ++step) {
-        set_neum(f_ext, step);
-        set_dirichlet_u(u, step);
-        const NewtonResult stats = solve_newton_step(fem, elements, free_index, f_ext, u, step);
+    const NewtonResult stats = solve_newton_step(fem, f_ext, u, current_step);
 
-        // Commit only after convergence; keep the converged state for the next load step.
-        for (auto* element : elements) element->commit_materials();
-        U.col(step) = u;
-        F_ext.col(step) = f_ext;
-        newton_iterations.push_back(stats.iterations);
-        equilibrium_residuals.push_back(stats.residual_norm);
-        std::cout << "nonlinear step=" << step << ", newton=" << stats.iterations
-                  << ", residual=" << stats.residual_norm << '\n';
+    // Only converged Gauss-point responses are committed.
+    for (int e = 0; e < fem.NElem; ++e) {
+        auto* element = dynamic_cast<StructuralElementTotalLagrange*>(fem.ElementObjects.at(e).get());
+        if (element) element->commit_materials();
     }
 
-    std::cout << "nonlinear assembly[s] = " << assembly_time
-              << ", solve[s] = " << solve_time << '\n';
+    U.col(0) = U.col(1);
+    F_ext.col(0) = F_ext.col(1);
+    U.col(1) = u;
+    F_ext.col(1) = f_ext;
+    newton_iterations.push_back(stats.iterations);
+    equilibrium_residuals.push_back(stats.residual_norm);
+
+    std::cout << "nonlinear step=" << current_step << ", newton=" << stats.iterations
+              << ", residual=" << stats.residual_norm << '\n';
 }
 // ===========================================
