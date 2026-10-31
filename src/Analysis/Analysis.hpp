@@ -21,6 +21,7 @@
 
 class ROMBase;
 class FactorizedSolver;
+class StructuralElementTotalLagrange;
 struct Optimization;
 struct OutputData;
 
@@ -241,6 +242,32 @@ struct StaticGeomericalNonlinear : Analysis {
             throw std::invalid_argument("Invalid nonlinear static solver settings");
     }
     void solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter = 0) override;
+
+private:
+    struct NewtonResult {
+        int iterations = 0;
+        double residual_norm = 0.0;
+    };
+
+    void validate_input(const FEM& fem, const Eigen::MatrixXd& y_elem) const;
+    std::vector<StructuralElementTotalLagrange*> prepare_elements(
+        const FEM& fem, const Eigen::MatrixXd& y_elem) const;
+    static std::vector<int> make_free_index(int ndof, const std::vector<int>& free);
+    static int omp_threads_from_env();
+    void set_neum(Eigen::VectorXd& f_ext, int step) const;
+    void set_dirichlet_u(Eigen::VectorXd& u, int step) const;
+    void assemble_system(const FEM& fem,
+                         const std::vector<StructuralElementTotalLagrange*>& elements,
+                         const std::vector<int>& free_index,
+                         const Eigen::VectorXd& u,
+                         Eigen::VectorXd& f_int,
+                         Eigen::SparseMatrix<double>* K_ff);
+    NewtonResult solve_newton_step(const FEM& fem,
+                                   const std::vector<StructuralElementTotalLagrange*>& elements,
+                                   const std::vector<int>& free_index,
+                                   const Eigen::VectorXd& f_ext,
+                                   Eigen::VectorXd& u,
+                                   int step);
 };
 
 inline std::shared_ptr<Analysis> InitializeAnalysis(const myjson::json& analysis_json,
