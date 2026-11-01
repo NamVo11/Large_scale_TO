@@ -1,5 +1,6 @@
 #include "Analysis/StaticGeomericalNonlinear/StaticGeomericalNonlinearAVM.hpp"
 #include "Analysis/Analysis.hpp"
+
 #include <stdexcept>
 
 StaticGeomericalNonlinearAVM::StaticGeomericalNonlinearAVM(
@@ -8,49 +9,68 @@ StaticGeomericalNonlinearAVM::StaticGeomericalNonlinearAVM(
     const myjson::json& analyses_json, const myjson::json& run_json)
     : GroupFunctionalBase(j, analyses, analyses_json, run_json) {
     if (!std::dynamic_pointer_cast<StaticGeomericalNonlinear>(analysis))
-        throw std::runtime_error("Nonlinear AVM requires StaticGeomericalNonlinear analysis");
+        throw std::runtime_error("Nonlinear AVM requires nonlinear static analysis");
     for (const auto& tj : j.at("terms"))
         terms.push_back(InitializeStaticGeomericalNonlinearFunctional(tj));
-    if (terms.empty()) throw std::runtime_error("Nonlinear functional group has no terms");
+    if (terms.empty()) throw std::runtime_error("Nonlinear objective has no terms");
 }
+// ===========================================
 
-void StaticGeomericalNonlinearAVM::initialize_terms(const FEM& fem, Analysis& A,
-                                                     const Eigen::MatrixXd& xPhys) {
-    // Normalization needs the full trajectory: NEVER initialize scales here.
-    calculate_terms(fem, A, xPhys);
-}
-void StaticGeomericalNonlinearAVM::calculate_terms(const FEM& fem, Analysis& A,
-                                                   const Eigen::MatrixXd& xPhys) {
-    value = 0.0;
+void StaticGeomericalNonlinearAVM::initialize_terms(
+    const FEM& fem, Analysis& A, const Eigen::MatrixXd& xPhys) {
+    // Retained for the GroupFunctionalBase interface; run_nonlinear uses calculate_terms().
     for (auto& term : terms) {
-        term->calculate(fem, A, xPhys); // current step only
-        value += term->scale * term->value;
+        const double before = term->value;
+        term->initialize(fem, A, xPhys); // initial_value = cumulative term.value
+        value += term->scale * (term->value - before); // only this step
     }
 }
-Eigen::VectorXd StaticGeomericalNonlinearAVM::dfdu(const FEM& fem, Analysis& A,
-                                                   const Eigen::MatrixXd& xPhys, int step) {
-    Eigen::VectorXd v = Eigen::VectorXd::Zero(fem.ndof);
-    for (auto& term : terms) v += term->scale * term->dfdu(fem, A, xPhys, step);
-    return v;
+// ===========================================
+
+void StaticGeomericalNonlinearAVM::calculate_terms(
+    const FEM& fem, Analysis& A, const Eigen::MatrixXd& xPhys) {
+    for (auto& term : terms) term->calculate(fem, A, xPhys);
 }
-Eigen::VectorXd StaticGeomericalNonlinearAVM::dfdFext(const FEM& fem, Analysis& A,
-                                                      const Eigen::MatrixXd& xPhys, int step) {
-    Eigen::VectorXd v = Eigen::VectorXd::Zero(fem.ndof);
-    for (auto& term : terms) v += term->scale * term->dfdFext(fem, A, xPhys, step);
-    return v;
+// ===========================================
+
+double StaticGeomericalNonlinearAVM::step_value(
+    const FEM& fem, Analysis& A, const Eigen::MatrixXd& xPhys) {
+    double result = 0.0;
+    for (auto& term : terms) result += term->scale * term->step_value(fem, A, xPhys);
+    return result;
 }
-Eigen::VectorXd StaticGeomericalNonlinearAVM::dfdx(const FEM& fem, Analysis& A,
-                                                   const Eigen::MatrixXd& xPhys, int col) {
-    Eigen::VectorXd v = Eigen::VectorXd::Zero(fem.NElem);
-    for (auto& term : terms) {
-        const auto d = term->dfdx(fem, A, xPhys, col);
-        if (d.size()) v += term->scale * d;
-    }
-    return v;
+// ===========================================
+
+Eigen::VectorXd StaticGeomericalNonlinearAVM::dfdu(
+    const FEM& fem, Analysis& A, const Eigen::MatrixXd& xPhys, int step) {
+    Eigen::VectorXd out;
+    for (auto& term : terms)
+        add_scaled(out, term->dfdu(fem, A, xPhys, step), term->scale);
+    return out;
 }
+// ===========================================
+
+Eigen::VectorXd StaticGeomericalNonlinearAVM::dfdFext(
+    const FEM& fem, Analysis& A, const Eigen::MatrixXd& xPhys, int step) {
+    Eigen::VectorXd out;
+    for (auto& term : terms)
+        add_scaled(out, term->dfdFext(fem, A, xPhys, step), term->scale);
+    return out;
+}
+// ===========================================
+
+Eigen::VectorXd StaticGeomericalNonlinearAVM::dfdx(
+    const FEM& fem, Analysis& A, const Eigen::MatrixXd& xPhys, int val_id) {
+    Eigen::VectorXd out;
+    for (auto& term : terms)
+        add_scaled(out, term->dfdx(fem, A, xPhys, val_id), term->scale);
+    return out;
+}
+// ===========================================
 
 Eigen::MatrixXd StaticGeomericalNonlinearAVM::AVM(
     const FEM&, Analysis&, const Eigen::MatrixXd&, const std::vector<int>&,
     const Filtering&, int) {
     throw std::runtime_error("Nonlinear AVM requires Eigen backend derived class");
 }
+// ===========================================

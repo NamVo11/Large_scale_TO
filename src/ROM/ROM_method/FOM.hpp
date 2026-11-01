@@ -5,7 +5,7 @@
 #ifdef EIGEN_USE_LAPACKE
 #include <Eigen/PardisoSupport>
 #else
-#include <Eigen/SparseCholesky>
+#include <Eigen/SparseLU>
 #endif
 
 #include <memory>
@@ -14,9 +14,11 @@
 class FactorizedSolver {
 public:
 #ifdef EIGEN_USE_LAPACKE
-    Eigen::PardisoLLT<Eigen::SparseMatrix<double>> solver;
+    // Eigen::PardisoLLT<Eigen::SparseMatrix<double>> solver;
+    Eigen::PardisoLU<Eigen::SparseMatrix<double>> solver;
 #else
-    Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
+    // Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
+    Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
 #endif
 };
 

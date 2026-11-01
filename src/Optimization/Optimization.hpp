@@ -77,7 +77,11 @@ struct Optimization {
     }
 
     void run(const FEM& fem);
+    void run_nonlinear(const FEM& fem);
+    void evaluate_nonlinear(const FEM& fem, int Iter);
     void init_design_variables(const FEM& fem, double x0);
+    static std::vector<double> flatten(const Eigen::MatrixXd& values);
+    static Eigen::MatrixXd unflatten(const std::vector<double>& values, int nelem, int nvar);
 };
 
 inline Optimization InitializeOptimization(const myjson::json& optimization_json,

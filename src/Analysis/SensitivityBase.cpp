@@ -3,6 +3,7 @@
 #include "Analysis/Analysis.hpp"
 #include "Analysis/DynamicLinearElastic/DynamicLinearElasticAVM.hpp"
 #include "Analysis/StaticLinearElastic/StaticLinearElasticAVM.hpp"
+#include "Analysis/StaticGeomericalNonlinear/StaticGeomericalNonlinearAVM.hpp"
 #include "Optimization/Volume/VolumeFractionConstraint.hpp"
 #include "ROM/ROM_method/ROM_Base.hpp"
 
@@ -46,6 +47,10 @@ std::unique_ptr<GroupFunctionalBase> InitializeGroupFunctional(const myjson::jso
         } else {
             group = std::make_unique<PetscStaticLinearElasticAVM>(j, analysis_all, analysis_all_json, run_json);
         }
+    } else if (key == "static_geomerical_nonlinear" ||
+               key == "static_geometrical_nonlinear" ||
+               key == "static_geomerical_nonlinear_avm") {
+        group = std::make_unique<EigenStaticGeomericalNonlinearAVM>(j, analysis_all, analysis_all_json, run_json);
     } else if (key == "volume_fraction" || key == "volume_sens_base") {
         group = std::make_unique<VolumeFractionConstraint>(j, analysis_all, analysis_all_json, run_json);
     } else {

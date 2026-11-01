@@ -87,20 +87,20 @@ void PetscFOM_direct::set_factorization(Mat factor_in) {
     MKLThreadGuard mkl_threads(requested_factor_threads, requested_runtime_threads);
     PetscMPIInt rank = 0;
     MPI_Comm_rank(PetscObjectComm((PetscObject)factor_in), &rank);
-    if (rank == 0) {
-#if defined(STAGE2_HAS_MKL_SERVICE)
-        std::cout << "  thread_debug factorization: requested_factor_threads="
-                  << requested_factor_threads
-                  << " requested_runtime_threads=" << requested_runtime_threads
-                  << " mkl_get_max_threads=" << mkl_get_max_threads()
-                  << "\n";
-#else
-        std::cout << "  thread_debug factorization: MKL service header not available"
-                  << " requested_factor_threads=" << requested_factor_threads
-                  << " requested_runtime_threads=" << requested_runtime_threads
-                  << "\n";
-#endif
-    }
+    // if (rank == 0) {
+// #if defined(STAGE2_HAS_MKL_SERVICE)
+//         std::cout << "  thread_debug factorization: requested_factor_threads="
+//                   << requested_factor_threads
+//                   << " requested_runtime_threads=" << requested_runtime_threads
+//                   << " mkl_get_max_threads=" << mkl_get_max_threads()
+//                   << "\n";
+// #else
+//         std::cout << "  thread_debug factorization: MKL service header not available"
+//                   << " requested_factor_threads=" << requested_factor_threads
+//                   << " requested_runtime_threads=" << requested_runtime_threads
+//                   << "\n";
+// #endif
+    // }
     if (ksp_) {
         KSPDestroy(&ksp_);
         ksp_ = nullptr;
@@ -142,7 +142,7 @@ void PetscFOM_direct::set_petsc_factorized_solver(Mat lhs, KSP ksp) {
 SolveStats PetscFOM_direct::FOM_main(const Eigen::SparseMatrix<double>&,
                                      const Eigen::VectorXd&,
                                      Eigen::VectorXd& u) {
-    const ROMContext& context = ctx;
+    // const ROMContext& context = ctx;
     if (!current_lhs_ || !current_rhs_ || !current_u_) {
         throw std::runtime_error("PetscFOM_direct needs set_petsc_system before FOM_main");
     }
@@ -161,13 +161,13 @@ SolveStats PetscFOM_direct::FOM_main(const Eigen::SparseMatrix<double>&,
     if (!ksp_ || current_lhs_ != factor) {
         set_factorization(current_lhs_);
         factorization_time = last_factorization_time_;
-        PetscMPIInt rank = 0;
-        MPI_Comm_rank(PetscObjectComm((PetscObject)current_lhs_), &rank);
-        if (rank == 0) {
-            std::cout << "  factorization[s]: " << context.role
-                      << " " << context.system_type << " = "
-                      << factorization_time << "\n";
-        }
+        // PetscMPIInt rank = 0;
+        // MPI_Comm_rank(PetscObjectComm((PetscObject)current_lhs_), &rank);
+        // if (rank == 0) {
+            // std::cout << "  factorization[s]: " << context.role
+            //           << " " << context.system_type << " = "
+            //           << factorization_time << "\n";
+        // }
     }
 
     PetscLogDouble t0 = 0.0;

@@ -28,8 +28,8 @@ struct Objective {
         }
     }
 
-    void initialize(const FEM& fem,
-                    const Eigen::MatrixXd& xPhys) {
+    // Original path for linear/dynamic: unchanged.
+    void initialize(const FEM& fem, const Eigen::MatrixXd& xPhys) {
         value = 0.0;
         for (auto& group : groups) {
             Analysis& analysis = *group->analysis;
@@ -38,8 +38,7 @@ struct Objective {
         }
     }
 
-    void calculate(const FEM& fem,
-                   const Eigen::MatrixXd& xPhys) {
+    void calculate(const FEM& fem, const Eigen::MatrixXd& xPhys) {
         value = 0.0;
         for (auto& group : groups) {
             Analysis& analysis = *group->analysis;
@@ -48,28 +47,16 @@ struct Objective {
         }
     }
 
-
-
-    void initialize_temp(const FEM& fem,
-                        const Eigen::MatrixXd& xPhys) {
+    // Accumulate term responses for the solved analysis; group/objective values are finalized later.
+    void calculate_step(const FEM& fem, Analysis& analysis, const Eigen::MatrixXd& xPhys) {
         for (auto& group : groups) {
-            Analysis& analysis = *group->analysis;
-            group->initialize_terms(fem, analysis, xPhys);
-            value += group->value;
-        }
-    }
-
-    void calculate_temp(const FEM& fem,
-                        const Eigen::MatrixXd& xPhys) {
-        for (auto& group : groups) {
-            Analysis& analysis = *group->analysis;
+            if (group->analysis.get() != &analysis) continue;
             group->calculate_terms(fem, analysis, xPhys);
-            value += group->value;
         }
     }
+    // ===========================================
 
-
-
+    // Original path for linear/dynamic: unchanged.
     void calculate_sensitivity(const FEM& fem,
                                const Eigen::MatrixXd& x,
                                const std::vector<int>& x_label,
@@ -78,12 +65,31 @@ struct Objective {
                                int Iter) {
         sensitivity.resize(0, 0);
         for (auto& group : groups) {
-            if (!group->sensitivity_method) throw std::runtime_error("Objective group has no sensitivity method");
+            if (!group->sensitivity_method)
+                throw std::runtime_error("Objective group has no sensitivity method");
             Analysis& analysis = *group->analysis;
-            Eigen::MatrixXd group_derivative = group->sensitivity_method->run(fem, analysis, x, x_label, *group,
-                                                                              filtering, output,
-                                                                              Iter);
+
+            Eigen::MatrixXd group_derivative = group->sensitivity_method->run(fem, analysis, x, x_label, *group, filtering, output, Iter);
+
             if (sensitivity.size() == 0) sensitivity = std::move(group_derivative);
+
+            else sensitivity.noalias() += group_derivative;
+        }
+    }
+
+    // Same sensitivity route as the existing analyses, without resetting between load steps.
+    void calculate_sensitivity_step(const FEM& fem, Analysis& analysis, const Eigen::MatrixXd& x,
+                                    const std::vector<int>& x_label, const Filtering& filtering,
+                                    const OutputData& output, int Iter) {
+        for (auto& group : groups) {
+            if (group->analysis.get() != &analysis) continue;
+            if (!group->sensitivity_method)
+                throw std::runtime_error("Objective group has no sensitivity method");
+
+            Eigen::MatrixXd group_derivative = group->sensitivity_method->run(fem, analysis, x, x_label, *group, filtering, output, Iter);
+
+            if (sensitivity.size() == 0) sensitivity = std::move(group_derivative);
+
             else sensitivity.noalias() += group_derivative;
         }
     }

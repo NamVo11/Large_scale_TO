@@ -92,18 +92,18 @@ void EigenFOM_direct::set_factorization(const Eigen::SparseMatrix<double>& lhs) 
     const int requested_factor_threads = env_int_or_default("FACTOR_NUM_THREADS", env_int_or_default("MKL_NUM_THREADS", 1));
     const int requested_runtime_threads = env_int_or_default("MKL_NUM_THREADS", 1);
     MKLThreadGuard mkl_threads(requested_factor_threads, requested_runtime_threads);
-#if defined(STAGE2_EIGEN_HAS_MKL_SERVICE)
-    std::cout << "  thread_debug factorization: requested_factor_threads="
-              << requested_factor_threads
-              << " requested_runtime_threads=" << requested_runtime_threads
-              << " mkl_get_max_threads=" << mkl_get_max_threads()
-              << "\n";
-#else
-    std::cout << "  thread_debug factorization: MKL service header not available"
-              << " requested_factor_threads=" << requested_factor_threads
-              << " requested_runtime_threads=" << requested_runtime_threads
-              << "\n";
-#endif
+// #if defined(STAGE2_EIGEN_HAS_MKL_SERVICE)
+//     std::cout << "  thread_debug factorization: requested_factor_threads="
+//               << requested_factor_threads
+//               << " requested_runtime_threads=" << requested_runtime_threads
+//               << " mkl_get_max_threads=" << mkl_get_max_threads()
+//               << "\n";
+// #else
+//     std::cout << "  thread_debug factorization: MKL service header not available"
+//               << " requested_factor_threads=" << requested_factor_threads
+//               << " requested_runtime_threads=" << requested_runtime_threads
+//               << "\n";
+// #endif
     solver_ = std::make_shared<FactorizedSolver>();
 #ifdef EIGEN_USE_LAPACKE
     solver_->solver.pardisoParameterArray()[7] = 1;
@@ -132,7 +132,7 @@ void EigenFOM_direct::set_factorized_solver(const Eigen::SparseMatrix<double>& l
 SolveStats EigenFOM_direct::FOM_main(const Eigen::SparseMatrix<double>& lhs,
                                      const Eigen::VectorXd& rhs,
                                      Eigen::VectorXd& u) {
-    const ROMContext& context = ctx;
+    // const ROMContext& context = ctx;
     SolveStats stats;
     if (rhs.norm() < 1e-30) {
         u = Eigen::VectorXd::Zero(rhs.size());
@@ -143,9 +143,9 @@ SolveStats EigenFOM_direct::FOM_main(const Eigen::SparseMatrix<double>& lhs,
     if (!solver_ || factor_ != &lhs) {
         set_factorization(lhs);
         stats.factorization_time = last_factorization_time_;
-        std::cout << "  factorization[s]: " << context.role
-                  << " " << context.system_type << " = "
-                  << stats.factorization_time << "\n";
+        // std::cout << "  factorization[s]: " << context.role
+        //           << " " << context.system_type << " = "
+        //           << stats.factorization_time << "\n";
     }
 
     const double ts = wall_time();

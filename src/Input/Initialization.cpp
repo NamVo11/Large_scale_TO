@@ -86,6 +86,7 @@ InitializationData::InitializationData(const std::string& input_json_path) {
                                               analysis_all_json);
     } else {
         optimization.analysis_all = std::move(analysis_all);
+        optimization.Output = OutputData(cfg.value("Output", json::object()), run_json, input_json_path);
         const json opt = cfg.value("Optimization", json::object());
         const double x0 = myjson::double_value(opt, "x0", 1.0);
         if (x0 < 0.0 || x0 > 1.0) throw std::runtime_error("Analysis-only x0 must be in [0,1]");

@@ -55,11 +55,7 @@ struct Analysis {
         id = j.at("id").get<int>();
         save_factorized_K_initial = myjson::bool_value(j, "save_factorized_K_initial", false);
 
-        const std::string requested_solver = myjson::lower_ascii(j.at("solver_name").get<std::string>());
-        if (j.contains("ROM") && requested_solver != "static_geomerical_nonlinear" &&
-            requested_solver != "static_geometrical_nonlinear") {
-            ROM = InitializeROM(j.at("ROM"), run_json);
-        }
+        if (j.contains("ROM")) ROM = InitializeROM(j.at("ROM"), run_json);
 
         const int interp_id = j.at("interp_id").get<int>();
         init_interp(interps, interp_id);
@@ -217,13 +213,16 @@ struct EigenStaticLinearElastic : StaticLinearElastic {
     void solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter = 0) override;
 };
 
-// Full-order total-Lagrange Newton analysis. No reduced basis is used.
+// Total-Lagrange Newton analysis using the shared ROM linear-solver interface.
 struct StaticGeomericalNonlinear : Analysis {
     int max_newton_iterations = 30;
     int max_line_search_iterations = 12;
     double newton_tolerance = 1e-8;
     std::vector<int> newton_iterations;
     std::vector<double> equilibrium_residuals;
+    int current_step = 0;
+    int optimization_iter = 0;
+    Eigen::SparseMatrix<double> K_T;
 
     StaticGeomericalNonlinear(const myjson::json& j,
                               const myjson::json& run_json,
@@ -237,11 +236,18 @@ struct StaticGeomericalNonlinear : Analysis {
         max_newton_iterations = myjson::int_value(j, "max_newton_iterations", 30);
         max_line_search_iterations = myjson::int_value(j, "max_line_search_iterations", 12);
         newton_tolerance = myjson::double_value(j, "newton_tolerance", 1e-8);
+        if (myjson::lower_ascii(run_json.at("linear_backend").get<std::string>()) != "eigen")
+            throw std::invalid_argument("StaticGeomericalNonlinear currently requires Eigen linear_backend");
         if (Nstep < 1 || max_newton_iterations < 1 ||
             max_line_search_iterations < 1 || !(newton_tolerance > 0.0))
             throw std::invalid_argument("Invalid nonlinear static solver settings");
     }
+    void initialize_solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter = 0);
+    void solve_step(const FEM& fem, int step);
+    void solve_trial_step(const FEM& fem, const Eigen::MatrixXd& y_elem, int step,
+                          const Eigen::VectorXd& initial_u);
     void solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter = 0) override;
+    void solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter, const OutputData* output);
 
 private:
     struct NewtonResult {
@@ -250,24 +256,16 @@ private:
     };
 
     void validate_input(const FEM& fem, const Eigen::MatrixXd& y_elem) const;
-    std::vector<StructuralElementTotalLagrange*> prepare_elements(
-        const FEM& fem, const Eigen::MatrixXd& y_elem) const;
+    std::vector<int> free_index;
+    void prepare_elements(const FEM& fem, const Eigen::MatrixXd& y_elem) const;
     static std::vector<int> make_free_index(int ndof, const std::vector<int>& free);
     static int omp_threads_from_env();
     void set_neum(Eigen::VectorXd& f_ext, int step) const;
     void set_dirichlet_u(Eigen::VectorXd& u, int step) const;
-    void assemble_system(const FEM& fem,
-                         const std::vector<StructuralElementTotalLagrange*>& elements,
-                         const std::vector<int>& free_index,
-                         const Eigen::VectorXd& u,
-                         Eigen::VectorXd& f_int,
+    void assemble_system(const FEM& fem, const Eigen::VectorXd& u, Eigen::VectorXd& f_int,
                          Eigen::SparseMatrix<double>* K_ff);
-    NewtonResult solve_newton_step(const FEM& fem,
-                                   const std::vector<StructuralElementTotalLagrange*>& elements,
-                                   const std::vector<int>& free_index,
-                                   const Eigen::VectorXd& f_ext,
-                                   Eigen::VectorXd& u,
-                                   int step);
+    NewtonResult solve_newton_step(const FEM& fem, const Eigen::VectorXd& f_ext,
+                                   Eigen::VectorXd& u, int step);
 };
 
 inline std::shared_ptr<Analysis> InitializeAnalysis(const myjson::json& analysis_json,

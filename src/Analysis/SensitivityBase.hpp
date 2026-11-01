@@ -36,9 +36,6 @@ struct GroupFunctionalBase {
         analysis_id = j.at("analysis_id").get<int>();
         sens_function = j.at("sens_function").get<std::string>();
 
-        const std::string sens_type = myjson::string_value(j, "sens_type", "AVM");
-        sensitivity_method = InitializeSensitivityMethod(sens_type);
-
         for (const auto& candidate : analysis_all) {
             if (candidate && candidate->id == analysis_id) {
                 analysis = candidate;
@@ -48,6 +45,8 @@ struct GroupFunctionalBase {
         if (!analysis) {
             throw std::runtime_error("Analysis object not found for id: " + std::to_string(analysis_id));
         }
+        sensitivity_method = InitializeSensitivityMethod(myjson::string_value(j, "sens_type", "AVM"),
+                                                        analysis->solver_name);
 
         for (const auto& analysis_json : analysis_all_json) {
             if (analysis_json.at("id").get<int>() == analysis_id) {

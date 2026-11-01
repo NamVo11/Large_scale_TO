@@ -43,6 +43,7 @@ add_executable(stage2_dynamic_forward
   src/Optimization/Interpolation/DMO.cpp
   src/Optimization/Filtering/Filtering.cpp
   src/Optimization/Optimization.cpp
+  src/Optimization/Optimization_nonlinear_temp.cpp
   src/Optimization/Volume/VolumeFunctional.cpp
   src/Optimization/Volume/VolumeFractionConstraint.cpp
   src/Optimization/SensitivityMethod/AVM.cpp
@@ -56,6 +57,9 @@ add_executable(stage2_dynamic_forward
   src/Analysis/StaticLinearElastic/PetscStaticLinearElastic.cpp
   src/Analysis/StaticLinearElastic/EigenStaticLinearElastic.cpp
   src/Analysis/StaticGeomericalNonlinear/StaticGeomericalNonlinear.cpp
+  src/Analysis/StaticGeomericalNonlinear/StaticGeomericalNonlinearFunctional.cpp
+  src/Analysis/StaticGeomericalNonlinear/StaticGeomericalNonlinearAVM.cpp
+  src/Analysis/StaticGeomericalNonlinear/EigenStaticGeomericalNonlinearAVM.cpp
   src/Analysis/SensitivityBase.cpp
   src/Analysis/DynamicLinearElastic/DynamicLinearElasticFunctional.cpp
   src/Analysis/DynamicLinearElastic/DynamicLinearElasticAVM.cpp

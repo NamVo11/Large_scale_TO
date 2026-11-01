@@ -18,24 +18,18 @@
 #include <limits>
 #include <stdexcept>
 
-namespace {
-
-int nvar_of(const Eigen::MatrixXd& x) {
-    return static_cast<int>(x.cols());
-}
-
-std::vector<double> flatten(const Eigen::MatrixXd& x) {
+std::vector<double> Optimization::flatten(const Eigen::MatrixXd& x) {
     std::vector<double> out(static_cast<std::size_t>(x.size()));
     std::copy(x.data(), x.data() + x.size(), out.begin());
     return out;
 }
+// ===========================================
 
-Eigen::MatrixXd unflatten(const std::vector<double>& x, int nelem, int nvar) {
+Eigen::MatrixXd Optimization::unflatten(const std::vector<double>& x, int nelem, int nvar) {
     return Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>>(
         x.data(), nelem, nvar);
 }
-
-} // namespace
+// ===========================================
 
 void Optimization::init_design_variables(const FEM& fem, double x0) {
     int nvar = 1;
@@ -91,6 +85,12 @@ void Optimization::init_design_variables(const FEM& fem, double x0) {
 
 void Optimization::run(const FEM& fem) {
     if (analysis_all.empty()) throw std::runtime_error("Optimization has no Analysis object");
+    if (std::any_of(analysis_all.begin(), analysis_all.end(), [](const auto& analysis) {
+            return dynamic_cast<StaticGeomericalNonlinear*>(analysis.get()) != nullptr;
+        })) {
+        run_nonlinear(fem);
+        return;
+    }
     if (!filtering) throw std::runtime_error("Optimization filtering is not initialized");
     PetscMPIInt rank = 0;
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
@@ -98,7 +98,7 @@ void Optimization::run(const FEM& fem) {
     Output.initialize_vtk_cache(fem);
     filtering->initialize(fem);
     const int nelem = fem.NElem;
-    const int nvar = nvar_of(x);
+    const int nvar = static_cast<int>(x.cols());
     algorithm = InitializeAlgorithm(algorithm_json, nelem * nvar, static_cast<int>(constraint.groups.size()));
 
     using Clock = std::chrono::steady_clock;
@@ -147,6 +147,9 @@ void Optimization::run(const FEM& fem) {
                 output_time += elapsed(out_t0, Clock::now());
             }
         }
+        if (Iter == 0 && MaxIter == 0 && analysis_all.size() == 1 &&
+            dynamic_cast<StaticLinearElastic*>(analysis_all.front().get()))
+            return; // Temporary linear forward-only comparison; skip objective and sensitivity.
 
         t0 = Clock::now();
         MemoryDebug::print("before_objective_value");

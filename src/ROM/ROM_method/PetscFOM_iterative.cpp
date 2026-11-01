@@ -63,7 +63,7 @@ void PetscFOM_iterative::set_petsc_factorized_solver(Mat lhs, KSP ksp) {
 SolveStats PetscFOM_iterative::FOM_main(const Eigen::SparseMatrix<double>&,
                                         const Eigen::VectorXd&,
                                         Eigen::VectorXd& u) {
-    const ROMContext& context = ctx;
+    // const ROMContext& context = ctx;
     if (!current_lhs_ || !current_rhs_ || !current_u_) {
         throw std::runtime_error("PetscFOM_iterative needs set_petsc_system before FOM_main");
     }
@@ -82,13 +82,13 @@ SolveStats PetscFOM_iterative::FOM_main(const Eigen::SparseMatrix<double>&,
     if (!ksp_ || current_lhs_ != factor) {
         set_factorization(current_lhs_);
         factorization_time = last_factorization_time_;
-        PetscMPIInt rank = 0;
-        MPI_Comm_rank(PetscObjectComm((PetscObject)current_lhs_), &rank);
-        if (rank == 0) {
-            std::cout << "  factorization[s]: " << context.role
-                      << " " << context.system_type << " = "
-                      << factorization_time << "\n";
-        }
+        // PetscMPIInt rank = 0;
+        // MPI_Comm_rank(PetscObjectComm((PetscObject)current_lhs_), &rank);
+        // if (rank == 0) {
+            // std::cout << "  factorization[s]: " << context.role
+            //           << " " << context.system_type << " = "
+            //           << factorization_time << "\n";
+        // }
     }
 
     PetscLogDouble t0 = 0.0;

@@ -224,81 +224,88 @@ void OutputData::export_response_vtk(const FEM& fem,
                                      const Analysis& analysis,
                                      const Eigen::MatrixXd& xPhys,
                                      int Iter) const {
-    (void)Iter;
+    for (int step = 0; step <= analysis.Nstep; ++step)
+        export_response_vtk_step(fem, analysis, xPhys, Iter, step, step);
+}
+// ===========================================
+
+void OutputData::export_response_vtk_step(const FEM& fem, const Analysis& analysis,
+                                          const Eigen::MatrixXd& xPhys, int Iter,
+                                          int step, int data_col) const {
     PetscMPIInt rank = 0;
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
     if (rank != 0 || outDir_vtk.empty() || analysis.U.size() == 0) return;
+    if (step < 0 || step > analysis.Nstep || data_col < 0 || data_col >= analysis.U.cols())
+        throw std::out_of_range("VTK response step or storage column is outside analysis data");
     initialize_vtk_cache(fem);
     std::filesystem::create_directories(outDir_vtk);
 
-    for (int step = 0; step <= analysis.Nstep; ++step) {
-        char name[96] = {0};
-        std::snprintf(name,
-                      sizeof(name),
-                      "Analysis_%d_%s_step_%d.vtk",
-                      analysis.id,
-                      analysis.type.c_str(),
-                      step);
-        std::ofstream out(std::filesystem::path(outDir_vtk) / name);
-        if (!out) throw std::runtime_error("cannot write response vtk");
-        out.precision(17);
-        out << vtk_header("Large_scale_TO response") << vtk_points_block << vtk_cells_block << vtk_cell_types_block;
-        out << "POINT_DATA " << fem.NNode << "\n";
+    char name[128] = {0};
+    if (dynamic_cast<const StaticGeomericalNonlinear*>(&analysis))
+        std::snprintf(name, sizeof(name), "Analysis_%d_%s_iter_%d_step_%d.vtk",
+                      analysis.id, analysis.type.c_str(), Iter, step);
+    else
+        std::snprintf(name, sizeof(name), "Analysis_%d_%s_step_%d.vtk",
+                      analysis.id, analysis.type.c_str(), step);
+    std::ofstream out(std::filesystem::path(outDir_vtk) / name);
+    if (!out) throw std::runtime_error("cannot write response vtk");
+    out.precision(17);
+    out << vtk_header("Large_scale_TO response") << vtk_points_block << vtk_cells_block << vtk_cell_types_block;
+    out << "POINT_DATA " << fem.NNode << "\n";
 
-        auto write_vector_field = [&](const std::string& field, const Eigen::MatrixXd& values) {
-            if (values.size() == 0 || step >= values.cols()) return;
-            out << "VECTORS " << field << " double\n";
-            for (int n = 0; n < fem.NNode; ++n) {
-                double v[3] = {0.0, 0.0, 0.0};
-                for (int d = 0; d < fem.dim; ++d) {
-                    const int dof = n * fem.dim + d;
-                    if (dof < values.rows()) v[d] = values(dof, step);
-                }
-                out << v[0] << " " << v[1] << " " << v[2] << "\n";
+    auto write_vector_field = [&](const std::string& field, const Eigen::MatrixXd& values) {
+        if (values.size() == 0 || data_col >= values.cols()) return;
+        out << "VECTORS " << field << " double\n";
+        for (int n = 0; n < fem.NNode; ++n) {
+            double v[3] = {0.0, 0.0, 0.0};
+            for (int d = 0; d < fem.dim; ++d) {
+                const int dof = n * fem.dim + d;
+                if (dof < values.rows()) v[d] = values(dof, data_col);
             }
-        };
-
-        write_vector_field("displacement", analysis.U);
-        if (analysis.type == "dynamic") {
-            const auto& dynamic = dynamic_cast<const DynamicLinearElastic&>(analysis);
-            write_vector_field("velocity", dynamic.V);
-            write_vector_field("acceleration", dynamic.A);
+            out << v[0] << " " << v[1] << " " << v[2] << "\n";
         }
-        write_vector_field("Reaction_force", analysis.F_ext);
+    };
 
-        if (xPhys.rows() == fem.NElem && xPhys.cols() > 0) {
-            out << "CELL_DATA " << fem.NElem << "\n";
-            if (xPhys.cols() == 1) {
-                out << "SCALARS density double 1\nLOOKUP_TABLE default\n";
-                for (int e = 0; e < fem.NElem; ++e) out << xPhys(e, 0) << "\n";
-                out << "SCALARS Multi_Topo double 1\nLOOKUP_TABLE default\n";
-                for (int e = 0; e < fem.NElem; ++e) out << xPhys(e, 0) << "\n";
-            } else {
-                for (int v = 0; v < xPhys.cols(); ++v) {
-                    out << "SCALARS Topo_ID_" << (v + 1) << " double 1\nLOOKUP_TABLE default\n";
-                    for (int e = 0; e < fem.NElem; ++e) out << xPhys(e, v) << "\n";
-                }
+    write_vector_field("displacement", analysis.U);
+    if (analysis.type == "dynamic") {
+        const auto& dynamic = dynamic_cast<const DynamicLinearElastic&>(analysis);
+        write_vector_field("velocity", dynamic.V);
+        write_vector_field("acceleration", dynamic.A);
+    }
+    write_vector_field("Reaction_force", analysis.F_ext);
 
-                Eigen::VectorXd multi_topo = Eigen::VectorXd::Zero(xPhys.rows());
-                for (int e = 0; e < xPhys.rows(); ++e) {
-                    double prod_all = 1.0;
-                    std::vector<double> q(static_cast<std::size_t>(xPhys.cols()));
-                    for (int v = 0; v < xPhys.cols(); ++v) {
-                        q[static_cast<std::size_t>(v)] = std::max(1e-14, 1.0 - xPhys(e, v));
-                        prod_all *= q[static_cast<std::size_t>(v)];
-                    }
-                    for (int v = 0; v < xPhys.cols(); ++v) {
-                        multi_topo(e) += xPhys(e, v) *
-                            (prod_all / q[static_cast<std::size_t>(v)]) *
-                            static_cast<double>(v + 1);
-                    }
-                }
-                out << "SCALARS Multi_Topo double 1\nLOOKUP_TABLE default\n";
-                for (int e = 0; e < fem.NElem; ++e) out << multi_topo(e) << "\n";
+    if (xPhys.rows() == fem.NElem && xPhys.cols() > 0) {
+        out << "CELL_DATA " << fem.NElem << "\n";
+        if (xPhys.cols() == 1) {
+            out << "SCALARS density double 1\nLOOKUP_TABLE default\n";
+            for (int e = 0; e < fem.NElem; ++e) out << xPhys(e, 0) << "\n";
+            out << "SCALARS Multi_Topo double 1\nLOOKUP_TABLE default\n";
+            for (int e = 0; e < fem.NElem; ++e) out << xPhys(e, 0) << "\n";
+        } else {
+            for (int v = 0; v < xPhys.cols(); ++v) {
+                out << "SCALARS Topo_ID_" << (v + 1) << " double 1\nLOOKUP_TABLE default\n";
+                for (int e = 0; e < fem.NElem; ++e) out << xPhys(e, v) << "\n";
             }
+
+            Eigen::VectorXd multi_topo = Eigen::VectorXd::Zero(xPhys.rows());
+            for (int e = 0; e < xPhys.rows(); ++e) {
+                double prod_all = 1.0;
+                std::vector<double> q(static_cast<std::size_t>(xPhys.cols()));
+                for (int v = 0; v < xPhys.cols(); ++v) {
+                    q[static_cast<std::size_t>(v)] = std::max(1e-14, 1.0 - xPhys(e, v));
+                    prod_all *= q[static_cast<std::size_t>(v)];
+                }
+                for (int v = 0; v < xPhys.cols(); ++v) {
+                    multi_topo(e) += xPhys(e, v) * (prod_all / q[static_cast<std::size_t>(v)]) *
+                                     static_cast<double>(v + 1);
+                }
+            }
+            out << "SCALARS Multi_Topo double 1\nLOOKUP_TABLE default\n";
+            for (int e = 0; e < fem.NElem; ++e) out << multi_topo(e) << "\n";
         }
     }
 }
+// ===========================================
 
 void OutputData::export_opt_vtk(const FEM& fem,
                                 const Eigen::MatrixXd& xPhys,

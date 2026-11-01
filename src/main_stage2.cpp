@@ -43,7 +43,12 @@ int main(int argc, char** argv) {
         if (data.run_json.value("run_optimization", true)) {
             data.optimization.run(fem);
         } else {
-            data.optimization.analysis_all.front()->solver(fem, data.optimization.x, 0);
+            if (auto* nonlinear = dynamic_cast<StaticGeomericalNonlinear*>(&A1)) {
+                data.optimization.Output.prepare_case_folders();
+                nonlinear->solver(fem, data.optimization.x, 0, &data.optimization.Output);
+            } else {
+                A1.solver(fem, data.optimization.x, 0);
+            }
             const auto& response = *data.optimization.analysis_all.front();
             std::cout << "analysis max_abs_u=" << response.U.cwiseAbs().maxCoeff() << "\n";
         }

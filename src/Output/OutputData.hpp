@@ -64,6 +64,8 @@ struct OutputData {
                              const Analysis& analysis,
                              const Eigen::MatrixXd& xPhys,
                              int Iter) const;
+    void export_response_vtk_step(const FEM& fem, const Analysis& analysis, const Eigen::MatrixXd& xPhys,
+                                  int Iter, int step, int data_col) const;
     void export_opt_vtk(const FEM& fem,
                         const Eigen::MatrixXd& xPhys,
                         const Eigen::MatrixXd& df_dx_mat,

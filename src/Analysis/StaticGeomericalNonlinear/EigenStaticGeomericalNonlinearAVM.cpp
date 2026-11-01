@@ -10,41 +10,27 @@
 #include <exception>
 #include <stdexcept>
 
-namespace {
-int sens_threads() {
+int EigenStaticGeomericalNonlinearAVM::sens_threads() {
     const char* v = std::getenv("SENS_ELEMENT_THREADS");
     return v ? std::max(1, std::atoi(v)) : 1;
 }
+// ===========================================
 
-Eigen::MatrixXd one_term_gradient(const FEM& fem,
-                                  StaticGeomericalNonlinear& A,
-                                  StaticGeomericalNonlinearFunctionalBase& term,
-                                  const Eigen::MatrixXd& xPhys) {
-    if (!A.factorized_K_T || A.K_T.rows() != static_cast<int>(A.free.size()))
-        throw std::runtime_error("AVM requires factorized converged K_T,ff");
+// Analog of explicit_gradient_static() in EigenStaticLinearElasticAVM.cpp.
+// The caller supplies the CURRENT load step's adjoint vector.
+Eigen::MatrixXd EigenStaticGeomericalNonlinearAVM::explicit_gradient(
+    const FEM& fem,
+    StaticGeomericalNonlinear& A,
+    const Eigen::MatrixXd& xPhys,
+    const Eigen::VectorXd& lambda) {
 
-    // Adjoint: K_T,ff^T lambda_f = df/du_f.
-    // StVK Total Lagrangian elastic tangent is symmetric, so the SAME SparseLU
-    // factors can be used for K_T^T in exact arithmetic.
-    const Eigen::VectorXd dfdu = term.dfdu(fem, A, xPhys, A.current_step);
-    if (dfdu.size() != fem.ndof) throw std::runtime_error("Nonlinear dfdu size mismatch");
-    Eigen::VectorXd rhs_f(static_cast<Eigen::Index>(A.free.size()));
-    for (std::size_t i = 0; i < A.free.size(); ++i)
-        rhs_f[static_cast<Eigen::Index>(i)] = dfdu[A.free[i]];
-    const Eigen::VectorXd lambda_f = A.factorized_K_T->solve(rhs_f);
-    if (A.factorized_K_T->info() != Eigen::Success || !lambda_f.allFinite())
-        throw std::runtime_error("Nonlinear AVM adjoint solve failed");
-    Eigen::VectorXd lambda = Eigen::VectorXd::Zero(fem.ndof);
-    for (std::size_t i = 0; i < A.free.size(); ++i)
-        lambda[A.free[i]] = lambda_f[static_cast<Eigen::Index>(i)];
-
-    Eigen::MatrixXd grad = Eigen::MatrixXd::Zero(fem.NElem, xPhys.cols());
-    std::vector<std::exception_ptr> errors(static_cast<std::size_t>(sens_threads()));
+    Eigen::MatrixXd df_dx = Eigen::MatrixXd::Zero(fem.NElem, xPhys.cols());
     const int threads = sens_threads();
+    std::vector<std::exception_ptr> errors(static_cast<std::size_t>(threads));
+
 #pragma omp parallel for schedule(static) num_threads(threads)
     for (int e = 0; e < fem.NElem; ++e) {
-        const int tid = omp_get_thread_num();
-        auto& error = errors[static_cast<std::size_t>(tid)];
+        auto& error = errors[static_cast<std::size_t>(omp_get_thread_num())];
         if (error) continue;
         try {
             auto* element = dynamic_cast<StructuralElementTotalLagrange*>(
@@ -52,52 +38,55 @@ Eigen::MatrixXd one_term_gradient(const FEM& fem,
             if (!element || !element->material_paras)
                 throw std::runtime_error("Invalid nonlinear element in AVM");
             if (myjson::lower_ascii(element->status) != "design_val") continue;
+
             const auto* paras = dynamic_cast<const ElasticParas*>(element->material_paras.get());
             if (!paras || paras->val_ids.size() != 1)
-                throw std::runtime_error("Nonlinear AVM requires exactly one design val_id");
+                throw std::runtime_error("Nonlinear AVM currently requires one val_id per element");
+
             const int val_id = paras->val_ids.front();
             const int col = val_id - 1;
             if (col < 0 || col >= xPhys.cols())
-                throw std::runtime_error("Nonlinear AVM val_id outside xPhys");
+                throw std::runtime_error("Nonlinear AVM: invalid val_id");
+
             const double dE = A.interp->sensitivity(
                 paras->E_values, xPhys(e, col), true, val_id,
                 A.interp->modulus_penalty());
             if (!(element->E_interp > 0.0))
-                throw std::runtime_error("Nonlinear AVM requires E_interp > 0");
+                throw std::runtime_error("Nonlinear AVM: E_interp must be positive");
 
             const auto& dofs = fem.ElementDofs.at(static_cast<std::size_t>(e));
             Eigen::VectorXd u_e(static_cast<Eigen::Index>(dofs.size()));
             Eigen::VectorXd lambda_e(static_cast<Eigen::Index>(dofs.size()));
             for (std::size_t i = 0; i < dofs.size(); ++i) {
                 const int global = static_cast<int>(dofs[i]);
-                u_e[static_cast<Eigen::Index>(i)] = A.U(global, 1);
+                u_e[static_cast<Eigen::Index>(i)] = A.U(global, 0);
                 lambda_e[static_cast<Eigen::Index>(i)] = lambda[global];
             }
 
-            // StVK with constant nu: S=C(E_interp,nu):GreenStrain and
-            // dS/d(rho) = [dE_interp/d(rho) / E_interp] S.
-            // Consequently df_int^e/d(rho) = (dE/E_interp) * f_int^e.
-            // create_local_matrix integrates all Gauss points for current u_e.
-            // No mass, K_T, nor extra E_interp multiplication is required.
+            // StVK, constant Poisson ratio:
+            // df_int^e / d(rho_e) = (dE_interp/d(rho_e) / E_interp) * f_int^e
+            // f_int^e already includes Gauss-point integration.
             const ElementMatrix em = element->create_local_matrix(fem, u_e, false, false);
-            grad(e, col) = -(dE / element->E_interp) * lambda_e.dot(em.f_int);
+            df_dx(e, col) = -(dE / element->E_interp) * lambda_e.dot(em.f_int);
         } catch (...) {
             if (!error) error = std::current_exception();
         }
     }
-    for (const auto& error : errors) if (error) std::rethrow_exception(error);
+    for (const auto& error : errors)
+        if (error) std::rethrow_exception(error);
 
-    // Explicit derivative of term w.r.t. xPhys (zero for force compliance here).
+    // Explicit density derivative of objective. For compliance with
+    // design-independent external forces, this is zero.
     for (int v = 0; v < xPhys.cols(); ++v) {
-        const Eigen::VectorXd explicit_term = term.dfdx(fem, A, xPhys, v);
-        if (explicit_term.size() == 0) continue;
-        if (explicit_term.size() != fem.NElem)
-            throw std::runtime_error("Nonlinear explicit dfdx size mismatch");
-        grad.col(v).noalias() += explicit_term;
+        const Eigen::VectorXd explicit_dfdx = dfdx(fem, A, xPhys, v);
+        if (!explicit_dfdx.size()) continue;
+        if (explicit_dfdx.size() != fem.NElem)
+            throw std::runtime_error("Nonlinear AVM: explicit dfdx size mismatch");
+        df_dx.col(v).noalias() += explicit_dfdx;
     }
-    return grad;
+    return df_dx;
 }
-} // namespace
+// ===========================================
 
 EigenStaticGeomericalNonlinearAVM::EigenStaticGeomericalNonlinearAVM(
     const myjson::json& j,
@@ -105,25 +94,52 @@ EigenStaticGeomericalNonlinearAVM::EigenStaticGeomericalNonlinearAVM(
     const myjson::json& analyses_json, const myjson::json& run_json)
     : StaticGeomericalNonlinearAVM(j, analyses, analyses_json, run_json) {
     if (!std::dynamic_pointer_cast<StaticGeomericalNonlinear>(analysis))
-        throw std::runtime_error("Eigen nonlinear AVM requires Eigen nonlinear analysis");
+        throw std::runtime_error("Eigen nonlinear AVM requires nonlinear analysis");
 }
+// ===========================================
 
-std::vector<Eigen::MatrixXd> EigenStaticGeomericalNonlinearAVM::calculate_raw_gradients(
-    const FEM& fem, StaticGeomericalNonlinear& A, const Eigen::MatrixXd& xPhys) {
-    std::vector<Eigen::MatrixXd> g;
-    g.reserve(terms.size());
-    for (auto& term : terms) g.push_back(one_term_gradient(fem, A, *term, xPhys));
-    return g;
-}
 Eigen::MatrixXd EigenStaticGeomericalNonlinearAVM::AVM(
-    const FEM& fem, Analysis& A_base, const Eigen::MatrixXd&,
-    const std::vector<int>& x_label, const Filtering& filtering, int) {
-    auto& A = dynamic_cast<StaticGeomericalNonlinear&>(A_base);
-    const auto raw = calculate_raw_gradients(fem, A, filtering.xPhys);
-    Eigen::MatrixXd phys = Eigen::MatrixXd::Zero(fem.NElem, filtering.xPhys.cols());
-    for (std::size_t i = 0; i < terms.size(); ++i) phys += terms[i]->scale * raw[i];
-    Eigen::MatrixXd result = filtering.sensitivity(phys);
-    for (int e = 0; e < result.rows(); ++e)
-        if (x_label.at(static_cast<std::size_t>(e)) != 0) result.row(e).setZero();
-    return result;
+    const FEM& fem,
+    Analysis& analysis_base,
+    const Eigen::MatrixXd& /*x*/,
+    const std::vector<int>& x_label,
+    const Filtering& filtering,
+    int Iter) {
+
+    auto& A = dynamic_cast<StaticGeomericalNonlinear&>(analysis_base);
+    if (!ROM || A.K_T.rows() != static_cast<int>(A.free.size()))
+        throw std::runtime_error("AVM needs ROM solver and converged nonlinear tangent K_T");
+
+    // 1. Adjoint RHS, following the SAME group->dfdu() interface as linear.
+    // term->scale is already included in dfdu().
+    const Eigen::VectorXd rhs_full = dfdu(fem, A, filtering.xPhys, A.current_step);
+    if (rhs_full.size() != fem.ndof)
+        throw std::runtime_error("Nonlinear AVM: dfdu size mismatch");
+
+    const int nfree = static_cast<int>(A.free.size());
+    Eigen::VectorXd rhs(nfree);
+    for (int i = 0; i < nfree; ++i) rhs[i] = rhs_full[A.free[i]];
+
+    // 2. StVK tangent is symmetric: solve the free-DOF adjoint through the shared ROM interface.
+    ROM->set_factorized_solver(A.K_T, nullptr);
+    ROM->InitializeROMContext(A, Iter, A.current_step, A.current_step,
+                              static_cast<double>(A.current_step) / A.Nstep,
+                              "adjoint", "nonlinear_adjoint", A.current_step == A.Nstep);
+    Eigen::VectorXd lambda_free = Eigen::VectorXd::Zero(nfree);
+    ROM->main(A.K_T, rhs, lambda_free);
+    if (lambda_free.size() != nfree || !lambda_free.allFinite())
+        throw std::runtime_error("Nonlinear AVM: adjoint solve failed");
+
+    Eigen::VectorXd lambda = Eigen::VectorXd::Zero(fem.ndof);
+    for (int i = 0; i < nfree; ++i) lambda[A.free[i]] = lambda_free[i];
+
+    // 3. Element sensitivity for ONE load step, same place as in linear AVM.
+    Eigen::MatrixXd out = filtering.sensitivity(
+        explicit_gradient(fem, A, filtering.xPhys, lambda));
+
+    // 4. Preserve the existing fixed-design-variable rule.
+    for (Eigen::Index e = 0; e < out.rows(); ++e)
+        if (x_label.at(static_cast<std::size_t>(e)) != 0) out.row(e).setZero();
+    return out;
 }
+// ===========================================

@@ -6,9 +6,7 @@
 #include <memory>
 #include <vector>
 
-// As in StaticLinearElasticAVM: common nonlinear group logic in base;
-// backend-specific solver and element derivative live in Eigen derived class.
-// No Petsc nonlinear AVM class is created in this stage.
+// Same grouping hierarchy as StaticLinearElasticAVM.
 struct StaticGeomericalNonlinearAVM : GroupFunctionalBase {
     std::vector<std::unique_ptr<StaticGeomericalNonlinearFunctionalBase>> terms;
 
@@ -19,6 +17,7 @@ struct StaticGeomericalNonlinearAVM : GroupFunctionalBase {
 
     void initialize_terms(const FEM&, Analysis&, const Eigen::MatrixXd&) override;
     void calculate_terms(const FEM&, Analysis&, const Eigen::MatrixXd&) override;
+    double step_value(const FEM&, Analysis&, const Eigen::MatrixXd&);
     Eigen::VectorXd dfdu(const FEM&, Analysis&, const Eigen::MatrixXd&, int) override;
     Eigen::VectorXd dfdFext(const FEM&, Analysis&, const Eigen::MatrixXd&, int) override;
     Eigen::VectorXd dfdx(const FEM&, Analysis&, const Eigen::MatrixXd&, int) override;
@@ -31,9 +30,13 @@ struct EigenStaticGeomericalNonlinearAVM final : StaticGeomericalNonlinearAVM {
                                      const std::vector<std::shared_ptr<Analysis>>& analyses,
                                      const myjson::json& analyses_json,
                                      const myjson::json& run_json);
-    // Each term's raw dJ_n/d(xPhys). No filtering, no normalization.
-    std::vector<Eigen::MatrixXd> calculate_raw_gradients(
-        const FEM&, StaticGeomericalNonlinear&, const Eigen::MatrixXd& xPhys);
+    // Main sensitivity implementation, called by SensitivityMethod::run().
+    // ONE load step per call, same as the linear AVM's interface.
     Eigen::MatrixXd AVM(const FEM&, Analysis&, const Eigen::MatrixXd&,
                         const std::vector<int>&, const Filtering&, int) override;
+
+private:
+    static int sens_threads();
+    Eigen::MatrixXd explicit_gradient(const FEM& fem, StaticGeomericalNonlinear& analysis,
+                                      const Eigen::MatrixXd& xPhys, const Eigen::VectorXd& lambda);
 };
