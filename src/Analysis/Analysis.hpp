@@ -266,6 +266,8 @@ private:
                          Eigen::SparseMatrix<double>* K_ff);
     NewtonResult solve_newton_step(const FEM& fem, const Eigen::VectorXd& f_ext,
                                    Eigen::VectorXd& u, int step);
+    NewtonResult solve_newton_step_line_search(const FEM& fem, const Eigen::VectorXd& f_ext,
+                                               Eigen::VectorXd& u, int step);
 };
 
 inline std::shared_ptr<Analysis> InitializeAnalysis(const myjson::json& analysis_json,

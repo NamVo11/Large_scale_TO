@@ -222,16 +222,14 @@ void OutputData::save_density_iteration(const FEM& fem,
 
 void OutputData::export_response_vtk(const FEM& fem,
                                      const Analysis& analysis,
-                                     const Eigen::MatrixXd& xPhys,
-                                     int Iter) const {
+                                     const Eigen::MatrixXd& xPhys) const {
     for (int step = 0; step <= analysis.Nstep; ++step)
-        export_response_vtk_step(fem, analysis, xPhys, Iter, step, step);
+        export_response_vtk_step(fem, analysis, xPhys, step, step);
 }
 // ===========================================
 
 void OutputData::export_response_vtk_step(const FEM& fem, const Analysis& analysis,
-                                          const Eigen::MatrixXd& xPhys, int Iter,
-                                          int step, int data_col) const {
+                                          const Eigen::MatrixXd& xPhys, int step, int data_col) const {
     PetscMPIInt rank = 0;
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
     if (rank != 0 || outDir_vtk.empty() || analysis.U.size() == 0) return;
@@ -241,12 +239,8 @@ void OutputData::export_response_vtk_step(const FEM& fem, const Analysis& analys
     std::filesystem::create_directories(outDir_vtk);
 
     char name[128] = {0};
-    if (dynamic_cast<const StaticGeomericalNonlinear*>(&analysis))
-        std::snprintf(name, sizeof(name), "Analysis_%d_%s_iter_%d_step_%d.vtk",
-                      analysis.id, analysis.type.c_str(), Iter, step);
-    else
-        std::snprintf(name, sizeof(name), "Analysis_%d_%s_step_%d.vtk",
-                      analysis.id, analysis.type.c_str(), step);
+    std::snprintf(name, sizeof(name), "Analysis_%d_%s_step_%d.vtk",
+                  analysis.id, analysis.type.c_str(), step);
     std::ofstream out(std::filesystem::path(outDir_vtk) / name);
     if (!out) throw std::runtime_error("cannot write response vtk");
     out.precision(17);

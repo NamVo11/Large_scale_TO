@@ -12,7 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <set>
+#include <limits>
 #include <stdexcept>
 
 Eigen::MatrixXd DebugSensitivityMethod::run(const FEM& fem,
@@ -24,28 +24,19 @@ Eigen::MatrixXd DebugSensitivityMethod::run(const FEM& fem,
                                             const OutputData& output,
                                             int Iter) {
     Eigen::MatrixXd avm = object.AVM(fem, analysis, x, x_label, filtering, Iter);
+    if (avm.rows() != x.rows() || avm.cols() != x.cols())
+        throw std::runtime_error("Debug: AVM gradient dimensions mismatch");
 
     PetscMPIInt rank = 0;
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 
-    std::ofstream out;
-    if (rank == 0) {
-        std::filesystem::create_directories(output.outDir_mat);
-        const std::string path = output.outDir_mat + "/debug_sensitivity_fd.csv";
-        static std::set<std::string> initialized_paths;
-        const bool reset_file = Iter == 0 && initialized_paths.insert(path).second;
-        out.open(path, reset_file ? std::ios::out : std::ios::app);
-        if (!out) throw std::runtime_error("Cannot write debug_sensitivity_fd.csv");
-        if (reset_file) {
-            out << "Iter,group,elem,var,x,AVM,FD,abs_err,rel_err,value_plus,value_minus\n";
-        }
-    }
-
     const double current_value = object.value;
-    int checked = 0;
-    for (int e = 0; e < x.rows() && checked < max_checks; ++e) {
+    Eigen::MatrixXd fd_matrix = Eigen::MatrixXd::Zero(x.rows(), x.cols());
+    double squared_error = 0.0;
+    std::size_t checked = 0;
+    for (int e = 0; e < x.rows(); ++e) {
         if (x_label[static_cast<std::size_t>(e)] != 0) continue;
-        for (int v = 0; v < x.cols() && checked < max_checks; ++v) {
+        for (int v = 0; v < x.cols(); ++v) {
             const double x0 = x(e, v);
             const double h_plus = std::min(fd_epsilon, 1.0 - x0);
             const double h_minus = std::min(fd_epsilon, x0);
@@ -77,20 +68,31 @@ Eigen::MatrixXd DebugSensitivityMethod::run(const FEM& fem,
             else if (h_plus > 0.0) fd = (value_plus - current_value) / h_plus;
             else fd = (current_value - value_minus) / h_minus;
 
-            if (rank == 0) {
-                const double g = avm(e, v);
-                const double abs_err = std::abs(g - fd);
-                const double rel_err = abs_err / std::max(1e-14, std::abs(fd));
-                out << Iter << "," << object.sens_function << "," << e << "," << v << "," << x0 << ","
-                    << g << "," << fd << "," << abs_err << "," << rel_err << ","
-                    << value_plus << "," << value_minus << "\n";
-            }
+            fd_matrix(e, v) = fd;
+            squared_error += std::pow(avm(e, v) - fd, 2);
             ++checked;
         }
     }
 
     analysis.solver(fem, filtering.xPhys, Iter);
     object.calculate_terms(fem, analysis, filtering.xPhys);
+    if (rank == 0) {
+        const auto dir = std::filesystem::path(output.outDir_mat).parent_path() / "AVM_debug";
+        std::filesystem::create_directories(dir);
+        std::ofstream out(dir / "debug_sensitivity_fd.csv", std::ios::trunc);
+        if (!out) throw std::runtime_error("Cannot write debug_sensitivity_fd.csv");
+        out.precision(std::numeric_limits<double>::max_digits10);
+        for (int v = 0; v < x.cols(); ++v) out << (v ? "," : "") << "AVM_" << v + 1;
+        for (int v = 0; v < x.cols(); ++v) out << ",FD_" << v + 1;
+        out << '\n';
+        for (int e = 0; e < x.rows(); ++e) {
+            for (int v = 0; v < x.cols(); ++v) out << (v ? "," : "") << avm(e, v);
+            for (int v = 0; v < x.cols(); ++v) out << "," << fd_matrix(e, v);
+            out << '\n';
+        }
+        std::cout << "debug MSE: Iter=" << Iter << " mse="
+                  << (checked ? squared_error / static_cast<double>(checked) : 0.0) << '\n';
+    }
     return avm;
 }
 // ===========================================
@@ -101,7 +103,6 @@ Eigen::MatrixXd DebugNonlinearSensitivityMethod::run(const FEM& fem, Analysis& a
                                                       GroupFunctionalBase& object,
                                                       const Filtering& filtering,
                                                       const OutputData& output, int Iter) {
-    (void)output;
     auto& A = dynamic_cast<StaticGeomericalNonlinear&>(analysis);
     auto& group = dynamic_cast<StaticGeomericalNonlinearAVM&>(object);
     Eigen::MatrixXd avm = object.AVM(fem, analysis, x, x_label, filtering, Iter);
@@ -114,12 +115,12 @@ Eigen::MatrixXd DebugNonlinearSensitivityMethod::run(const FEM& fem, Analysis& a
     PetscMPIInt rank = 0;
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 
+    Eigen::MatrixXd fd_step = Eigen::MatrixXd::Zero(x.rows(), x.cols());
     bool trial_solved = false;
     try {
-        int checked = 0;
-        for (int e = 0; e < x.rows() && checked < max_checks; ++e) {
+        for (int e = 0; e < x.rows(); ++e) {
             if (x_label.at(static_cast<std::size_t>(e)) != 0) continue;
-            for (int v = 0; v < x.cols() && checked < max_checks; ++v) {
+            for (int v = 0; v < x.cols(); ++v) {
                 const double x0 = x(e, v);
                 const double h_plus = std::min(fd_epsilon, 1.0 - x0);
                 const double h_minus = std::min(fd_epsilon, x0);
@@ -151,14 +152,7 @@ Eigen::MatrixXd DebugNonlinearSensitivityMethod::run(const FEM& fem, Analysis& a
                 else if (h_plus > 0.0) fd = (value_plus - nominal_value) / h_plus;
                 else fd = (nominal_value - value_minus) / h_minus;
 
-                if (rank == 0) {
-                    const double abs_err = std::abs(avm(e, v) - fd);
-                    const double rel_err = abs_err / std::max(1e-14, std::abs(fd));
-                    std::cout << "nonlinear debug: Iter=" << Iter << " step=" << step
-                              << " elem=" << e << " var=" << v << " AVM=" << avm(e, v)
-                              << " FD=" << fd << " abs_err=" << abs_err << " rel_err=" << rel_err << '\n';
-                }
-                ++checked;
+                fd_step(e, v) = fd;
             }
         }
     } catch (...) {
@@ -167,6 +161,42 @@ Eigen::MatrixXd DebugNonlinearSensitivityMethod::run(const FEM& fem, Analysis& a
     }
 
     if (trial_solved) A.solve_trial_step(fem, filtering.xPhys, step, nominal_u);
+    if (Iter != cumulative_iter_ || step == 1) {
+        avm_cumulative_ = Eigen::MatrixXd::Zero(x.rows(), x.cols());
+        fd_cumulative_ = Eigen::MatrixXd::Zero(x.rows(), x.cols());
+        cumulative_iter_ = Iter;
+        cumulative_step_ = 0;
+    }
+    if (step != cumulative_step_ + 1 || avm_cumulative_.rows() != x.rows() || avm_cumulative_.cols() != x.cols())
+        throw std::runtime_error("Nonlinear Debug: load steps must be processed in order");
+    avm_cumulative_ += avm;
+    fd_cumulative_ += fd_step;
+    cumulative_step_ = step;
+
+    if (rank == 0) {
+        const auto dir = std::filesystem::path(output.outDir_mat).parent_path() / "AVM_debug";
+        std::filesystem::create_directories(dir);
+        std::ofstream out(dir / "debug_sensitivity_fd.csv", std::ios::trunc);
+        if (!out) throw std::runtime_error("Cannot write debug_sensitivity_fd.csv");
+        out.precision(std::numeric_limits<double>::max_digits10);
+        for (int v = 0; v < x.cols(); ++v) out << (v ? "," : "") << "AVM_" << v + 1;
+        for (int v = 0; v < x.cols(); ++v) out << ",FD_" << v + 1;
+        out << '\n';
+        double squared_error = 0.0;
+        std::size_t checked = 0;
+        for (int e = 0; e < x.rows(); ++e) {
+            for (int v = 0; v < x.cols(); ++v) out << (v ? "," : "") << avm_cumulative_(e, v);
+            for (int v = 0; v < x.cols(); ++v) out << "," << fd_cumulative_(e, v);
+            out << '\n';
+            if (x_label.at(static_cast<std::size_t>(e)) != 0) continue;
+            for (int v = 0; v < x.cols(); ++v) {
+                squared_error += std::pow(avm_cumulative_(e, v) - fd_cumulative_(e, v), 2);
+                ++checked;
+            }
+        }
+        std::cout << "nonlinear debug MSE: Iter=" << Iter << " step=" << step << " mse="
+                  << (checked ? squared_error / static_cast<double>(checked) : 0.0) << '\n';
+    }
     return avm;
 }
 // ===========================================

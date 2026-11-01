@@ -48,7 +48,6 @@ struct AVMSensitivityMethod : SensitivityMethodBase {
 
 struct DebugSensitivityMethod : SensitivityMethodBase {
     double fd_epsilon = 1e-6;
-    int max_checks = 20;
 
     DebugSensitivityMethod() {
         type = "Debug";
@@ -71,6 +70,12 @@ struct DebugNonlinearSensitivityMethod final : DebugSensitivityMethod {
     Eigen::MatrixXd run(const FEM& fem, Analysis& analysis, const Eigen::MatrixXd& x,
                         const std::vector<int>& x_label, GroupFunctionalBase& object,
                         const Filtering& filtering, const OutputData& output, int Iter) override;
+
+private:
+    Eigen::MatrixXd avm_cumulative_;
+    Eigen::MatrixXd fd_cumulative_;
+    int cumulative_iter_ = -1;
+    int cumulative_step_ = 0;
 };
 
 inline std::unique_ptr<SensitivityMethodBase> InitializeSensitivityMethod(const std::string& sens_type,

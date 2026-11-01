@@ -280,6 +280,112 @@ StaticGeomericalNonlinear::solve_newton_step(const FEM& fem, const Eigen::Vector
 }
 // ===========================================
 
+StaticGeomericalNonlinear::NewtonResult
+StaticGeomericalNonlinear::solve_newton_step_line_search(const FEM& fem, const Eigen::VectorXd& f_ext,
+                                                         Eigen::VectorXd& u, int step)
+{
+    using Clock = std::chrono::steady_clock;
+    NewtonResult result;
+    double initial_norm = 0.0;
+    double final_norm = 0.0;
+    int updates = 0;
+
+    try {
+        for (int iter = 0; iter <= max_newton_iterations; ++iter) {
+            Eigen::VectorXd f_int;
+            assemble_system(fem, u, f_int, &K_T);
+            ROM->set_factorized_solver(K_T, nullptr);
+
+            const int nfree = static_cast<int>(free.size());
+            Eigen::VectorXd residual(nfree);
+            for (int i = 0; i < nfree; ++i) residual[i] = f_ext[free[i]] - f_int[free[i]];
+
+            final_norm = residual.norm();
+            if (!std::isfinite(final_norm)) throw std::runtime_error("Newton residual is not finite");
+            if (iter == 0) initial_norm = final_norm;
+
+            const double scale = std::max({1.0, f_ext.norm(), initial_norm});
+            std::cout << "nonlinear step=" << step << ", newton=" << iter << ", residual=" << final_norm/scale << '\n';
+            if (final_norm <= newton_tolerance * scale) {
+                // AVM will factorize this converged tangent only when it needs it.
+                result.iterations = updates;
+                result.residual_norm = final_norm;
+                return result;
+            }
+            if (iter == max_newton_iterations) break;
+
+            const auto solve_start = Clock::now();
+            ROM->InitializeROMContext(*this, optimization_iter, iter + 1, step,
+                                      static_cast<double>(step) / Nstep, "primal", "nonlinear_tangent", false);
+            Eigen::VectorXd delta_u = Eigen::VectorXd::Zero(nfree);
+            ROM->main(K_T, residual, delta_u);
+            if (delta_u.size() != nfree || !delta_u.allFinite())
+                throw std::runtime_error("Newton tangent solve failed");
+            solve_time += std::chrono::duration<double>(Clock::now() - solve_start).count();
+
+            bool accepted = false;
+            double alpha = 1.0;
+            double last_alpha = alpha;
+            double trial_norm = 0.0;
+            std::string last_rejection;
+            for (int search = 0; search < max_line_search_iterations; ++search) {
+                last_alpha = alpha;
+                Eigen::VectorXd u_trial = u;
+                for (int i = 0; i < nfree; ++i) u_trial[free[i]] += alpha * delta_u[i];
+
+                try {
+                    Eigen::VectorXd trial_f_int;
+                    // A trial needs only internal force: no tangent and no mass matrix.
+                    assemble_system(fem, u_trial, trial_f_int, nullptr);
+                    Eigen::VectorXd trial_residual(nfree);
+                    for (int i = 0; i < nfree; ++i)
+                        trial_residual[i] = f_ext[free[i]] - trial_f_int[free[i]];
+                    trial_norm = trial_residual.norm();
+                    /*
+                    std::cout
+                        << "alpha=" << alpha
+                        << ", residual_ratio=" << trial_norm / final_norm
+                        << ", expected_ratio=" << 1.0 - alpha
+                        << ", threshold_ratio=" << 1.0 - 1e-4 * alpha
+                        << '\n';
+                    */
+
+                    if (std::isfinite(trial_norm) && trial_norm <= (1.0 - 1e-4 * alpha) * final_norm) {
+                        u = std::move(u_trial);
+                        accepted = true;
+                        break;
+                    }
+                    last_rejection = std::isfinite(trial_norm) ? "residual did not decrease" : "non-finite residual";
+                } catch (const std::runtime_error& error) {
+                    if (std::string(error.what()) != "StVenant: non-positive deformation Jacobian") throw;
+                    last_rejection = error.what();
+                }
+                alpha *= 0.5;
+            }
+
+            if (!accepted)
+                throw std::runtime_error("Line search failed at load step " + std::to_string(step) +
+                                         ", Newton iteration " + std::to_string(iter) +
+                                         ", last alpha=" + std::to_string(last_alpha) +
+                                         ": " + last_rejection);
+            if (alpha < 1.0) std::cout << "line search alpha=" << alpha << '\n';
+            ++updates;
+        }
+
+        throw std::runtime_error("Nonlinear Newton failed at load step " + std::to_string(step) +
+                                 ", iterations=" + std::to_string(updates) +
+                                 ", residual=" + std::to_string(final_norm));
+    } catch (...) {
+        for (int e = 0; e < fem.NElem; ++e) {
+            auto* element = dynamic_cast<StructuralElementTotalLagrange*>(fem.ElementObjects.at(e).get());
+            if (element) element->rollback_materials();
+        }
+        ROM->set_factorized_solver(K_T, nullptr);
+        throw;
+    }
+}
+// ===========================================
+
 void StaticGeomericalNonlinear::initialize_solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter) {
     validate_input(fem, y_elem);
     prepare_elements(fem, y_elem);
@@ -323,7 +429,8 @@ void StaticGeomericalNonlinear::solve_step(const FEM& fem, int step) {
     set_neum(f_ext, current_step);
     set_dirichlet_u(u, current_step);
 
-    const NewtonResult stats = solve_newton_step(fem, f_ext, u, current_step);
+     const NewtonResult stats = solve_newton_step(fem, f_ext, u, current_step);
+    //const NewtonResult stats = solve_newton_step_line_search(fem, f_ext, u, current_step);
 
     // Only converged Gauss-point responses are committed.
     for (int e = 0; e < fem.NElem; ++e) {
@@ -377,14 +484,14 @@ void StaticGeomericalNonlinear::solver(const FEM& fem, const Eigen::MatrixXd& y_
 void StaticGeomericalNonlinear::solver(const FEM& fem, const Eigen::MatrixXd& y_elem, int Iter,
                                       const OutputData* output) {
     initialize_solver(fem, y_elem, Iter);
-    if (output) output->export_response_vtk_step(fem, *this, y_elem, Iter, 0, 0);
+    if (output) output->export_response_vtk_step(fem, *this, y_elem, 0, 0);
     Eigen::MatrixXd all_u = Eigen::MatrixXd::Zero(fem.ndof, Nstep + 1);
     Eigen::MatrixXd all_f_ext = Eigen::MatrixXd::Zero(fem.ndof, Nstep + 1);
     for (int step = 1; step <= Nstep; ++step) {
         solve_step(fem, step);
         all_u.col(step) = U.col(0);
         all_f_ext.col(step) = F_ext.col(0);
-        if (output) output->export_response_vtk_step(fem, *this, y_elem, Iter, step, 0);
+        if (output) output->export_response_vtk_step(fem, *this, y_elem, step, 0);
     }
     U = std::move(all_u);
     F_ext = std::move(all_f_ext);

@@ -27,10 +27,10 @@ void Optimization::evaluate_nonlinear(const FEM& fem, int Iter) {
         for (auto& analysis_base : analysis_all) {
             auto& A = dynamic_cast<StaticGeomericalNonlinear&>(*analysis_base);
             A.initialize_solver(fem, xPhys, Iter);
-            if (save_response) Output.export_response_vtk_step(fem, A, xPhys, Iter, 0, 0);
+            if (save_response) Output.export_response_vtk_step(fem, A, xPhys, 0, 0);
             for (int step = 1; step <= A.Nstep; ++step) {
                 A.solve_step(fem, step);
-                if (save_response) Output.export_response_vtk_step(fem, A, xPhys, Iter, step, 0);
+                if (save_response) Output.export_response_vtk_step(fem, A, xPhys, step, 0);
                 objective.calculate_step(fem, A, xPhys);
             }
         }
@@ -43,7 +43,6 @@ void Optimization::evaluate_nonlinear(const FEM& fem, int Iter) {
                 term->scale = term->weight / term->initial_value;
             }
         }
-        return; // Temporary forward-only test: stop after the Iter=0 load trajectory.
     }
 
     // Scaled objective and sensitivity: a second trajectory only at Iter=0.
@@ -55,10 +54,10 @@ void Optimization::evaluate_nonlinear(const FEM& fem, int Iter) {
     for (auto& analysis_base : analysis_all) {
         auto& A = dynamic_cast<StaticGeomericalNonlinear&>(*analysis_base);
         A.initialize_solver(fem, xPhys, Iter);
-        if (save_response) Output.export_response_vtk_step(fem, A, xPhys, Iter, 0, 0);
+        if (save_response) Output.export_response_vtk_step(fem, A, xPhys, 0, 0);
         for (int step = 1; step <= A.Nstep; ++step) {
             A.solve_step(fem, step);
-            if (save_response) Output.export_response_vtk_step(fem, A, xPhys, Iter, step, 0);
+            if (save_response) Output.export_response_vtk_step(fem, A, xPhys, step, 0);
             objective.calculate_step(fem, A, xPhys);
             objective.calculate_sensitivity_step(fem, A, x, x_label, *filtering, Output, Iter);
         }
@@ -124,9 +123,7 @@ void Optimization::run_nonlinear(const FEM& fem) {
         if (Iter > 0) ++loopbeta;
 
         filtering->calculate(x, x_label);
-        if (Output.save_density_each_iter != 0 &&
-            Output.save_density_interval > 0 &&
-            Iter % Output.save_density_interval == 0) {
+        if (Output.save_density_each_iter != 0 && Iter % Output.save_density_interval == 0) {
             const auto start = Clock::now();
             Output.save_density_iteration(fem, filtering->xPhys, Iter);
             output_time += elapsed(start);
@@ -136,7 +133,6 @@ void Optimization::run_nonlinear(const FEM& fem) {
         MemoryDebug::print("before_nonlinear_evaluation");
         evaluate_nonlinear(fem, Iter);
         MemoryDebug::print("after_nonlinear_evaluation");
-        if (Iter == 0) return; // Temporary forward-only test; main performs PetscFinalize().
         const double evaluation_time = elapsed(eval_start);
 
         const double obj_value = objective.value;

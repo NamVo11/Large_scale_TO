@@ -143,14 +143,10 @@ void Optimization::run(const FEM& fem) {
         for (auto& A : analysis_all) {
             if (Iter % Output.save_vtk_response_interval == 0) {
                 const auto out_t0 = Clock::now();
-                Output.export_response_vtk(fem, *A, filtering->xPhys, Iter);
+                Output.export_response_vtk(fem, *A, filtering->xPhys);
                 output_time += elapsed(out_t0, Clock::now());
             }
         }
-        if (Iter == 0 && MaxIter == 0 && analysis_all.size() == 1 &&
-            dynamic_cast<StaticLinearElastic*>(analysis_all.front().get()))
-            return; // Temporary linear forward-only comparison; skip objective and sensitivity.
-
         t0 = Clock::now();
         MemoryDebug::print("before_objective_value");
         if (Iter == 0) objective.initialize(fem, filtering->xPhys);
